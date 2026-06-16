@@ -21,9 +21,9 @@ buoy is a daemon that discovers Docker containers via labels, stops them, backs 
 │                                                           │
 │  When a schedule fires:                                   │
 │  ┌───────────────────────────────────────────────────┐    │
-│  │  pre-hooks → stop (ordered) → restic backup →     │    │
-│  │  start (ordered + health wait) → post-hooks →     │    │
-│  │  forget → prune                                   │    │
+│  │  pre-hooks → stop (ordered, cascade) →            │    │
+│  │  restic backup → start (ordered + health wait) →  │    │
+│  │  post-hooks → forget → prune                      │    │
 │  └───────────────────────────────────────────────────┘    │
 │                                                           │
 │  Reacts to Docker events in real-time:                    │
@@ -81,7 +81,7 @@ That's it. buoy discovers the container, initializes a restic repo at `/backup/<
 
 ### Compose stacks
 
-Every container in a compose stack must have its own `buoy.schedule` — there is no implicit "stack trigger." When schedules fire close together, buoy batches them: one coordinated stop/start cycle backs up all scheduled containers in the stack at once, minimizing downtime. When schedules are far apart, each runs independently, backing up only its own container.
+Every container in a compose stack must have its own `buoy.schedule`. When schedules fire close together, buoy batches them: one coordinated stop/start cycle backs up each service in the stack. When schedules are far apart, each runs independently, backing up only its own service.
 
 ## Label Reference
 
@@ -126,7 +126,7 @@ All keys are optional. Omitted keys are not passed to restic.
 
 buoy reads `com.docker.compose.project`, `com.docker.compose.service`, and `com.docker.compose.depends_on` labels that Docker Compose sets automatically.
 
-**Every container needs its own schedule.** There is no implicit "stack trigger." When multiple containers in the same stack have close or identical schedules, buoy batches them: jobs arriving while a stack backup is running wait in a per-stack queue and run immediately after the current batch finishes. One coordinated stop/start cycle per batch.
+**Every container needs its own schedule.** When multiple containers in the same stack have close or identical schedules, buoy batches them: jobs arriving while a stack backup is running wait in a per-stack queue and run immediately after the current batch finishes. One coordinated stop/start cycle per batch, backing up one container per service.
 
 **Stop set:** buoy stops containers with `buoy.stop_before_backup=true` plus any container that transitively depends on a stopped container. Only containers being backed up in the current batch contribute to the stop decision. This ensures clean shutdowns: if the database stops, the API also stops rather than crashing on a lost connection.
 
@@ -154,7 +154,7 @@ cache:
     buoy.stop_before_backup: "false"
 ```
 
-At 3 AM: DB and Cache and API all fire. They batch together. DB has `stop=true` → API depends on DB → {DB, API} stop. Cache stays running. Back up all three. Restart DB, wait healthy, restart API.
+At 3 AM: DB, Cache, and API all fire. They batch together. DB has `stop=true` → API depends on DB → {DB, API} stop. Cache stays running. Back up each service. Restart DB, wait healthy, restart API.
 
 **Repo paths** follow `<base>/<project>/<service>`:
 
@@ -202,8 +202,8 @@ BUOY_LOG_LEVEL=debug
 
 ### CLI flags
 
-```
-buoy run --daemon.concurrency 2 --log.level debug
+```bash
+buoy run --daemon.concurrency 2 --restic.password my-password --restic.base_repo /backup --log.level debug
 ```
 
 ### Password precedence
