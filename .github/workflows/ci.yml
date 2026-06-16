@@ -1,0 +1,17 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  golang:
+    name: Golang
+    permissions:
+      contents: write
+      pull-requests: write
+      checks: write
+    uses: depado/github-actions/.github/workflows/golang.yml@main

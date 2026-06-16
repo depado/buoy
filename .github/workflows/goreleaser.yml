@@ -1,0 +1,14 @@
+name: GoReleaser
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  goreleaser:
+    uses: depado/github-actions/.github/workflows/goreleaser.yml@main
