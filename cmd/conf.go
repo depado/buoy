@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/viper"
 )
 
+// LogConf configures structured logging.
 type LogConf struct {
 	Level  string `mapstructure:"level"`
 	Format string `mapstructure:"format"`
@@ -19,11 +20,34 @@ type LogConf struct {
 	Color  string `mapstructure:"color"`
 }
 
-type Conf struct {
-	Log    LogConf    `mapstructure:"log"`
+// DaemonConf configures the buoy daemon.
+type DaemonConf struct {
+	Concurrency int `mapstructure:"concurrency"`
 }
 
-// NewLogger will return a new logger based on configuration
+// DockerConf configures the Docker Engine connection.
+type DockerConf struct {
+	Host string `mapstructure:"host"`
+}
+
+// ResticConf configures the restic backup engine.
+type ResticConf struct {
+	BinaryPath  string `mapstructure:"binary_path"`
+	Password    string `mapstructure:"password"`
+	CacheDir    string `mapstructure:"cache_dir"`
+	Compression string `mapstructure:"compression"`
+	BaseRepo    string `mapstructure:"base_repo"`
+}
+
+// Conf is the top-level configuration for buoy.
+type Conf struct {
+	Log    LogConf    `mapstructure:"log"`
+	Daemon DaemonConf `mapstructure:"daemon"`
+	Docker DockerConf `mapstructure:"docker"`
+	Restic ResticConf `mapstructure:"restic"`
+}
+
+// NewLogger creates a structured logger from the given configuration.
 func NewLogger(c *Conf) *slog.Logger {
 	var level slog.Level
 	switch strings.ToLower(c.Log.Level) {
@@ -73,7 +97,8 @@ func NewLogger(c *Conf) *slog.Logger {
 	return slog.New(handler)
 }
 
-// NewConf will parse and return the configuration
+// NewConf loads configuration from environment variables (BUOY_ prefix),
+// config file (conf.yaml), and CLI flags.
 func NewConf() (*Conf, error) {
 	// Environment variables
 	viper.AutomaticEnv()

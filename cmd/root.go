@@ -13,6 +13,7 @@ import (
 func Setup(root *cobra.Command) {
 	addConfigurationFlag(root)
 	addLoggerFlags(root)
+	addDaemonFlags(root)
 	
 
 	if err := viper.BindPFlags(root.PersistentFlags()); err != nil {
@@ -21,5 +22,6 @@ func Setup(root *cobra.Command) {
 	}
 
 	root.AddCommand(versionCmd)
+	root.AddCommand(runCmd)
 
 }

@@ -6,12 +6,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Build number and versions injected at compile time
-var (
-	Version   = "unknown"
-	Build     = "unknown"
-	BuildDate = "unknown"
-)
+// Version is the semantic version of the binary, injected at build time.
+var Version = "unknown"
+
+// Build is the git commit hash the binary was built from, injected at build time.
+var Build = "unknown"
+
+// BuildDate is the timestamp the binary was built, injected at build time.
+var BuildDate = "unknown"
 
 // Descriptive help text for version command
 var versionHelp = `

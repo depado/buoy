@@ -1,0 +1,171 @@
+package docker
+
+import (
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Container represents a Docker container with its backup-relevant metadata.
+type Container struct {
+	ID             string
+	Name           string
+	Image          string
+	State          string
+	Labels         map[string]string
+	Mounts         []Mount
+	ComposeProject string
+	ComposeService string
+}
+
+// Mount represents a volume or bind mount attached to a container.
+type Mount struct {
+	Type        string
+	Name        string
+	Source      string
+	Destination string
+	Mode        string
+	RW          bool
+}
+
+// IsComposeStack reports whether this container is part of a Docker Compose stack.
+func (c *Container) IsComposeStack() bool {
+	return c.ComposeProject != ""
+}
+
+// RepoPath returns the restic repository path for this container.
+// For compose stacks, it uses <base>/<project>/<service>.
+// For standalone containers, it uses <base>/<name>.
+func (c *Container) RepoPath(base string) string {
+	if c.IsComposeStack() {
+		return base + "/" + c.ComposeProject + "/" + c.ComposeService
+	}
+	return base + "/" + strings.TrimPrefix(c.Name, "/")
+}
+
+// BackupConfig holds the parsed backup configuration from container labels.
+type BackupConfig struct {
+	Enabled         bool
+	Schedule        string
+	RepoOverride    string
+	Retention       RetentionConfig
+	StopBefore      bool
+	StopTimeout     time.Duration
+	ExcludeVolumes  []string
+	ExcludePatterns []string
+	Files           []string
+	Tags            []string
+	PreBackupCmd    string
+	PostBackupCmd   string
+	PreBackupExec   string
+	PostBackupExec  string
+}
+
+// RetentionConfig defines how many snapshots to keep for each time period.
+type RetentionConfig struct {
+	KeepDaily   int
+	KeepWeekly  int
+	KeepMonthly int
+	KeepYearly  int
+	KeepWithin  string
+}
+
+// ParseBackupConfig extracts backup configuration from Docker labels.
+// Unrecognized labels are ignored. Missing optional labels use defaults.
+func ParseBackupConfig(labels map[string]string) BackupConfig {
+	cfg := BackupConfig{
+		StopBefore:  true,
+		StopTimeout: 30 * time.Second,
+		Retention: RetentionConfig{
+			KeepDaily: 7,
+		},
+	}
+
+	if v, ok := labels["buoy.enabled"]; ok {
+		cfg.Enabled, _ = strconv.ParseBool(v)
+	}
+	if v, ok := labels["buoy.schedule"]; ok {
+		cfg.Schedule = v
+	}
+	if v, ok := labels["buoy.repo"]; ok {
+		cfg.RepoOverride = v
+	}
+	if v, ok := labels["buoy.stop_before_backup"]; ok {
+		cfg.StopBefore, _ = strconv.ParseBool(v)
+	}
+	if v, ok := labels["buoy.stop_timeout"]; ok {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.StopTimeout = d
+		}
+	}
+	if v, ok := labels["buoy.exclude_volumes"]; ok {
+		cfg.ExcludeVolumes = splitAndTrim(v)
+	}
+	if v, ok := labels["buoy.exclude_patterns"]; ok {
+		cfg.ExcludePatterns = splitAndTrim(v)
+	}
+	if v, ok := labels["buoy.files"]; ok {
+		cfg.Files = splitAndTrim(v)
+	}
+	if v, ok := labels["buoy.tags"]; ok {
+		cfg.Tags = splitAndTrim(v)
+	}
+	if v, ok := labels["buoy.pre_backup_cmd"]; ok {
+		cfg.PreBackupCmd = v
+	}
+	if v, ok := labels["buoy.post_backup_cmd"]; ok {
+		cfg.PostBackupCmd = v
+	}
+	if v, ok := labels["buoy.pre_backup_exec"]; ok {
+		cfg.PreBackupExec = v
+	}
+	if v, ok := labels["buoy.post_backup_exec"]; ok {
+		cfg.PostBackupExec = v
+	}
+
+	parseRetention(labels, &cfg.Retention)
+
+	return cfg
+}
+
+func parseRetention(labels map[string]string, rc *RetentionConfig) {
+	v, ok := labels["buoy.retention"]
+	if !ok {
+		return
+	}
+	for _, part := range splitAndTrim(v) {
+		kv := strings.SplitN(part, ":", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		val, err := strconv.Atoi(strings.TrimSpace(kv[1]))
+		if err != nil {
+			if strings.TrimSpace(kv[0]) == "keep-within" {
+				rc.KeepWithin = strings.TrimSpace(kv[1])
+			}
+			continue
+		}
+		switch strings.TrimSpace(kv[0]) {
+		case "keep-daily":
+			rc.KeepDaily = val
+		case "keep-weekly":
+			rc.KeepWeekly = val
+		case "keep-monthly":
+			rc.KeepMonthly = val
+		case "keep-yearly":
+			rc.KeepYearly = val
+		}
+	}
+}
+
+func splitAndTrim(s string) []string {
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
+}

@@ -12,6 +12,11 @@ func addLoggerFlags(c *cobra.Command) {
 	c.PersistentFlags().String("log.color", "auto", "colorized output: auto, always, never (only applies to text format)")
 }
 
+// addDaemonFlags adds flags for the daemon configuration.
+func addDaemonFlags(c *cobra.Command) {
+	c.PersistentFlags().Int("daemon.concurrency", 1, "max number of concurrent backups")
+}
+
 // AddConfigurationFlag adds support to provide a configuration file on the
 // command line.
 func addConfigurationFlag(c *cobra.Command) {
