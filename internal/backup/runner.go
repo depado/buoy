@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
+	"time"
 
 	"github.com/moby/moby/api/types/container"
 
@@ -13,34 +15,36 @@ import (
 	"github.com/depado/buoy/internal/restic"
 )
 
-// Runner orchestrates the full backup lifecycle for a container:
-// pre-hooks → stop → backup → post-hooks → start → retention.
-// For containers in a compose stack, the entire stack is stopped, every
-// enabled container's volumes are backed up, and the stack is restarted.
 type Runner struct {
-	docker *docker.Client
-	restic *restic.Client
-	hook   *hook.Executor
-	base   string
-	logger *slog.Logger
+	docker           *docker.Client
+	restic           *restic.Client
+	hook             *hook.Executor
+	base             string
+	defaultSchedule  string
+	defaultRetention string
+	ignoredIDs       *sync.Map
+	logger           *slog.Logger
 }
 
-// New creates a new Runner.
-func New(d *docker.Client, r *restic.Client, h *hook.Executor, baseRepo string, logger *slog.Logger) *Runner {
+func New(d *docker.Client, r *restic.Client, h *hook.Executor, baseRepo, defaultSchedule, defaultRetention string, ignoredIDs *sync.Map, logger *slog.Logger) *Runner {
 	return &Runner{
-		docker: d,
-		restic: r,
-		hook:   h,
-		base:   baseRepo,
-		logger: logger,
+		docker:           d,
+		restic:           r,
+		hook:             h,
+		base:             baseRepo,
+		defaultSchedule:  defaultSchedule,
+		defaultRetention: defaultRetention,
+		ignoredIDs:       ignoredIDs,
+		logger:           logger,
 	}
 }
 
-// Run executes the backup lifecycle for the given container.
-// If the container belongs to a compose stack, all enabled containers in the
-// stack are backed up together.
+func (r *Runner) parseConfig(labels map[string]string) docker.BackupConfig {
+	return docker.ParseBackupConfig(labels, r.defaultSchedule, r.defaultRetention)
+}
+
 func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
-	l := r.logger.With("container", ctr.Name, "project", ctr.ComposeProject, "service", ctr.ComposeService)
+	l := r.logger.With(ctr.LogAttrs()...)
 
 	fresh, err := r.docker.InspectContainer(ctx, ctr.ID)
 	if err != nil {
@@ -48,90 +52,199 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
 	}
 
 	if fresh.State != "running" {
-		l.Info("skipping backup, container not running", "state", fresh.State)
+		l.Debug("skipping, not running", "state", fresh.State)
 		return nil
 	}
 
-	if fresh.ComposeProject != "" {
-		return r.runStack(ctx, fresh, l)
+	cfg := r.parseConfig(fresh.Labels)
+
+	repo := cfg.RepoOverride
+	if repo == "" {
+		repo = fresh.RepoPath(r.base)
 	}
-	return r.runContainer(ctx, fresh, l)
+
+	if err := r.restic.Unlock(ctx, repo); err != nil {
+		l.Warn("failed to unlock repo", "error", err)
+	}
+
+	r.runPreHooks(ctx, fresh, cfg, l)
+
+	l.Info("starting backup", "stop", cfg.StopBefore)
+	wasRunning := false
+	if cfg.StopBefore {
+		r.ignore(fresh.ID)
+		l.Debug("stopping container")
+		if err := r.docker.StopContainer(ctx, fresh.ID, cfg.StopTimeout); err != nil {
+			return fmt.Errorf("stop container: %w", err)
+		}
+		if err := r.docker.ContainerWait(ctx, fresh.ID, container.WaitConditionNotRunning); err != nil {
+			return fmt.Errorf("wait for stop: %w", err)
+		}
+		l.Info("container stopped")
+		wasRunning = true
+	}
+
+	r.backupMounts(ctx, fresh, l)
+
+	if wasRunning {
+		l.Debug("starting container")
+		if err := r.docker.StartContainer(ctx, fresh.ID); err != nil {
+			return fmt.Errorf("start container: %w", err)
+		}
+		l.Info("container started")
+	}
+
+	if wasRunning {
+		r.waitRunning(ctx, fresh)
+	}
+
+	r.runPostHooks(ctx, fresh, cfg, l)
+	r.applyRetention(ctx, fresh, cfg, l)
+
+	if wasRunning {
+		r.release(fresh.ID)
+	}
+
+	l.Info("backup complete")
+	return nil
 }
 
-func (r *Runner) runStack(ctx context.Context, trigger *docker.Container, l *slog.Logger) error {
-	project := trigger.ComposeProject
-	l.Info("backing up compose stack", "project", project)
+func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*docker.Container) error {
+	l := r.logger.With("project", project)
 
 	summaries, err := r.docker.ListContainersByProject(ctx, project)
 	if err != nil {
 		return fmt.Errorf("list stack containers: %w", err)
 	}
+	l.Debug("listed stack containers", "count", len(summaries))
 
-	ctrs := make([]*docker.Container, 0, len(summaries))
+	all := make([]*docker.Container, 0, len(summaries))
 	for i := range summaries {
 		ctr, err := r.docker.InspectContainer(ctx, summaries[i].ID)
 		if err != nil {
 			l.Warn("failed to inspect stack container", "id", summaries[i].ID, "error", err)
 			continue
 		}
-		cfg := docker.ParseBackupConfig(ctr.Labels)
-		if !cfg.Enabled {
-			continue
-		}
-		if !hasBackupMount(ctr) {
-			continue
-		}
-		ctrs = append(ctrs, ctr)
+		all = append(all, ctr)
 	}
 
-	for _, ctr := range ctrs {
-		cfg := docker.ParseBackupConfig(ctr.Labels)
+	fresh := make([]*docker.Container, 0, len(batch))
+	for _, ctr := range batch {
+		inspected, err := r.docker.InspectContainer(ctx, ctr.ID)
+		if err != nil {
+			l.Warn("failed to inspect batch container", "id", ctr.ID, "error", err)
+			continue
+		}
+		fresh = append(fresh, inspected)
+	}
+
+	fresh = deduplicateByService(fresh)
+
+	for _, ctr := range fresh {
+		cfg := r.parseConfig(ctr.Labels)
 		r.runPreHooks(ctx, ctr, cfg, l)
 	}
 
-	running := make(map[string]bool)
-	for _, ctr := range ctrs {
-		cfg := docker.ParseBackupConfig(ctr.Labels)
-		if !cfg.StopBefore {
-			continue
+	stopSvc := stopSet(fresh, all)
+	l.Info("starting stack backup", "services", len(fresh), "stop_set", mapKeys(stopSvc))
+	services := serviceContainers(all)
+	stopOrder := orderForStop(all)
+	wasStopped := make(map[string]bool)
+
+	for _, svc := range stopOrder {
+		for _, ctr := range services[svc] {
+			if !stopSvc[svc] {
+				continue
+			}
+			sl := l.With(ctr.LogAttrs()...)
+			r.ignore(ctr.ID)
+			sl.Debug("stopping container")
+			cfg := docker.ParseBackupConfig(ctr.Labels, "", "")
+			if err := r.docker.StopContainer(ctx, ctr.ID, cfg.StopTimeout); err != nil {
+				sl.Warn("failed to stop container", "error", err)
+				continue
+			}
+			if err := r.docker.ContainerWait(ctx, ctr.ID, container.WaitConditionNotRunning); err != nil {
+				sl.Warn("failed to wait for container stop", "error", err)
+			}
+			sl.Info("container stopped")
+			wasStopped[ctr.ID] = true
 		}
-		cl := l.With("container", ctr.Name)
-		if err := r.docker.StopContainer(ctx, ctr.ID, cfg.StopTimeout); err != nil {
-			cl.Warn("failed to stop container", "error", err)
-			continue
-		}
-		if err := r.docker.ContainerWait(ctx, ctr.ID, container.WaitConditionNotRunning); err != nil {
-			cl.Warn("failed to wait for container stop", "error", err)
-		}
-		running[ctr.ID] = true
 	}
 
-	for _, ctr := range ctrs {
+	for _, ctr := range fresh {
 		r.backupMounts(ctx, ctr, l)
 	}
 
-	for _, ctr := range ctrs {
-		if !running[ctr.ID] {
-			continue
+	startOrder := orderForStart(all)
+	for _, svc := range startOrder {
+		if err := r.waitForDeps(ctx, all, svc, l); err != nil {
+			l.Warn("failed waiting for dependencies", "service", svc, "error", err)
 		}
-		if err := r.docker.StartContainer(ctx, ctr.ID); err != nil {
-			l.With("container", ctr.Name).Warn("failed to start container", "error", err)
+		for _, ctr := range services[svc] {
+			if !wasStopped[ctr.ID] {
+				continue
+			}
+			cl := l.With(ctr.LogAttrs()...)
+			cl.Debug("starting container")
+			if err := r.docker.StartContainer(ctx, ctr.ID); err != nil {
+				cl.Warn("failed to start container", "error", err)
+			} else {
+				cl.Info("container started")
+			}
 		}
 	}
 
-	for _, ctr := range ctrs {
-		r.runPostHooks(ctx, ctr, docker.ParseBackupConfig(ctr.Labels), l)
+	for _, ctr := range fresh {
+		if wasStopped[ctr.ID] {
+			r.waitRunning(ctx, ctr)
+		}
 	}
 
-	for _, ctr := range ctrs {
-		r.applyRetention(ctx, ctr, docker.ParseBackupConfig(ctr.Labels), l)
+	for _, ctr := range fresh {
+		cfg := r.parseConfig(ctr.Labels)
+		r.runPostHooks(ctx, ctr, cfg, l)
+		r.applyRetention(ctx, ctr, cfg, l)
 	}
 
+	for _, ctr := range fresh {
+		if wasStopped[ctr.ID] {
+			r.release(ctr.ID)
+		}
+	}
+
+	l.Info("stack backup complete")
 	return nil
 }
 
-func (r *Runner) runContainer(ctx context.Context, ctr *docker.Container, l *slog.Logger) error {
-	cfg := docker.ParseBackupConfig(ctr.Labels)
+func (r *Runner) runPreHooks(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) {
+	if cfg.PreBackupCmd != "" {
+		if err := r.hook.ExecOnHost(ctx, cfg.PreBackupCmd); err != nil {
+			l.Warn("pre-backup host command failed", "error", err)
+		}
+	}
+	if cfg.PreBackupExec != "" {
+		if err := r.hook.ExecInContainer(ctx, ctr.ID, cfg.PreBackupExec); err != nil {
+			l.Warn("pre-backup exec failed", "error", err)
+		}
+	}
+}
+
+func (r *Runner) runPostHooks(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) {
+	if cfg.PostBackupExec != "" {
+		if err := r.hook.ExecInContainer(ctx, ctr.ID, cfg.PostBackupExec); err != nil {
+			l.Warn("post-backup exec failed", "error", err)
+		}
+	}
+	if cfg.PostBackupCmd != "" {
+		if err := r.hook.ExecOnHost(ctx, cfg.PostBackupCmd); err != nil {
+			l.Warn("post-backup host command failed", "error", err)
+		}
+	}
+}
+
+func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slog.Logger) {
+	cfg := r.parseConfig(ctr.Labels)
 
 	repo := cfg.RepoOverride
 	if repo == "" {
@@ -140,72 +253,6 @@ func (r *Runner) runContainer(ctx context.Context, ctr *docker.Container, l *slo
 
 	if err := r.restic.Unlock(ctx, repo); err != nil {
 		l.Warn("failed to unlock repo", "error", err)
-	}
-
-	r.runPreHooks(ctx, ctr, cfg, l)
-
-	wasRunning := false
-	if cfg.StopBefore {
-		if err := r.docker.StopContainer(ctx, ctr.ID, cfg.StopTimeout); err != nil {
-			return fmt.Errorf("stop container: %w", err)
-		}
-		if err := r.docker.ContainerWait(ctx, ctr.ID, container.WaitConditionNotRunning); err != nil {
-			return fmt.Errorf("wait for stop: %w", err)
-		}
-		wasRunning = true
-	}
-
-	r.backupMounts(ctx, ctr, l)
-
-	if wasRunning {
-		if err := r.docker.StartContainer(ctx, ctr.ID); err != nil {
-			return fmt.Errorf("start container: %w", err)
-		}
-	}
-
-	r.runPostHooks(ctx, ctr, cfg, l)
-
-	r.applyRetention(ctx, ctr, cfg, l)
-
-	return nil
-}
-
-func (r *Runner) runPreHooks(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) {
-	if cfg.PreBackupCmd != "" {
-		if err := r.hook.ExecOnHost(ctx, cfg.PreBackupCmd); err != nil {
-			l.Warn("pre-backup host command failed", "container", ctr.Name, "error", err)
-		}
-	}
-	if cfg.PreBackupExec != "" {
-		if err := r.hook.ExecInContainer(ctx, ctr.ID, cfg.PreBackupExec); err != nil {
-			l.Warn("pre-backup exec failed", "container", ctr.Name, "error", err)
-		}
-	}
-}
-
-func (r *Runner) runPostHooks(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) {
-	if cfg.PostBackupExec != "" {
-		if err := r.hook.ExecInContainer(ctx, ctr.ID, cfg.PostBackupExec); err != nil {
-			l.Warn("post-backup exec failed", "container", ctr.Name, "error", err)
-		}
-	}
-	if cfg.PostBackupCmd != "" {
-		if err := r.hook.ExecOnHost(ctx, cfg.PostBackupCmd); err != nil {
-			l.Warn("post-backup host command failed", "container", ctr.Name, "error", err)
-		}
-	}
-}
-
-func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slog.Logger) {
-	cfg := docker.ParseBackupConfig(ctr.Labels)
-
-	repo := cfg.RepoOverride
-	if repo == "" {
-		repo = ctr.RepoPath(r.base)
-	}
-
-	if err := r.restic.Unlock(ctx, repo); err != nil {
-		l.Warn("failed to unlock repo", "container", ctr.Name, "error", err)
 	}
 
 	for _, m := range ctr.Mounts {
@@ -218,7 +265,7 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slo
 
 		source := m.Source
 		if _, err := os.Stat(source); os.IsNotExist(err) {
-			l.Warn("mount source does not exist, skipping", "container", ctr.Name, "source", source, "type", m.Type)
+			l.Warn("mount source does not exist, skipping", "source", source, "type", m.Type)
 			continue
 		}
 
@@ -237,11 +284,10 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slo
 
 		result, err := r.restic.Backup(ctx, repo, []string{"."}, opts)
 		if err != nil {
-			l.Error("backup failed", "container", ctr.Name, "mount", source, "error", err)
+			l.Error("backup failed", "mount", source, "error", err)
 			continue
 		}
 		l.Info("backup complete",
-			"container", ctr.Name,
 			"mount", source,
 			"snapshot", result.SnapshotID,
 			"duration", result.TotalDuration,
@@ -263,20 +309,113 @@ func (r *Runner) applyRetention(ctx context.Context, ctr *docker.Container, cfg 
 		KeepYearly:  cfg.Retention.KeepYearly,
 		KeepWithin:  cfg.Retention.KeepWithin,
 	}); err != nil {
-		l.Warn("forget failed", "container", ctr.Name, "error", err)
+		l.Warn("forget failed", "error", err)
 	}
 	if err := r.restic.Prune(ctx, repo); err != nil {
-		l.Warn("prune failed", "container", ctr.Name, "error", err)
+		l.Warn("prune failed", "error", err)
 	}
 }
 
-func hasBackupMount(ctr *docker.Container) bool {
-	for _, m := range ctr.Mounts {
-		if m.Type != "tmpfs" {
-			return true
+func (r *Runner) waitForDeps(ctx context.Context, ctrs []*docker.Container, serviceName string, l *slog.Logger) error {
+	deps := depConditions(ctrs, serviceName)
+	svcMap := serviceContainers(ctrs)
+
+	for _, dep := range deps {
+		depCtrs := svcMap[dep.Name]
+		if len(depCtrs) == 0 {
+			continue
+		}
+		for _, ctr := range depCtrs {
+			l.With("dependency", dep.Name, "condition", dep.Condition).Debug("waiting for dependency")
+			if err := r.waitForCondition(ctx, ctr, dep.Condition); err != nil {
+				return err
+			}
+			l.With("dependency", dep.Name).Debug("dependency satisfied")
 		}
 	}
-	return false
+	return nil
+}
+
+func (r *Runner) waitForCondition(ctx context.Context, ctr *docker.Container, condition string) error {
+	check := func() (bool, error) {
+		fresh, err := r.docker.InspectContainer(ctx, ctr.ID)
+		if err != nil {
+			return false, err
+		}
+
+		switch condition {
+		case "service_healthy":
+			if fresh.Health == nil {
+				return false, fmt.Errorf("%s has no healthcheck configured", ctr.Name)
+			}
+			if fresh.Health.Status == "unhealthy" {
+				return false, fmt.Errorf("%s is unhealthy", ctr.Name)
+			}
+			return fresh.Health.Status == "healthy", nil
+		case "service_started", "service_running_or_healthy":
+			return fresh.State == "running", nil
+		case "service_completed_successfully":
+			if fresh.State == "exited" {
+				if fresh.ExitCode != 0 {
+					return false, fmt.Errorf("%s exited with code %d", ctr.Name, fresh.ExitCode)
+				}
+				return true, nil
+			}
+			return false, nil
+		default:
+			return false, fmt.Errorf("unknown dependency condition: %s", condition)
+		}
+	}
+
+	if done, err := check(); done || err != nil {
+		return err
+	}
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+
+		if done, err := check(); done || err != nil {
+			return err
+		}
+	}
+}
+
+func (r *Runner) waitRunning(ctx context.Context, ctr *docker.Container) {
+	for {
+		fresh, err := r.docker.InspectContainer(ctx, ctr.ID)
+		if err != nil || fresh.State == "running" || fresh.State == "exited" {
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func (r *Runner) ignore(id string)  { r.ignoredIDs.Store(id, true) }
+func (r *Runner) release(id string) { r.ignoredIDs.Delete(id) }
+
+func deduplicateByService(ctrs []*docker.Container) []*docker.Container {
+	seen := make(map[string]bool)
+	out := make([]*docker.Container, 0, len(ctrs))
+	for _, c := range ctrs {
+		svc := c.ComposeService
+		if svc == "" {
+			out = append(out, c)
+			continue
+		}
+		if seen[svc] {
+			continue
+		}
+		seen[svc] = true
+		out = append(out, c)
+	}
+	return out
 }
 
 func contains(slice []string, item string) bool {
@@ -286,4 +425,12 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+func mapKeys(m map[string]bool) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }

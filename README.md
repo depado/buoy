@@ -12,7 +12,7 @@ buoy is a daemon that discovers Docker containers via labels, stops them, backs 
 ## How It Works
 
 ```
-┌──────────────────────────────────────────────────────────┐
+┌───────────────────────────────────────────────────────────┐
 │                       buoy daemon                         │
 │                                                           │
 │  1. Discover containers with buoy.enabled=true            │
@@ -21,14 +21,15 @@ buoy is a daemon that discovers Docker containers via labels, stops them, backs 
 │                                                           │
 │  When a schedule fires:                                   │
 │  ┌───────────────────────────────────────────────────┐    │
-│  │  Stop container → pre-hooks → restic backup →     │    │
-│  │  post-hooks → start container → forget → prune    │    │
+│  │  pre-hooks → stop (ordered) → restic backup →     │    │
+│  │  start (ordered + health wait) → post-hooks →     │    │
+│  │  forget → prune                                   │    │
 │  └───────────────────────────────────────────────────┘    │
 │                                                           │
 │  Reacts to Docker events in real-time:                    │
 │  - Container start → schedule it                          │
 │  - Container stop  → remove from schedule                 │
-└──────────────────────────────────────────────────────────┘
+└───────────────────────────────────────────────────────────┘
 ```
 
 buoy uses restic's `--json` scripting API for structured output and per-container repositories for isolation. Snapshots use clean relative paths (`./data/file.db`) thanks to directory-relative backups.
@@ -68,7 +69,6 @@ services:
       buoy.schedule: "0 3 * * *"
       buoy.retention: "keep-daily:7,keep-weekly:4,keep-monthly:6"
       buoy.tags: "database,production"
-      buoy.stop_before_backup: "false"
       buoy.files: "dump.sql"
       buoy.pre_backup_exec: "pg_dumpall -U postgres -f /var/lib/postgresql/data/dump.sql"
       buoy.post_backup_exec: "rm /var/lib/postgresql/data/dump.sql"
@@ -79,15 +79,19 @@ volumes:
 
 That's it. buoy discovers the container, initializes a restic repo at `/backup/<project>/<service>`, and backs it up daily at 3 AM.
 
+### Compose stacks
+
+Every container in a compose stack must have its own `buoy.schedule` — there is no implicit "stack trigger." When schedules fire close together, buoy batches them: one coordinated stop/start cycle backs up all scheduled containers in the stack at once, minimizing downtime. When schedules are far apart, each runs independently, backing up only its own container.
+
 ## Label Reference
 
 | Label | Default | Description |
 |-------|---------|-------------|
 | `buoy.enabled` | — | Set to `"true"` to enable backup (required) |
-| `buoy.schedule` | — | Cron expression (e.g., `"0 3 * * *"`, `"@daily"`, `"@every 6h"`) |
+| `buoy.schedule` | Global `default_schedule` | Cron expression. Every container in a compose stack needs one. Falls back to global default. |
 | `buoy.repo` | Global `base_repo` | Override the restic repository URL for this container |
-| `buoy.retention` | `"keep-daily:7"` | Retention rules: `"keep-daily:7,keep-weekly:4,keep-monthly:6,keep-yearly:1,keep-within:30d"` |
-| `buoy.stop_before_backup` | `"true"` | Stop the container before backing up |
+| `buoy.retention` | Global `default_retention` | Retention rules. Falls back to global default. Final fallback: `keep-daily:7`. |
+| `buoy.stop_before_backup` | `"false"` | Stop the container before backing up. Defaults to `false` — opt-in to container stops. |
 | `buoy.stop_timeout` | `"30s"` | Timeout for container stop |
 | `buoy.exclude_volumes` | — | Comma-separated volume names to skip |
 | `buoy.exclude_patterns` | — | Comma-separated restic exclude patterns (e.g., `"*.log,*.tmp"`) |
@@ -120,12 +124,44 @@ All keys are optional. Omitted keys are not passed to restic.
 
 ### Compose Stack Awareness
 
-buoy reads the canonical `com.docker.compose.project` and `com.docker.compose.service` labels that Docker Compose adds automatically. Repository paths follow the pattern `<base>/<project>/<service>`:
+buoy reads `com.docker.compose.project`, `com.docker.compose.service`, and `com.docker.compose.depends_on` labels that Docker Compose sets automatically.
+
+**Every container needs its own schedule.** There is no implicit "stack trigger." When multiple containers in the same stack have close or identical schedules, buoy batches them: jobs arriving while a stack backup is running wait in a per-stack queue and run immediately after the current batch finishes. One coordinated stop/start cycle per batch.
+
+**Stop set:** buoy stops containers with `buoy.stop_before_backup=true` plus any container that transitively depends on a stopped container. Only containers being backed up in the current batch contribute to the stop decision. This ensures clean shutdowns: if the database stops, the API also stops rather than crashing on a lost connection.
+
+**Start order:** buoy restarts containers in dependency order (database before API) and waits for health checks before starting dependents — same behavior as `docker compose up`.
+
+**Example:** A stack with DB (depends on nothing), Cache (depends on nothing), and API (depends on DB + Cache).
+
+```yaml
+db:
+  labels:
+    buoy.enabled: "true"
+    buoy.schedule: "0 3 * * *"
+    buoy.stop_before_backup: "true"
+
+api:
+  labels:
+    buoy.enabled: "true"
+    buoy.schedule: "0 3 * * *"     # same schedule → batched
+    buoy.stop_before_backup: "false"
+
+cache:
+  labels:
+    buoy.enabled: "true"
+    buoy.schedule: "0 3 * * *"     # same schedule → batched
+    buoy.stop_before_backup: "false"
+```
+
+At 3 AM: DB and Cache and API all fire. They batch together. DB has `stop=true` → API depends on DB → {DB, API} stop. Cache stays running. Back up all three. Restart DB, wait healthy, restart API.
+
+**Repo paths** follow `<base>/<project>/<service>`:
 
 ```
-/backup/myapp/postgres     # compose project=myapp, service=postgres
-/backup/myapp/redis        # compose project=myapp, service=redis
-/backup/webserver           # standalone container
+/backup/myapp/db
+/backup/myapp/api
+/backup/myapp/cache
 ```
 
 ## Configuration
@@ -141,6 +177,8 @@ log:
 
 daemon:
   concurrency: 2
+  default_schedule: ""              # global fallback for buoy.schedule
+  default_retention: "keep-daily:7" # global fallback for buoy.retention
 
 docker:
   host: unix:///var/run/docker.sock

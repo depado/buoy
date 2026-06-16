@@ -24,9 +24,11 @@ func run() {
 
 func main() {
 	root := &cobra.Command{
-		Use:     "buoy",
-		Short:   "Simple go project",
-		Version: cmd.Version,
+		Use:           "buoy",
+		Short:         "Simple go project",
+		Version:       cmd.Version,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		Run: func(cmd *cobra.Command, args []string) {
 			run()
 		},

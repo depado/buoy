@@ -26,11 +26,12 @@ func New(binPath, password string) *Client {
 
 // Init initializes a new restic repository at the given location.
 func (c *Client) Init(ctx context.Context, repo string) error {
+	var stderr bytes.Buffer
 	cmd := c.command(ctx, "init", "-r", repo)
 	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("restic init: %w", err)
+		return fmt.Errorf("restic init: %w\n%s", err, stderr.String())
 	}
 	return nil
 }
@@ -38,25 +39,27 @@ func (c *Client) Init(ctx context.Context, repo string) error {
 // RepoExists checks whether a restic repository exists at the given location.
 // Returns false with no error if the repository does not exist (exit code 10).
 func (c *Client) RepoExists(ctx context.Context, repo string) (bool, error) {
+	var stderr bytes.Buffer
 	cmd := c.command(ctx, "cat", "config", "-r", repo)
 	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 10 {
 			return false, nil
 		}
-		return false, fmt.Errorf("restic cat config: %w", err)
+		return false, fmt.Errorf("restic cat config: %w\n%s", err, stderr.String())
 	}
 	return true, nil
 }
 
 // Unlock removes stale locks from a repository. Safe to call before every backup.
 func (c *Client) Unlock(ctx context.Context, repo string) error {
+	var stderr bytes.Buffer
 	cmd := c.command(ctx, "unlock", "-r", repo)
 	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("restic unlock: %w", err)
+		return fmt.Errorf("restic unlock: %w\n%s", err, stderr.String())
 	}
 	return nil
 }
@@ -84,12 +87,14 @@ func (c *Client) Backup(ctx context.Context, repo string, paths []string, opts B
 		if err != nil {
 			return nil, fmt.Errorf("create files temp file: %w", err)
 		}
-		defer os.Remove(f.Name())
+		defer os.Remove(f.Name()) //nolint:errcheck
 		if _, err := f.WriteString(strings.Join(opts.Files, "\n")); err != nil {
-			f.Close()
+			f.Close() //nolint:errcheck
 			return nil, fmt.Errorf("write files temp file: %w", err)
 		}
-		f.Close()
+		if err := f.Close(); err != nil {
+			return nil, fmt.Errorf("close files temp file: %w", err)
+		}
 		tmpFile = f.Name()
 		args = append(args, "--files-from", tmpFile)
 	} else {

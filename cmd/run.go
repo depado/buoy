@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -30,29 +32,41 @@ var runCmd = &cobra.Command{
 		slog.SetDefault(logger)
 		logger.Info("starting buoy daemon", "version", Version)
 
+		if conf.Restic.Password == "" && conf.Restic.BaseRepo == "" {
+			return fmt.Errorf("restic.password and restic.base_repo are required")
+		}
+		if conf.Restic.Password == "" {
+			return fmt.Errorf("restic.password is required")
+		}
+		if conf.Restic.BaseRepo == "" {
+			return fmt.Errorf("restic.base_repo is required")
+		}
+
 		dockerClient, err := docker.New(conf.Docker.Host)
 		if err != nil {
 			return err
 		}
-		defer dockerClient.Close()
+		defer dockerClient.Close() //nolint:errcheck
 
-		if _, err := os.Stat(conf.Restic.BinaryPath); os.IsNotExist(err) {
-			return fmt.Errorf("restic binary not found: %s", conf.Restic.BinaryPath)
+		if _, err := exec.LookPath(resticBinary(conf)); err != nil {
+			return fmt.Errorf("restic binary not found: %s", resticBinary(conf))
 		}
 
-		resticClient := restic.New(conf.Restic.BinaryPath, conf.Restic.Password)
+		resticClient := restic.New(resticBinary(conf), conf.Restic.Password)
 		hookExec := hook.New(dockerClient)
-		runner := backup.New(dockerClient, resticClient, hookExec, conf.Restic.BaseRepo, logger)
-		sched := scheduler.New(dockerClient, runner, conf.Daemon.Concurrency, logger)
+		ignoredIDs := &sync.Map{}
+		runner := backup.New(dockerClient, resticClient, hookExec, conf.Restic.BaseRepo, conf.Daemon.DefaultSchedule, conf.Daemon.DefaultRetention, ignoredIDs, logger)
+		sched := scheduler.New(dockerClient, runner, conf.Daemon.Concurrency, conf.Daemon.DefaultSchedule, conf.Daemon.DefaultRetention, logger)
 
 		containers, err := dockerClient.ListBackupContainers(context.Background())
 		if err != nil {
 			return err
 		}
+		scheduled := 0
 		for i := range containers {
 			ctr := &containers[i]
 
-			cfg := docker.ParseBackupConfig(ctr.Labels)
+			cfg := docker.ParseBackupConfig(ctr.Labels, "", "")
 			repo := cfg.RepoOverride
 			if repo == "" {
 				repo = ctr.RepoPath(conf.Restic.BaseRepo)
@@ -72,8 +86,11 @@ var runCmd = &cobra.Command{
 			}
 			if err := sched.AddContainer(ctr); err != nil {
 				logger.Warn("failed to schedule container", "container", ctr.Name, "error", err)
+			} else {
+				scheduled++
 			}
 		}
+		logger.Info("startup scan complete", "containers", len(containers), "scheduled", scheduled, "stacks", countStacks(containers))
 
 		watcher := docker.NewWatcher(dockerClient, logger)
 		ctx, cancel := context.WithCancel(context.Background())
@@ -89,6 +106,11 @@ var runCmd = &cobra.Command{
 		for {
 			select {
 			case evt := <-events:
+				if _, own := ignoredIDs.Load(evt.ID); own {
+					logger.Debug("ignoring self-triggered event", "type", evt.Type, "name", evt.ActorName)
+					continue
+				}
+				logger.Debug("received event", "type", evt.Type, "name", evt.ActorName)
 				switch evt.Type {
 				case docker.EventStart:
 					ctr, err := dockerClient.InspectContainer(context.Background(), evt.ID)
@@ -96,7 +118,7 @@ var runCmd = &cobra.Command{
 						logger.Warn("failed to inspect on event", "id", evt.ID, "error", err)
 						continue
 					}
-					cfg := docker.ParseBackupConfig(ctr.Labels)
+			cfg := docker.ParseBackupConfig(ctr.Labels, "", "")
 					if !cfg.Enabled {
 						continue
 					}
@@ -117,4 +139,21 @@ var runCmd = &cobra.Command{
 			}
 		}
 	},
+}
+
+func resticBinary(conf *Conf) string {
+	if conf.Restic.BinaryPath != "" {
+		return conf.Restic.BinaryPath
+	}
+	return "restic"
+}
+
+func countStacks(containers []docker.Container) int {
+	stacks := make(map[string]bool)
+	for _, c := range containers {
+		if c.ComposeProject != "" {
+			stacks[c.ComposeProject] = true
+		}
+	}
+	return len(stacks)
 }

@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/moby/moby/api/types/container"
 )
 
 // Container represents a Docker container with its backup-relevant metadata.
@@ -12,6 +14,8 @@ type Container struct {
 	Name           string
 	Image          string
 	State          string
+	ExitCode       int
+	Health         *container.Health
 	Labels         map[string]string
 	Mounts         []Mount
 	ComposeProject string
@@ -71,10 +75,9 @@ type RetentionConfig struct {
 }
 
 // ParseBackupConfig extracts backup configuration from Docker labels.
-// Unrecognized labels are ignored. Missing optional labels use defaults.
-func ParseBackupConfig(labels map[string]string) BackupConfig {
+// Unrecognized labels are ignored. Missing optional labels fall back to defaults.
+func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetention string) BackupConfig {
 	cfg := BackupConfig{
-		StopBefore:  true,
 		StopTimeout: 30 * time.Second,
 		Retention: RetentionConfig{
 			KeepDaily: 7,
@@ -86,6 +89,8 @@ func ParseBackupConfig(labels map[string]string) BackupConfig {
 	}
 	if v, ok := labels["buoy.schedule"]; ok {
 		cfg.Schedule = v
+	} else {
+		cfg.Schedule = defaultSchedule
 	}
 	if v, ok := labels["buoy.repo"]; ok {
 		cfg.RepoOverride = v
@@ -123,14 +128,17 @@ func ParseBackupConfig(labels map[string]string) BackupConfig {
 		cfg.PostBackupExec = v
 	}
 
-	parseRetention(labels, &cfg.Retention)
+	parseRetention(labels, defaultRetention, &cfg.Retention)
 
 	return cfg
 }
 
-func parseRetention(labels map[string]string, rc *RetentionConfig) {
+func parseRetention(labels map[string]string, defaultRetention string, rc *RetentionConfig) {
 	v, ok := labels["buoy.retention"]
 	if !ok {
+		v = defaultRetention
+	}
+	if v == "" {
 		return
 	}
 	for _, part := range splitAndTrim(v) {
@@ -168,4 +176,12 @@ func splitAndTrim(s string) []string {
 		}
 	}
 	return result
+}
+
+// LogAttrs returns slog attributes for structured logging.
+func (c *Container) LogAttrs() []any {
+	if c.ComposeProject != "" {
+		return []any{"project", c.ComposeProject, "service", c.ComposeService}
+	}
+	return []any{"container", c.Name}
 }

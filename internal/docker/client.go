@@ -20,7 +20,7 @@ type Client struct {
 // New creates a new Docker client connecting to the given host.
 // If host is empty, the DOCKER_HOST environment variable is used.
 func New(host string) (*Client, error) {
-	opts := []client.Opt{client.WithAPIVersionNegotiation()}
+	opts := []client.Opt{}
 	if host != "" {
 		opts = append(opts, client.WithHost(host))
 	} else {
@@ -39,8 +39,7 @@ func (c *Client) Close() error {
 	return c.api.Close()
 }
 
-// ListBackupContainers returns all running containers that have buoy.enabled=true
-// and at least one non-tmpfs mount.
+// ListBackupContainers returns all running containers that have buoy.enabled=true.
 func (c *Client) ListBackupContainers(ctx context.Context) ([]Container, error) {
 	f := client.Filters{}
 	f.Add("label", "buoy.enabled=true")
@@ -56,17 +55,7 @@ func (c *Client) ListBackupContainers(ctx context.Context) ([]Container, error) 
 
 	containers := make([]Container, 0, len(result.Items))
 	for _, s := range result.Items {
-		ctr := containerFromSummary(s)
-		hasMount := false
-		for _, m := range ctr.Mounts {
-			if m.Type != "tmpfs" {
-				hasMount = true
-				break
-			}
-		}
-		if hasMount {
-			containers = append(containers, ctr)
-		}
+		containers = append(containers, containerFromSummary(s))
 	}
 	return containers, nil
 }
@@ -155,7 +144,7 @@ func (c *Client) ExecInContainer(ctx context.Context, containerID, command strin
 	}
 	defer attachResp.Close()
 
-	go io.Copy(io.Discard, attachResp.Reader)
+	go io.Copy(io.Discard, attachResp.Reader) //nolint:errcheck
 
 	for {
 		inspect, err := c.api.ExecInspect(ctx, execResp.ID, client.ExecInspectOptions{})
@@ -186,17 +175,19 @@ func containerFromSummary(s container.Summary) Container {
 		ComposeService: s.Labels["com.docker.compose.service"],
 	}
 	if len(s.Names) > 0 {
-		ctr.Name = s.Names[0]
+		ctr.Name = strings.TrimPrefix(s.Names[0], "/")
 	}
 	return ctr
 }
 
 func containerFromInspect(c container.InspectResponse) *Container {
 	ctr := &Container{
-		ID:             c.ID,
-		Name:           c.Name,
-		Image:          c.Image,
-		State:          string(c.State.Status),
+		ID:       c.ID,
+		Name:     strings.TrimPrefix(c.Name, "/"),
+		Image:    c.Image,
+		State:    string(c.State.Status),
+		ExitCode: c.State.ExitCode,
+		Health:   c.State.Health,
 		Labels:         c.Config.Labels,
 		ComposeProject: c.Config.Labels["com.docker.compose.project"],
 		ComposeService: c.Config.Labels["com.docker.compose.service"],
