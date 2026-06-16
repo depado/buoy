@@ -1,0 +1,1 @@
+{"go-coverage-action-fmt":1,"coverage_pct":0,"pkg_stats":{"github.com/depado/buoy/cmd":[0],"github.com/depado/buoy/internal/backup":[0],"github.com/depado/buoy/internal/docker":[0],"github.com/depado/buoy":[0],"github.com/depado/buoy/internal/hook":[0],"github.com/depado/buoy/internal/restic":[0],"github.com/depado/buoy/internal/scheduler":[0]},"skipped_count":0}
