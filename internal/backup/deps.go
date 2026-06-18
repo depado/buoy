@@ -11,15 +11,15 @@ type depInfo struct {
 	Condition string
 }
 
-// orderForStop returns service names in reverse dependency order.
-func orderForStop(ctrs []*docker.Container, warn func(string)) []string {
-	deps := serviceDeps(ctrs)
+// orderForStopFromDeps returns service names in reverse dependency order
+// using a pre-computed dependency map.
+func orderForStopFromDeps(deps map[string][]depInfo, warn func(string)) []string {
 	return reverseTopological(deps, warn)
 }
 
-// orderForStart returns service names in dependency order.
-func orderForStart(ctrs []*docker.Container, warn func(string)) []string {
-	deps := serviceDeps(ctrs)
+// orderForStartFromDeps returns service names in dependency order
+// using a pre-computed dependency map.
+func orderForStartFromDeps(deps map[string][]depInfo, warn func(string)) []string {
 	return topological(deps, warn)
 }
 

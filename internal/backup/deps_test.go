@@ -443,3 +443,31 @@ func TestAddDependents(t *testing.T) {
 		t.Errorf("got %v, want %v", stop, want)
 	}
 }
+
+func TestOrderForStopFromDeps(t *testing.T) {
+	deps := map[string][]depInfo{
+		"web": {{Name: "api"}},
+		"api": {{Name: "db"}},
+	}
+	order := orderForStopFromDeps(deps, nil)
+	if len(order) != 3 {
+		t.Fatalf("expected 3 services, got %d", len(order))
+	}
+	if order[0] != "web" || order[1] != "api" || order[2] != "db" {
+		t.Errorf("reverse topological order wrong: got %v, expected [web api db]", order)
+	}
+}
+
+func TestOrderForStartFromDeps(t *testing.T) {
+	deps := map[string][]depInfo{
+		"web": {{Name: "api"}},
+		"api": {{Name: "db"}},
+	}
+	order := orderForStartFromDeps(deps, nil)
+	if len(order) != 3 {
+		t.Fatalf("expected 3 services, got %d", len(order))
+	}
+	if order[0] != "db" || order[1] != "api" || order[2] != "web" {
+		t.Errorf("topological order wrong: got %v, expected [db api web]", order)
+	}
+}

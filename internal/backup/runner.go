@@ -162,7 +162,8 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 	stopSvc := stopSet(fresh, all)
 	l.Info("starting stack backup", "services", len(fresh), "stop_set", mapKeys(stopSvc))
 	services := serviceContainers(all)
-	stopOrder := orderForStop(all, func(svc string) {
+	deps := serviceDeps(all)
+	stopOrder := orderForStopFromDeps(deps, func(svc string) {
 		l.Warn("dependency cycle detected", "service", svc, "project", project)
 	})
 	wasStopped := make(map[string]bool)
@@ -200,7 +201,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 		r.backupMounts(ctx, ctr, l.With("service", ctr.ComposeService))
 	}
 
-	startOrder := orderForStart(all, func(svc string) {
+	startOrder := orderForStartFromDeps(deps, func(svc string) {
 		l.Warn("dependency cycle detected", "service", svc, "project", project)
 	})
 	for _, svc := range startOrder {
