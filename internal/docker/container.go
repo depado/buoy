@@ -51,7 +51,7 @@ func (c *Container) RepoPath(base string) string {
 type BackupConfig struct {
 	Enabled         bool
 	Schedule        string
-	RepoOverride    string
+	ReposOverride   []string
 	Retention       RetentionConfig
 	StopBefore      bool
 	StopTimeout     time.Duration
@@ -95,8 +95,8 @@ func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetenti
 	} else {
 		cfg.Schedule = defaultSchedule
 	}
-	if v, ok := labels["buoy.repo"]; ok {
-		cfg.RepoOverride = v
+	if v, ok := labels["buoy.repos"]; ok {
+		cfg.ReposOverride = splitAndTrim(v)
 	}
 	if v, ok := labels["buoy.stop-before-backup"]; ok {
 		cfg.StopBefore, _ = strconv.ParseBool(v)

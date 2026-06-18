@@ -32,14 +32,11 @@ var runCmd = &cobra.Command{
 		slog.SetDefault(logger)
 		logger.Info("starting buoy daemon", "version", Version)
 
-		if conf.Restic.Password == "" && conf.Restic.BaseRepo == "" {
-			return fmt.Errorf("restic.password and restic.base_repo are required")
-		}
 		if conf.Restic.Password == "" {
 			return fmt.Errorf("restic.password is required")
 		}
-		if conf.Restic.BaseRepo == "" {
-			return fmt.Errorf("restic.base_repo is required")
+		if len(conf.Restic.Repos) == 0 {
+			return fmt.Errorf("restic.repos is required")
 		}
 
 		dockerClient, err := docker.New(conf.Docker.Host)
@@ -55,7 +52,7 @@ var runCmd = &cobra.Command{
 		resticClient := restic.New(resticBinary(conf), conf.Restic.Password)
 		hookExec := hook.New(dockerClient)
 		ignoredIDs := &sync.Map{}
-		runner := backup.New(dockerClient, resticClient, hookExec, conf.Restic.BaseRepo, conf.Daemon.DefaultSchedule, conf.Daemon.DefaultRetention, ignoredIDs, logger)
+		runner := backup.New(dockerClient, resticClient, hookExec, conf.Restic.Repos, conf.Daemon.DefaultSchedule, conf.Daemon.DefaultRetention, ignoredIDs, logger)
 		sched := scheduler.New(dockerClient, runner, conf.Daemon.Concurrency, conf.Daemon.DefaultSchedule, conf.Daemon.DefaultRetention, logger)
 
 		containers, err := dockerClient.ListBackupContainers(context.Background())

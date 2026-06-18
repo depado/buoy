@@ -20,19 +20,19 @@ type Runner struct {
 	docker           *docker.Client
 	restic           *restic.Client
 	hook             *hook.Executor
-	base             string
+	repos            []string
 	defaultSchedule  string
 	defaultRetention string
 	ignoredIDs       *sync.Map
 	logger           *slog.Logger
 }
 
-func New(d *docker.Client, r *restic.Client, h *hook.Executor, baseRepo, defaultSchedule, defaultRetention string, ignoredIDs *sync.Map, logger *slog.Logger) *Runner {
+func New(d *docker.Client, r *restic.Client, h *hook.Executor, repos []string, defaultSchedule, defaultRetention string, ignoredIDs *sync.Map, logger *slog.Logger) *Runner {
 	return &Runner{
 		docker:           d,
 		restic:           r,
 		hook:             h,
-		base:             baseRepo,
+		repos:            repos,
 		defaultSchedule:  defaultSchedule,
 		defaultRetention: defaultRetention,
 		ignoredIDs:       ignoredIDs,
@@ -44,12 +44,20 @@ func (r *Runner) parseConfig(labels map[string]string) docker.BackupConfig {
 	return docker.ParseBackupConfig(labels, r.defaultSchedule, r.defaultRetention)
 }
 
-func (r *Runner) resolveRepo(ctr *docker.Container, cfg docker.BackupConfig) (string, error) {
-	repo := cfg.RepoOverride
-	if repo == "" {
-		repo = ctr.RepoPath(r.base)
+func (r *Runner) resolveRepos(ctr *docker.Container, cfg docker.BackupConfig) ([]string, error) {
+	bases := r.repos
+	if len(cfg.ReposOverride) > 0 {
+		bases = cfg.ReposOverride
 	}
-	return filepath.Abs(repo)
+	repos := make([]string, len(bases))
+	for i, base := range bases {
+		abs, err := filepath.Abs(ctr.RepoPath(base))
+		if err != nil {
+			return nil, fmt.Errorf("repo path for base %q: %w", base, err)
+		}
+		repos[i] = abs
+	}
+	return repos, nil
 }
 
 func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
@@ -66,15 +74,6 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
 	}
 
 	cfg := r.parseConfig(fresh.Labels)
-
-	repo, err := r.resolveRepo(fresh, cfg)
-	if err != nil {
-		return fmt.Errorf("repo path: %w", err)
-	}
-
-	if err := r.restic.Unlock(ctx, repo); err != nil {
-		l.Warn("failed to unlock repo", "error", err)
-	}
 
 	r.runPreHooks(ctx, fresh, cfg, l)
 
@@ -271,30 +270,10 @@ func (r *Runner) runPostHooks(ctx context.Context, ctr *docker.Container, cfg do
 func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slog.Logger) {
 	cfg := r.parseConfig(ctr.Labels)
 
-	repo, err := r.resolveRepo(ctr, cfg)
+	repos, err := r.resolveRepos(ctr, cfg)
 	if err != nil {
-		l.Warn("failed to resolve repo path, skipping backup", "repo", repo, "error", err)
+		l.Warn("failed to resolve repo paths, skipping backup", "error", err)
 		return
-	}
-
-	exists, err := r.restic.RepoExists(ctx, repo)
-	if err != nil {
-		l.Warn("failed to check repo, skipping backup", "repo", repo, "error", err)
-		return
-	}
-	if !exists {
-		l.Debug("repo not found, initializing", "repo", repo)
-		if err := r.restic.Init(ctx, repo); err != nil {
-			l.Warn("failed to init repo, skipping backup", "repo", repo, "error", err)
-			return
-		}
-		l.Info("initialized repo", "repo", repo)
-	} else {
-		l.Debug("repo already exists", "repo", repo)
-	}
-
-	if err := r.restic.Unlock(ctx, repo); err != nil {
-		l.Warn("failed to unlock repo", "error", err)
 	}
 
 	if len(cfg.IncludeVolumes) > 0 && len(cfg.ExcludeVolumes) > 0 {
@@ -304,96 +283,123 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slo
 		l.Warn("both include-mounts and exclude-mounts set, exclude-mounts ignored")
 	}
 
-	for _, m := range ctr.Mounts {
-		if m.Type == "tmpfs" {
-			continue
-		}
-		if len(cfg.IncludeVolumes) > 0 {
-			if !contains(cfg.IncludeVolumes, m.Name) {
-				continue
-			}
-		} else if contains(cfg.ExcludeVolumes, m.Name) {
-			continue
-		}
-		if len(cfg.IncludeMounts) > 0 {
-			if !contains(cfg.IncludeMounts, m.Source) && !contains(cfg.IncludeMounts, m.Destination) {
-				continue
-			}
-		} else if contains(cfg.ExcludeMounts, m.Source) || contains(cfg.ExcludeMounts, m.Destination) {
-			continue
-		}
+	for _, repo := range repos {
+		repoL := l.With("repo", repo)
 
-		source := m.Source
-		if _, err := os.Stat(source); os.IsNotExist(err) {
-			l.Warn("mount source does not exist, skipping", "source", source, "type", m.Type)
-			continue
-		}
-
-		mountTag := m.Name
-		if mountTag == "" {
-			mountTag = m.Destination
-		}
-
-		opts := restic.BackupOptions{
-			Tags:     append(cfg.Tags, "mount:"+mountTag),
-			Excludes: cfg.ExcludePatterns,
-			Files:    cfg.Files,
-			Hostname: ctr.Name,
-			WorkDir:  source,
-		}
-
-		paths := []string{"."}
-		if len(cfg.Files) == 0 {
-			entries, err := os.ReadDir(source)
-			if err != nil {
-				l.Warn("failed to read source directory, skipping", "source", source, "error", err)
-				continue
-			}
-			if len(entries) == 0 {
-				l.Debug("source directory is empty, skipping", "source", source)
-				continue
-			}
-			paths = make([]string, 0, len(entries))
-			for _, e := range entries {
-				paths = append(paths, e.Name())
-			}
-		}
-
-		result, err := r.restic.Backup(ctx, repo, paths, opts)
+		exists, err := r.restic.RepoExists(ctx, repo)
 		if err != nil {
-			l.Error("backup failed", "mount", source, "error", err)
+			repoL.Warn("failed to check repo, skipping repo", "error", err)
 			continue
 		}
-		if result == nil {
-			l.Error("backup produced no summary", "mount", source)
-			continue
+		if !exists {
+			repoL.Debug("repo not found, initializing")
+			if err := r.restic.Init(ctx, repo); err != nil {
+				repoL.Warn("failed to init repo, skipping repo", "error", err)
+				continue
+			}
+			repoL.Info("initialized repo")
 		}
-		l.Info("backup complete",
-			"mount", source,
-			"snapshot", result.SnapshotID,
-			slog.Duration("duration", time.Duration(result.TotalDuration*float64(time.Second))),
-		)
+
+		if err := r.restic.Unlock(ctx, repo); err != nil {
+			repoL.Warn("failed to unlock repo", "error", err)
+		}
+
+		for _, m := range ctr.Mounts {
+			if m.Type == "tmpfs" {
+				continue
+			}
+			if len(cfg.IncludeVolumes) > 0 {
+				if !contains(cfg.IncludeVolumes, m.Name) {
+					continue
+				}
+			} else if contains(cfg.ExcludeVolumes, m.Name) {
+				continue
+			}
+			if len(cfg.IncludeMounts) > 0 {
+				if !contains(cfg.IncludeMounts, m.Source) && !contains(cfg.IncludeMounts, m.Destination) {
+					continue
+				}
+			} else if contains(cfg.ExcludeMounts, m.Source) || contains(cfg.ExcludeMounts, m.Destination) {
+				continue
+			}
+
+			source := m.Source
+			if _, err := os.Stat(source); os.IsNotExist(err) {
+				repoL.Warn("mount source does not exist, skipping", "source", source, "type", m.Type)
+				continue
+			}
+
+			mountTag := m.Name
+			if mountTag == "" {
+				mountTag = m.Destination
+			}
+
+			opts := restic.BackupOptions{
+				Tags:     append(cfg.Tags, "mount:"+mountTag),
+				Excludes: cfg.ExcludePatterns,
+				Files:    cfg.Files,
+				Hostname: ctr.Name,
+				WorkDir:  source,
+			}
+
+			paths := []string{"."}
+			if len(cfg.Files) == 0 {
+				entries, err := os.ReadDir(source)
+				if err != nil {
+					repoL.Warn("failed to read source directory, skipping", "source", source, "error", err)
+					continue
+				}
+				if len(entries) == 0 {
+					repoL.Debug("source directory is empty, skipping", "source", source)
+					continue
+				}
+				paths = make([]string, 0, len(entries))
+				for _, e := range entries {
+					paths = append(paths, e.Name())
+				}
+			}
+
+			result, err := r.restic.Backup(ctx, repo, paths, opts)
+			if err != nil {
+				l.Error("backup failed", "repo", repo, "mount", source, "error", err)
+				continue
+			}
+			if result == nil {
+				l.Error("backup produced no summary", "repo", repo, "mount", source)
+				continue
+			}
+			l.Info("backup complete",
+				"repo", repo,
+				"mount", source,
+				"snapshot", result.SnapshotID,
+				slog.Duration("duration", time.Duration(result.TotalDuration*float64(time.Second))),
+			)
+		}
 	}
 }
 
 func (r *Runner) applyRetention(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) {
-	repo, err := r.resolveRepo(ctr, cfg)
+	repos, err := r.resolveRepos(ctr, cfg)
 	if err != nil {
-		l.Warn("failed to resolve repo path, skipping retention", "repo", repo, "error", err)
+		l.Warn("failed to resolve repo paths, skipping retention", "error", err)
 		return
 	}
 
-	if err := r.restic.Forget(ctx, repo, restic.RetentionPolicy{
+	policy := restic.RetentionPolicy{
 		KeepDaily:   cfg.Retention.KeepDaily,
 		KeepWeekly:  cfg.Retention.KeepWeekly,
 		KeepMonthly: cfg.Retention.KeepMonthly,
 		KeepYearly:  cfg.Retention.KeepYearly,
 		KeepWithin:  cfg.Retention.KeepWithin,
-	}); err != nil {
-		l.Warn("forget failed", "error", err)
 	}
-	if err := r.restic.Prune(ctx, repo); err != nil {
-		l.Warn("prune failed", "error", err)
+
+	for _, repo := range repos {
+		if err := r.restic.Forget(ctx, repo, policy); err != nil {
+			l.Warn("forget failed", "repo", repo, "error", err)
+		}
+		if err := r.restic.Prune(ctx, repo); err != nil {
+			l.Warn("prune failed", "repo", repo, "error", err)
+		}
 	}
 }
 

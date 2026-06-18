@@ -49,7 +49,7 @@ services:
       - /srv/data:/srv/data:ro  # bind mounts you want backed up
     environment:
       - BUOY_RESTIC_PASSWORD=your-secure-password
-      - BUOY_RESTIC_BASE_REPO=/backup
+      - BUOY_RESTIC_REPOS=/backup
       - BUOY_DAEMON_CONCURRENCY=2
     labels:
 
@@ -89,7 +89,7 @@ Every container in a compose stack must have its own `buoy.schedule`. When sched
 |-------|---------|-------------|
 | `buoy.enabled` | — | Set to `"true"` to enable backup (required) |
 | `buoy.schedule` | Global `default_schedule` | Cron expression. Every container in a compose stack needs one. Falls back to global default. |
-| `buoy.repo` | Global `base_repo` | Override the restic repository URL for this container |
+| `buoy.repos` | Global `repos` | Comma-separated repo URLs, overrides the global list |
 | `buoy.retention` | Global `default_retention` | Retention rules. Falls back to global default. Final fallback: `keep-daily:7`. |
 | `buoy.stop-before-backup` | `"false"` | Stop the container before backing up. Defaults to `false` — opt-in to container stops. |
 | `buoy.stop-timeout` | `"30s"` | Timeout for container stop |
@@ -189,7 +189,8 @@ docker:
 restic:
   binary_path: restic
   password: "${RESTIC_PASSWORD}"
-  base_repo: /backup
+  repos:
+    - /backup
 ```
 
 ### Environment variables
@@ -198,7 +199,7 @@ All config keys can be set as `BUOY_<SECTION>_<KEY>`:
 
 ```bash
 BUOY_RESTIC_PASSWORD=my-password
-BUOY_RESTIC_BASE_REPO=s3:s3.amazonaws.com/my-bucket
+BUOY_RESTIC_REPOS=/backup,s3:s3.amazonaws.com/my-bucket
 BUOY_DAEMON_CONCURRENCY=2
 BUOY_LOG_LEVEL=debug
 ```
@@ -206,7 +207,7 @@ BUOY_LOG_LEVEL=debug
 ### CLI flags
 
 ```bash
-buoy run --daemon.concurrency 2 --restic.password my-password --restic.base_repo /backup --log.level debug
+buoy run --daemon.concurrency 2 --restic.password my-password --restic.repos /backup --restic.repos s3:s3.amazonaws.com/bucket --log.level debug
 ```
 
 ### Password precedence
@@ -220,7 +221,12 @@ The password is global — all per-container repos use the same one.
 
 ## Repository Layout
 
-Each container gets a separate restic repository. The URL is `<base_repo>/<compose_project>/<compose_service>` for compose stacks, or `<base_repo>/<container_name>` for standalone containers.
+Each container gets a separate restic repository under each configured base repo. For a container in compose project `myapp` service `db` with repos `[/backup, s3:my-bucket]`, buoy creates:
+
+- `/backup/myapp/db`
+- `s3:my-bucket/myapp/db`
+
+For standalone containers, the URL is `<repo>/<container_name>`.
 
 Repos are initialized automatically at backup time.
 
@@ -240,7 +246,7 @@ services:
       - /srv/app-data:/srv/app-data:ro  # each bind mount explicitly
     environment:
       - BUOY_RESTIC_PASSWORD=${RESTIC_PASSWORD:?required}
-      - BUOY_RESTIC_BASE_REPO=/backup
+      - BUOY_RESTIC_REPOS=/backup
     labels:
 
     restart: unless-stopped
@@ -296,7 +302,15 @@ buoy supports all restic backends:
 - REST server: `rest:https://host:8000/`
 - rclone: `rclone:remote:path`
 
-Set `BUOY_RESTIC_BASE_REPO` to your backend URL. Cloud credentials are passed via standard restic environment variables.
+Configure one or more repos for 3-2-1 backup strategy. Each container backs up to all repos simultaneously. Cloud credentials are passed via standard restic environment variables.
+
+```yaml
+restic:
+  repos:
+    - /backup                          # local copy
+    - s3:s3.amazonaws.com/my-bucket    # offsite copy
+    - b2:my-bucket:/buoy               # different media
+```
 
 ## Development
 

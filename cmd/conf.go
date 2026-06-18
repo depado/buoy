@@ -34,11 +34,11 @@ type DockerConf struct {
 
 // ResticConf configures the restic backup engine.
 type ResticConf struct {
-	BinaryPath  string `mapstructure:"binary_path"`
-	Password    string `mapstructure:"password"`
-	CacheDir    string `mapstructure:"cache_dir"`
-	Compression string `mapstructure:"compression"`
-	BaseRepo    string `mapstructure:"base_repo"`
+	BinaryPath  string   `mapstructure:"binary_path"`
+	Password    string   `mapstructure:"password"`
+	CacheDir    string   `mapstructure:"cache_dir"`
+	Compression string   `mapstructure:"compression"`
+	Repos       []string `mapstructure:"repos"`
 }
 
 // Conf is the top-level configuration for buoy.

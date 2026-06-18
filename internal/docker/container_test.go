@@ -329,7 +329,7 @@ func TestParseBackupConfig(t *testing.T) {
 			labels: map[string]string{
 				"buoy.enabled":          "true",
 				"buoy.schedule":         "@daily",
-				"buoy.repo":             "/custom/repo",
+				"buoy.repos":            "/custom/repo",
 				"buoy.retention":        "keep-daily:30,keep-weekly:4",
 				"buoy.stop-before-backup": "true",
 				"buoy.stop-timeout":     "2m",
@@ -345,7 +345,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				Enabled:         true,
 				Schedule:        "@daily",
-				RepoOverride:    "/custom/repo",
+				ReposOverride:   []string{"/custom/repo"},
 				StopBefore:      true,
 				StopTimeout:     2 * time.Minute,
 				IncludeVolumes:  []string{"data"},
@@ -368,8 +368,8 @@ func TestParseBackupConfig(t *testing.T) {
 			if got.Schedule != tt.want.Schedule {
 				t.Errorf("Schedule: got %q, want %q", got.Schedule, tt.want.Schedule)
 			}
-			if got.RepoOverride != tt.want.RepoOverride {
-				t.Errorf("RepoOverride: got %q, want %q", got.RepoOverride, tt.want.RepoOverride)
+			if len(got.ReposOverride) != len(tt.want.ReposOverride) || (len(got.ReposOverride) > 0 && got.ReposOverride[0] != tt.want.ReposOverride[0]) {
+				t.Errorf("ReposOverride: got %v, want %v", got.ReposOverride, tt.want.ReposOverride)
 			}
 			if got.StopBefore != tt.want.StopBefore {
 				t.Errorf("StopBefore: got %v, want %v", got.StopBefore, tt.want.StopBefore)
