@@ -125,6 +125,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 	l.Debug("listed stack containers", "count", len(summaries))
 
 	all := make([]*docker.Container, 0, len(summaries))
+	byID := make(map[string]*docker.Container, len(summaries))
 	for i := range summaries {
 		ctr, err := r.docker.InspectContainer(ctx, summaries[i].ID)
 		if err != nil {
@@ -132,13 +133,14 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 			continue
 		}
 		all = append(all, ctr)
+		byID[ctr.ID] = ctr
 	}
 
 	fresh := make([]*docker.Container, 0, len(batch))
 	for _, ctr := range batch {
-		inspected, err := r.docker.InspectContainer(ctx, ctr.ID)
-		if err != nil {
-			l.Warn("failed to inspect batch container", "id", ctr.ID, "error", err)
+		inspected, ok := byID[ctr.ID]
+		if !ok {
+			l.Warn("batch container not found in stack", "id", ctr.ID)
 			continue
 		}
 		fresh = append(fresh, inspected)
