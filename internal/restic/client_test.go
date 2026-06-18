@@ -104,6 +104,12 @@ func TestTryParseExitError(t *testing.T) {
 	}
 }
 
+func TestCheckMethodExists(t *testing.T) {
+	c := &Client{binPath: "restic", password: "test"}
+	_ = c.Check
+	_ = c.CheckReadData
+}
+
 func TestFormatFileLevelErrors(t *testing.T) {
 	errors := []BackupError{
 		{During: "backup", Item: "/test/file", Message: "permission denied"},

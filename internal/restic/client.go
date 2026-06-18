@@ -212,6 +212,34 @@ func (c *Client) Prune(ctx context.Context, repo string) error {
 	return nil
 }
 
+// Check verifies the integrity of a restic repository.
+// Uses restic check with no additional flags (structure check only).
+// For data integrity verification, use CheckReadData.
+func (c *Client) Check(ctx context.Context, repo string) error {
+	var stderr bytes.Buffer
+	cmd := c.command(ctx, "check", "-r", repo)
+	cmd.Stdout = io.Discard
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("restic check: %w\n%s", err, stderr.String())
+	}
+	return nil
+}
+
+// CheckReadData verifies the integrity of a restic repository including
+// reading all pack files. This is I/O intensive but provides the highest
+// confidence in repository health.
+func (c *Client) CheckReadData(ctx context.Context, repo string) error {
+	var stderr bytes.Buffer
+	cmd := c.command(ctx, "check", "--read-data", "-r", repo)
+	cmd.Stdout = io.Discard
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("restic check: %w\n%s", err, stderr.String())
+	}
+	return nil
+}
+
 // Snapshots lists all snapshots in the repository.
 func (c *Client) Snapshots(ctx context.Context, repo string) ([]Snapshot, error) {
 	var buf bytes.Buffer
