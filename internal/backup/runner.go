@@ -44,6 +44,14 @@ func (r *Runner) parseConfig(labels map[string]string) docker.BackupConfig {
 	return docker.ParseBackupConfig(labels, r.defaultSchedule, r.defaultRetention)
 }
 
+func (r *Runner) resolveRepo(ctr *docker.Container, cfg docker.BackupConfig) (string, error) {
+	repo := cfg.RepoOverride
+	if repo == "" {
+		repo = ctr.RepoPath(r.base)
+	}
+	return filepath.Abs(repo)
+}
+
 func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
 	l := r.logger.With(ctr.LogAttrs()...)
 
@@ -59,11 +67,7 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
 
 	cfg := r.parseConfig(fresh.Labels)
 
-	repo := cfg.RepoOverride
-	if repo == "" {
-		repo = fresh.RepoPath(r.base)
-	}
-	repo, err = filepath.Abs(repo)
+	repo, err := r.resolveRepo(fresh, cfg)
 	if err != nil {
 		return fmt.Errorf("repo path: %w", err)
 	}
@@ -255,11 +259,7 @@ func (r *Runner) runPostHooks(ctx context.Context, ctr *docker.Container, cfg do
 func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slog.Logger) {
 	cfg := r.parseConfig(ctr.Labels)
 
-	repo := cfg.RepoOverride
-	if repo == "" {
-		repo = ctr.RepoPath(r.base)
-	}
-	repo, err := filepath.Abs(repo)
+	repo, err := r.resolveRepo(ctr, cfg)
 	if err != nil {
 		l.Warn("failed to resolve repo path, skipping backup", "repo", repo, "error", err)
 		return
@@ -361,11 +361,7 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slo
 }
 
 func (r *Runner) applyRetention(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) {
-	repo := cfg.RepoOverride
-	if repo == "" {
-		repo = ctr.RepoPath(r.base)
-	}
-	repo, err := filepath.Abs(repo)
+	repo, err := r.resolveRepo(ctr, cfg)
 	if err != nil {
 		l.Warn("failed to resolve repo path, skipping retention", "repo", repo, "error", err)
 		return
