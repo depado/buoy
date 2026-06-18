@@ -158,6 +158,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 		l.Warn("dependency cycle detected", "service", svc, "project", project)
 	})
 	wasStopped := make(map[string]bool)
+	ignoredInBatch := make(map[string]bool)
 
 	for _, svc := range stopOrder {
 		for _, ctr := range services[svc] {
@@ -166,6 +167,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 			}
 			sl := l.With(ctr.LogAttrs()...)
 			r.ignore(ctr.ID)
+			ignoredInBatch[ctr.ID] = true
 			sl.Debug("stopping container")
 			cfg := docker.ParseBackupConfig(ctr.Labels, "", "")
 			if err := r.docker.StopContainer(ctx, ctr.ID, cfg.StopTimeout); err != nil {
@@ -217,10 +219,8 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 		r.applyRetention(ctx, ctr, cfg, l)
 	}
 
-	for _, ctr := range all {
-		if wasStopped[ctr.ID] {
-			r.release(ctr.ID)
-		}
+	for id := range ignoredInBatch {
+		r.release(id)
 	}
 
 	l.Info("stack backup complete")
