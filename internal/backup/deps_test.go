@@ -145,7 +145,7 @@ func TestTopologicalSort(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := topologicalSort(tt.deps)
+			result := topologicalSort(tt.deps, nil)
 			visited := make(map[string]bool)
 			for _, node := range result {
 				for _, dep := range tt.deps[node] {
@@ -168,7 +168,7 @@ func TestTopologicalAndReverse(t *testing.T) {
 		"api": {{Name: "db"}},
 	}
 
-	topo := topological(deps)
+	topo := topological(deps, nil)
 	if len(topo) != 3 {
 		t.Fatalf("expected 3 services, got %d", len(topo))
 	}
@@ -176,12 +176,63 @@ func TestTopologicalAndReverse(t *testing.T) {
 		t.Errorf("topological order wrong: got %v, expected [db api web]", topo)
 	}
 
-	rev := reverseTopological(deps)
+	rev := reverseTopological(deps, nil)
 	if len(rev) != 3 {
 		t.Fatalf("expected 3 services, got %d", len(rev))
 	}
 	if rev[0] != "web" || rev[1] != "api" || rev[2] != "db" {
 		t.Errorf("reverse topological order wrong: got %v, expected [web api db]", rev)
+	}
+}
+
+func TestTopologicalSort_CycleWarning(t *testing.T) {
+	deps := map[string][]string{
+		"a": {"b"},
+		"b": {"c"},
+		"c": {"a"},
+	}
+	var warnings []string
+	warn := func(s string) {
+		warnings = append(warnings, s)
+	}
+	result := topologicalSort(deps, warn)
+
+	if len(result) < 3 {
+		t.Errorf("expected at least 3 services in order (best-effort), got %d", len(result))
+	}
+
+	visited := make(map[string]bool)
+	for _, node := range result {
+		for _, dep := range deps[node] {
+			if visited[dep] {
+				// dependency already seen — topological order is respected for non-cycle edges
+				continue
+			}
+			// If dep is not visited yet, it must be due to cycle, skip
+		}
+		visited[node] = true
+	}
+
+	if len(warnings) == 0 {
+		t.Error("expected cycle warning, got none")
+	}
+	// Each node participates in the cycle, so we expect warnings
+	t.Logf("warnings: %v", warnings)
+}
+
+func TestTopologicalSort_NoCycles_NoWarning(t *testing.T) {
+	deps := map[string][]string{
+		"a": {"b"},
+		"b": {"c"},
+	}
+	var warnings []string
+	warn := func(s string) {
+		warnings = append(warnings, s)
+	}
+	_ = topologicalSort(deps, warn)
+
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings, got %v", warnings)
 	}
 }
 

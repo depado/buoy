@@ -12,15 +12,15 @@ type depInfo struct {
 }
 
 // orderForStop returns service names in reverse dependency order.
-func orderForStop(ctrs []*docker.Container) []string {
+func orderForStop(ctrs []*docker.Container, warn func(string)) []string {
 	deps := serviceDeps(ctrs)
-	return reverseTopological(deps)
+	return reverseTopological(deps, warn)
 }
 
 // orderForStart returns service names in dependency order.
-func orderForStart(ctrs []*docker.Container) []string {
+func orderForStart(ctrs []*docker.Container, warn func(string)) []string {
 	deps := serviceDeps(ctrs)
-	return topological(deps)
+	return topological(deps, warn)
 }
 
 // serviceDeps extracts the depends_on graph from container labels.
@@ -58,26 +58,26 @@ func depConditions(ctrs []*docker.Container, serviceName string) []depInfo {
 }
 
 // topological returns service names sorted so that dependencies come first.
-func topological(deps map[string][]depInfo) []string {
+func topological(deps map[string][]depInfo, warn func(string)) []string {
 	depNames := make(map[string][]string)
 	for svc, infos := range deps {
 		for _, info := range infos {
 			depNames[svc] = append(depNames[svc], info.Name)
 		}
 	}
-	return topologicalSort(depNames)
+	return topologicalSort(depNames, warn)
 }
 
 // reverseTopological returns service names in reverse dependency order.
-func reverseTopological(deps map[string][]depInfo) []string {
-	order := topological(deps)
+func reverseTopological(deps map[string][]depInfo, warn func(string)) []string {
+	order := topological(deps, warn)
 	for i, j := 0, len(order)-1; i < j; i, j = i+1, j-1 {
 		order[i], order[j] = order[j], order[i]
 	}
 	return order
 }
 
-func topologicalSort(deps map[string][]string) []string {
+func topologicalSort(deps map[string][]string, warn func(string)) []string {
 	all := allServices(deps)
 	visited := make(map[string]bool)
 	temp := make(map[string]bool)
@@ -85,7 +85,13 @@ func topologicalSort(deps map[string][]string) []string {
 
 	var visit func(string)
 	visit = func(node string) {
-		if temp[node] || visited[node] {
+		if visited[node] {
+			return
+		}
+		if temp[node] {
+			if warn != nil {
+				warn("dependency cycle detected involving service: " + node)
+			}
 			return
 		}
 		temp[node] = true
