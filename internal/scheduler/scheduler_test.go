@@ -30,3 +30,33 @@ func TestAddContainer_UsesDefaultSchedule(t *testing.T) {
 	_ = ctr
 	_ = r
 }
+
+func TestScheduleGroupKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		project  string
+		schedule string
+		want     string
+	}{
+		{
+			name:     "project + schedule",
+			project:  "myproject",
+			schedule: "@daily",
+			want:     "myproject::@daily",
+		},
+		{
+			name:     "empty project + schedule",
+			project:  "",
+			schedule: "@every 6h",
+			want:     "::@every 6h",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := scheduleGroupKey(tt.project, tt.schedule)
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
