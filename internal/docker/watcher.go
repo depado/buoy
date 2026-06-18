@@ -65,12 +65,14 @@ func (w *Watcher) loop(ctx context.Context, eventsCh chan<- Event, errCh chan<- 
 		f.Add("event", "die")
 		f.Add("event", "destroy")
 
-		msgs, errs := w.docker.Events(ctx, f)
+		connCtx, connCancel := context.WithCancel(ctx)
+		msgs, errs := w.docker.Events(connCtx, f)
 
 		for {
 			select {
 			case msg, ok := <-msgs:
 				if !ok {
+					connCancel()
 					goto reconnect
 				}
 				eventsCh <- Event{
@@ -80,19 +82,23 @@ func (w *Watcher) loop(ctx context.Context, eventsCh chan<- Event, errCh chan<- 
 				}
 			case err, ok := <-errs:
 				if !ok {
+					connCancel()
 					goto reconnect
 				}
 				if err != nil {
 					w.logger.Warn("docker event stream error", "error", err)
 					errCh <- err
+					connCancel()
 					goto reconnect
 				}
 			case <-ctx.Done():
+				connCancel()
 				return
 			}
 		}
 
 	reconnect:
+		connCancel()
 		select {
 		case <-time.After(backoff):
 			backoff *= 2
