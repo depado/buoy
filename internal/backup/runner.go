@@ -146,10 +146,16 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 
 	fresh = deduplicateByService(fresh)
 
+	var wg sync.WaitGroup
 	for _, ctr := range fresh {
-		cfg := r.parseConfig(ctr.Labels)
-		r.runPreHooks(ctx, ctr, cfg, l)
+		wg.Add(1)
+		go func(c *docker.Container) {
+			defer wg.Done()
+			cfg := r.parseConfig(c.Labels)
+			r.runPreHooks(ctx, c, cfg, l)
+		}(ctr)
 	}
+	wg.Wait()
 
 	stopSvc := stopSet(fresh, all)
 	l.Info("starting stack backup", "services", len(fresh), "stop_set", mapKeys(stopSvc))
