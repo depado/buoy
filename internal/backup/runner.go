@@ -153,7 +153,9 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 	stopSvc := stopSet(fresh, all)
 	l.Info("starting stack backup", "services", len(fresh), "stop_set", mapKeys(stopSvc))
 	services := serviceContainers(all)
-	stopOrder := orderForStop(all)
+	stopOrder := orderForStop(all, func(svc string) {
+		l.Warn("dependency cycle detected", "service", svc, "project", project)
+	})
 	wasStopped := make(map[string]bool)
 
 	for _, svc := range stopOrder {
@@ -181,7 +183,9 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 		r.backupMounts(ctx, ctr, l.With("service", ctr.ComposeService))
 	}
 
-	startOrder := orderForStart(all)
+	startOrder := orderForStart(all, func(svc string) {
+		l.Warn("dependency cycle detected", "service", svc, "project", project)
+	})
 	for _, svc := range startOrder {
 		if err := r.waitForDeps(ctx, all, svc, l); err != nil {
 			l.Warn("failed waiting for dependencies", "service", svc, "error", err)
@@ -360,6 +364,11 @@ func (r *Runner) applyRetention(ctx context.Context, ctr *docker.Container, cfg 
 	repo := cfg.RepoOverride
 	if repo == "" {
 		repo = ctr.RepoPath(r.base)
+	}
+	repo, err := filepath.Abs(repo)
+	if err != nil {
+		l.Warn("failed to resolve repo path, skipping retention", "repo", repo, "error", err)
+		return
 	}
 
 	if err := r.restic.Forget(ctx, repo, restic.RetentionPolicy{
