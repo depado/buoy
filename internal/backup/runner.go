@@ -352,6 +352,10 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slo
 			l.Error("backup failed", "mount", source, "error", err)
 			continue
 		}
+		if result == nil {
+			l.Error("backup produced no summary", "mount", source)
+			continue
+		}
 		l.Info("backup complete",
 			"mount", source,
 			"snapshot", result.SnapshotID,
