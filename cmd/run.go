@@ -66,24 +66,6 @@ var runCmd = &cobra.Command{
 		for i := range containers {
 			ctr := &containers[i]
 
-			cfg := docker.ParseBackupConfig(ctr.Labels, "", "")
-			repo := cfg.RepoOverride
-			if repo == "" {
-				repo = ctr.RepoPath(conf.Restic.BaseRepo)
-			}
-
-			exists, err := resticClient.RepoExists(context.Background(), repo)
-			if err != nil {
-				logger.Warn("failed to check repo, skipping container", "container", ctr.Name, "repo", repo, "error", err)
-				continue
-			}
-			if !exists {
-				if err := resticClient.Init(context.Background(), repo); err != nil {
-					logger.Warn("failed to init repo", "container", ctr.Name, "repo", repo, "error", err)
-					continue
-				}
-				logger.Info("initialized repo", "container", ctr.Name, "repo", repo)
-			}
 			if err := sched.AddContainer(ctr); err != nil {
 				logger.Warn("failed to schedule container", "container", ctr.Name, "error", err)
 			} else {
@@ -118,7 +100,7 @@ var runCmd = &cobra.Command{
 						logger.Warn("failed to inspect on event", "id", evt.ID, "error", err)
 						continue
 					}
-			cfg := docker.ParseBackupConfig(ctr.Labels, "", "")
+					cfg := docker.ParseBackupConfig(ctr.Labels, "", "")
 					if !cfg.Enabled {
 						continue
 					}

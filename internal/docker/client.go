@@ -182,12 +182,12 @@ func containerFromSummary(s container.Summary) Container {
 
 func containerFromInspect(c container.InspectResponse) *Container {
 	ctr := &Container{
-		ID:       c.ID,
-		Name:     strings.TrimPrefix(c.Name, "/"),
-		Image:    c.Image,
-		State:    string(c.State.Status),
-		ExitCode: c.State.ExitCode,
-		Health:   c.State.Health,
+		ID:             c.ID,
+		Name:           strings.TrimPrefix(c.Name, "/"),
+		Image:          c.Image,
+		State:          string(c.State.Status),
+		ExitCode:       c.State.ExitCode,
+		Health:         c.State.Health,
 		Labels:         c.Config.Labels,
 		ComposeProject: c.Config.Labels["com.docker.compose.project"],
 		ComposeService: c.Config.Labels["com.docker.compose.service"],

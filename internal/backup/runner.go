@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -61,6 +62,10 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
 	repo := cfg.RepoOverride
 	if repo == "" {
 		repo = fresh.RepoPath(r.base)
+	}
+	repo, err = filepath.Abs(repo)
+	if err != nil {
+		return fmt.Errorf("repo path: %w", err)
 	}
 
 	if err := r.restic.Unlock(ctx, repo); err != nil {
@@ -173,7 +178,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 	}
 
 	for _, ctr := range fresh {
-		r.backupMounts(ctx, ctr, l)
+		r.backupMounts(ctx, ctr, l.With("service", ctr.ComposeService))
 	}
 
 	startOrder := orderForStart(all)
@@ -195,7 +200,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 		}
 	}
 
-	for _, ctr := range fresh {
+	for _, ctr := range all {
 		if wasStopped[ctr.ID] {
 			r.waitRunning(ctx, ctr)
 		}
@@ -207,7 +212,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 		r.applyRetention(ctx, ctr, cfg, l)
 	}
 
-	for _, ctr := range fresh {
+	for _, ctr := range all {
 		if wasStopped[ctr.ID] {
 			r.release(ctr.ID)
 		}
@@ -250,6 +255,27 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slo
 	if repo == "" {
 		repo = ctr.RepoPath(r.base)
 	}
+	repo, err := filepath.Abs(repo)
+	if err != nil {
+		l.Warn("failed to resolve repo path, skipping backup", "repo", repo, "error", err)
+		return
+	}
+
+	exists, err := r.restic.RepoExists(ctx, repo)
+	if err != nil {
+		l.Warn("failed to check repo, skipping backup", "repo", repo, "error", err)
+		return
+	}
+	if !exists {
+		l.Debug("repo not found, initializing", "repo", repo)
+		if err := r.restic.Init(ctx, repo); err != nil {
+			l.Warn("failed to init repo, skipping backup", "repo", repo, "error", err)
+			return
+		}
+		l.Info("initialized repo", "repo", repo)
+	} else {
+		l.Debug("repo already exists", "repo", repo)
+	}
 
 	if err := r.restic.Unlock(ctx, repo); err != nil {
 		l.Warn("failed to unlock repo", "error", err)
@@ -260,6 +286,9 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slo
 			continue
 		}
 		if contains(cfg.ExcludeVolumes, m.Name) {
+			continue
+		}
+		if contains(cfg.ExcludeMounts, m.Source) || contains(cfg.ExcludeMounts, m.Destination) {
 			continue
 		}
 
@@ -282,7 +311,24 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slo
 			WorkDir:  source,
 		}
 
-		result, err := r.restic.Backup(ctx, repo, []string{"."}, opts)
+		paths := []string{"."}
+		if len(cfg.Files) == 0 {
+			entries, err := os.ReadDir(source)
+			if err != nil {
+				l.Warn("failed to read source directory, skipping", "source", source, "error", err)
+				continue
+			}
+			if len(entries) == 0 {
+				l.Debug("source directory is empty, skipping", "source", source)
+				continue
+			}
+			paths = make([]string, 0, len(entries))
+			for _, e := range entries {
+				paths = append(paths, e.Name())
+			}
+		}
+
+		result, err := r.restic.Backup(ctx, repo, paths, opts)
 		if err != nil {
 			l.Error("backup failed", "mount", source, "error", err)
 			continue
@@ -290,8 +336,7 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slo
 		l.Info("backup complete",
 			"mount", source,
 			"snapshot", result.SnapshotID,
-			"duration", result.TotalDuration,
-			"added_bytes", result.DataAdded,
+			slog.Duration("duration", time.Duration(result.TotalDuration*float64(time.Second))),
 		)
 	}
 }
@@ -330,7 +375,11 @@ func (r *Runner) waitForDeps(ctx context.Context, ctrs []*docker.Container, serv
 			if err := r.waitForCondition(ctx, ctr, dep.Condition); err != nil {
 				return err
 			}
-			l.With("dependency", dep.Name).Debug("dependency satisfied")
+			if dep.Condition == "service_healthy" {
+				l.With("dependency", dep.Name).Info("container healthy")
+			} else {
+				l.With("dependency", dep.Name).Debug("dependency satisfied")
+			}
 		}
 	}
 	return nil

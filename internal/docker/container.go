@@ -56,6 +56,7 @@ type BackupConfig struct {
 	StopBefore      bool
 	StopTimeout     time.Duration
 	ExcludeVolumes  []string
+	ExcludeMounts   []string
 	ExcludePatterns []string
 	Files           []string
 	Tags            []string
@@ -105,6 +106,9 @@ func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetenti
 	}
 	if v, ok := labels["buoy.exclude_volumes"]; ok {
 		cfg.ExcludeVolumes = splitAndTrim(v)
+	}
+	if v, ok := labels["buoy.exclude_mounts"]; ok {
+		cfg.ExcludeMounts = splitAndTrim(v)
 	}
 	if v, ok := labels["buoy.exclude_patterns"]; ok {
 		cfg.ExcludePatterns = splitAndTrim(v)

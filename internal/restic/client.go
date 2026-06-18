@@ -3,6 +3,7 @@ package restic
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -106,10 +107,8 @@ func (c *Client) Backup(ctx context.Context, repo string, paths []string, opts B
 		cmd.Dir = opts.WorkDir
 	}
 
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, fmt.Errorf("stderr pipe: %w", err)
-	}
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -121,7 +120,7 @@ func (c *Client) Backup(ctx context.Context, repo string, paths []string, opts B
 	}
 
 	var errors []BackupError
-	summary, parseErr := ParseBackupStream(stdout, stderrPipe, nil, func(e BackupError) {
+	summary, exitErr, parseErr := ParseBackupStream(stdout, nil, nil, func(e BackupError) {
 		errors = append(errors, e)
 	})
 
@@ -130,11 +129,35 @@ func (c *Client) Backup(ctx context.Context, repo string, paths []string, opts B
 	if parseErr != nil {
 		return summary, parseErr
 	}
+	if exitErr != nil {
+		return summary, fmt.Errorf("restic backup: %s", exitErr.Message)
+	}
 	if waitErr != nil {
+		stderr := strings.TrimSpace(stderrBuf.String())
+		if e := tryParseExitError(stderr); e != nil {
+			return summary, fmt.Errorf("restic backup: %s", e.Message)
+		}
+		if stderr != "" {
+			return summary, fmt.Errorf("restic backup: %w\n%s", waitErr, stderr)
+		}
 		return summary, fmt.Errorf("restic backup: %w", waitErr)
 	}
 
 	return summary, nil
+}
+
+func tryParseExitError(s string) *ExitError {
+	if s == "" {
+		return nil
+	}
+	var e ExitError
+	if err := json.Unmarshal([]byte(s), &e); err != nil {
+		return nil
+	}
+	if e.MessageType == "exit_error" && e.Code > 0 {
+		return &e
+	}
+	return nil
 }
 
 // Forget applies a retention policy to remove old snapshots.

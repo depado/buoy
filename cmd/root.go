@@ -14,7 +14,6 @@ func Setup(root *cobra.Command) {
 	addConfigurationFlag(root)
 	addLoggerFlags(root)
 	addDaemonFlags(root)
-	
 
 	if err := viper.BindPFlags(root.PersistentFlags()); err != nil {
 		slog.Error("unable to bind flags", "error", err)

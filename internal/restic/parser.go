@@ -13,11 +13,14 @@ type message struct {
 
 // ParseBackupStream reads restic's JSON line output from stdout and stderr.
 // It calls onStatus for each progress update and onError for each file-level error.
-// Returns the final backup summary.
-func ParseBackupStream(stdout, stderr io.Reader, onStatus func(BackupStatus), onError func(BackupError)) (*BackupSummary, error) {
+// Returns the final backup summary and any fatal exit error. stderr may be nil.
+func ParseBackupStream(stdout, stderr io.Reader, onStatus func(BackupStatus), onError func(BackupError)) (*BackupSummary, *ExitError, error) {
 	var summary *BackupSummary
+	var exitErr *ExitError
 
-	go parseStderr(stderr, onError)
+	if stderr != nil {
+		go parseStderr(stderr, onError)
+	}
 
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -44,13 +47,18 @@ func ParseBackupStream(stdout, stderr io.Reader, onStatus func(BackupStatus), on
 			if err := json.Unmarshal(line, &e); err == nil && onError != nil {
 				onError(e)
 			}
+		case "exit_error":
+			var e ExitError
+			if err := json.Unmarshal(line, &e); err == nil {
+				exitErr = &e
+			}
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		return summary, fmt.Errorf("scan restic output: %w", err)
+		return summary, exitErr, fmt.Errorf("scan restic output: %w", err)
 	}
-	return summary, nil
+	return summary, exitErr, nil
 }
 
 func parseStderr(r io.Reader, onError func(BackupError)) {

@@ -39,8 +39,9 @@ type BackupError struct {
 
 // ExitError is a fatal error that causes restic to exit with a non-zero code.
 type ExitError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	MessageType string `json:"message_type"`
+	Code        int    `json:"code"`
+	Message     string `json:"message"`
 }
 
 // InitResult is returned when a restic repository is successfully initialized.
