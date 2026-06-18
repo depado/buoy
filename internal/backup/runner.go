@@ -82,6 +82,7 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
 	wasRunning := false
 	if cfg.StopBefore {
 		r.ignore(fresh.ID)
+		defer r.release(fresh.ID)
 		l.Debug("stopping container")
 		if err := r.docker.StopContainer(ctx, fresh.ID, cfg.StopTimeout); err != nil {
 			return fmt.Errorf("stop container: %w", err)
@@ -109,10 +110,6 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
 
 	r.runPostHooks(ctx, fresh, cfg, l)
 	r.applyRetention(ctx, fresh, cfg, l)
-
-	if wasRunning {
-		r.release(fresh.ID)
-	}
 
 	l.Info("backup complete")
 	return nil
