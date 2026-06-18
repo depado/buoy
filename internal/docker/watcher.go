@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/client"
 )
 
@@ -68,37 +69,13 @@ func (w *Watcher) loop(ctx context.Context, eventsCh chan<- Event, errCh chan<- 
 		connCtx, connCancel := context.WithCancel(ctx)
 		msgs, errs := w.docker.Events(connCtx, f)
 
-		for {
-			select {
-			case msg, ok := <-msgs:
-				if !ok {
-					connCancel()
-					goto reconnect
-				}
-				eventsCh <- Event{
-					Type:      EventType(msg.Action),
-					ID:        msg.Actor.ID,
-					ActorName: msg.Actor.Attributes["name"],
-				}
-			case err, ok := <-errs:
-				if !ok {
-					connCancel()
-					goto reconnect
-				}
-				if err != nil {
-					w.logger.Warn("docker event stream error", "error", err)
-					errCh <- err
-					connCancel()
-					goto reconnect
-				}
-			case <-ctx.Done():
-				connCancel()
-				return
-			}
+		reconnect := w.streamEvents(connCtx, msgs, errs, eventsCh, errCh)
+		connCancel()
+
+		if !reconnect {
+			return
 		}
 
-	reconnect:
-		connCancel()
 		select {
 		case <-time.After(backoff):
 			backoff *= 2
@@ -107,6 +84,42 @@ func (w *Watcher) loop(ctx context.Context, eventsCh chan<- Event, errCh chan<- 
 			}
 		case <-ctx.Done():
 			return
+		}
+	}
+}
+
+// streamEvents reads from the Docker event stream channels and forwards
+// events and errors. Returns true if the stream ended and the caller should
+// reconnect; returns false if ctx is cancelled and the caller should shut down.
+func (w *Watcher) streamEvents(
+	ctx context.Context,
+	msgs <-chan events.Message,
+	errs <-chan error,
+	eventsCh chan<- Event,
+	errCh chan<- error,
+) bool {
+	for {
+		select {
+		case msg, ok := <-msgs:
+			if !ok {
+				return true
+			}
+			eventsCh <- Event{
+				Type:      EventType(msg.Action),
+				ID:        msg.Actor.ID,
+				ActorName: msg.Actor.Attributes["name"],
+			}
+		case err, ok := <-errs:
+			if !ok {
+				return true
+			}
+			if err != nil {
+				w.logger.Warn("docker event stream error", "error", err)
+				errCh <- err
+				return true
+			}
+		case <-ctx.Done():
+			return false
 		}
 	}
 }
