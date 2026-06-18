@@ -452,12 +452,19 @@ func (r *Runner) waitForCondition(ctx context.Context, ctr *docker.Container, co
 }
 
 func (r *Runner) waitRunning(ctx context.Context, ctr *docker.Container) {
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+
 	for {
-		fresh, err := r.docker.InspectContainer(ctx, ctr.ID)
-		if err != nil || fresh.State == "running" || fresh.State == "exited" {
+		select {
+		case <-ticker.C:
+			fresh, err := r.docker.InspectContainer(ctx, ctr.ID)
+			if err != nil || fresh.State == "running" || fresh.State == "exited" {
+				return
+			}
+		case <-ctx.Done():
 			return
 		}
-		time.Sleep(200 * time.Millisecond)
 	}
 }
 
