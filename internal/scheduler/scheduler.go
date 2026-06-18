@@ -22,8 +22,10 @@ type Scheduler struct {
 	groups  map[string][]*docker.Container
 	cronIDs map[string]cron.EntryID
 	stacks  map[string]*stackQueue
-	stackMu sync.Mutex
-	logger  *slog.Logger
+	stackMu           sync.Mutex
+	logger            *slog.Logger
+	defaultSchedule   string
+	defaultRetention  string
 }
 
 func New(d *docker.Client, r *backup.Runner, concurrency int, defaultSchedule, defaultRetention string, logger *slog.Logger) *Scheduler {
@@ -37,13 +39,15 @@ func New(d *docker.Client, r *backup.Runner, concurrency int, defaultSchedule, d
 				cron.SkipIfStillRunning(cronLogger{logger}),
 			),
 		),
-		docker:  d,
-		backup:  r,
-		sem:     make(chan struct{}, concurrency),
-		groups:  make(map[string][]*docker.Container),
-		cronIDs: make(map[string]cron.EntryID),
-		stacks:  make(map[string]*stackQueue),
-		logger:  logger,
+		docker:           d,
+		backup:           r,
+		sem:              make(chan struct{}, concurrency),
+		groups:           make(map[string][]*docker.Container),
+		cronIDs:          make(map[string]cron.EntryID),
+		stacks:           make(map[string]*stackQueue),
+		logger:           logger,
+		defaultSchedule:  defaultSchedule,
+		defaultRetention: defaultRetention,
 	}
 }
 
@@ -56,7 +60,7 @@ func (s *Scheduler) Stop() context.Context {
 }
 
 func (s *Scheduler) AddContainer(ctr *docker.Container) error {
-	cfg := docker.ParseBackupConfig(ctr.Labels, "", "")
+	cfg := docker.ParseBackupConfig(ctr.Labels, s.defaultSchedule, s.defaultRetention)
 	if cfg.Schedule == "" {
 		s.logger.Warn("no schedule, skipping", ctr.LogAttrs()...)
 		return nil
