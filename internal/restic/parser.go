@@ -11,16 +11,12 @@ type message struct {
 	MessageType string `json:"message_type"`
 }
 
-// ParseBackupStream reads restic's JSON line output from stdout and stderr.
+// ParseBackupStream reads restic's JSON line output from stdout.
 // It calls onStatus for each progress update and onError for each file-level error.
-// Returns the final backup summary and any fatal exit error. stderr may be nil.
-func ParseBackupStream(stdout, stderr io.Reader, onStatus func(BackupStatus), onError func(BackupError)) (*BackupSummary, *ExitError, error) {
+// Returns the final backup summary and any fatal exit error.
+func ParseBackupStream(stdout io.Reader, onStatus func(BackupStatus), onError func(BackupError)) (*BackupSummary, *ExitError, error) {
 	var summary *BackupSummary
 	var exitErr *ExitError
-
-	if stderr != nil {
-		go parseStderr(stderr, onError)
-	}
 
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -59,23 +55,6 @@ func ParseBackupStream(stdout, stderr io.Reader, onStatus func(BackupStatus), on
 		return summary, exitErr, fmt.Errorf("scan restic output: %w", err)
 	}
 	return summary, exitErr, nil
-}
-
-func parseStderr(r io.Reader, onError func(BackupError)) {
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		var msg message
-		if err := json.Unmarshal(line, &msg); err != nil {
-			continue
-		}
-		if msg.MessageType == "error" {
-			var e BackupError
-			if err := json.Unmarshal(line, &e); err == nil && onError != nil {
-				onError(e)
-			}
-		}
-	}
 }
 
 // ParseSnapshots decodes the JSON array output from "restic snapshots --json".

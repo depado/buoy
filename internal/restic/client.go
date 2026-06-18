@@ -120,7 +120,7 @@ func (c *Client) Backup(ctx context.Context, repo string, paths []string, opts B
 	}
 
 	var errors []BackupError
-	summary, exitErr, parseErr := ParseBackupStream(stdout, nil, nil, func(e BackupError) {
+	summary, exitErr, parseErr := ParseBackupStream(stdout, nil, func(e BackupError) {
 		errors = append(errors, e)
 	})
 
