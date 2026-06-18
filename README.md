@@ -32,7 +32,7 @@ buoy is a daemon that discovers Docker containers via labels, stops them, backs 
 └───────────────────────────────────────────────────────────┘
 ```
 
-buoy uses restic's `--json` scripting API for structured output and per-container repositories for isolation. Snapshots use clean relative paths (`./data/file.db`) thanks to directory-relative backups.
+buoy uses restic's `--json` scripting API for structured output and per-container repositories for isolation. Snapshots use clean relative paths for portable restores across hosts and storage backends.
 
 ## Quick Start
 
@@ -70,14 +70,14 @@ services:
       buoy.retention: "keep-daily:7,keep-weekly:4,keep-monthly:6"
       buoy.tags: "database,production"
       buoy.files: "dump.sql"
-      buoy.pre_backup_exec: "pg_dumpall -U postgres -f /var/lib/postgresql/data/dump.sql"
-      buoy.post_backup_exec: "rm /var/lib/postgresql/data/dump.sql"
+      buoy.pre-backup-exec: "pg_dumpall -U postgres -f /var/lib/postgresql/data/dump.sql"
+      buoy.post-backup-exec: "rm /var/lib/postgresql/data/dump.sql"
 
 volumes:
   postgres_data:
 ```
 
-That's it. buoy discovers the container, initializes a restic repo at `/backup/<project>/<service>`, and backs it up daily at 3 AM.
+That's it. buoy discovers the container, initializes a restic repo at `/backup/<project>/<service>` at backup time, and backs it up daily at 3 AM.
 
 ### Compose stacks
 
@@ -91,16 +91,19 @@ Every container in a compose stack must have its own `buoy.schedule`. When sched
 | `buoy.schedule` | Global `default_schedule` | Cron expression. Every container in a compose stack needs one. Falls back to global default. |
 | `buoy.repo` | Global `base_repo` | Override the restic repository URL for this container |
 | `buoy.retention` | Global `default_retention` | Retention rules. Falls back to global default. Final fallback: `keep-daily:7`. |
-| `buoy.stop_before_backup` | `"false"` | Stop the container before backing up. Defaults to `false` — opt-in to container stops. |
-| `buoy.stop_timeout` | `"30s"` | Timeout for container stop |
-| `buoy.exclude_volumes` | — | Comma-separated volume names to skip |
-| `buoy.exclude_patterns` | — | Comma-separated restic exclude patterns (e.g., `"*.log,*.tmp"`) |
+| `buoy.stop-before-backup` | `"false"` | Stop the container before backing up. Defaults to `false` — opt-in to container stops. |
+| `buoy.stop-timeout` | `"30s"` | Timeout for container stop |
+| `buoy.include-volumes` | — | Comma-separated volume names to back up (overrides exclude) |
+| `buoy.include-mounts` | — | Comma-separated source or destination paths to back up (overrides exclude) |
+| `buoy.exclude-volumes` | — | Comma-separated volume names to skip |
+| `buoy.exclude-mounts` | — | Comma-separated source or destination paths to skip |
+| `buoy.exclude-patterns` | — | Comma-separated restic exclude patterns (e.g., `"*.log,*.tmp"`) |
 | `buoy.files` | — | Comma-separated file patterns to back up (uses `--files-from`). When set, only matching files are backed up, not the whole mount. Supports globs (`*.sql`) and `!` negation. |
 | `buoy.tags` | — | Comma-separated restic snapshot tags |
-| `buoy.pre_backup_cmd` | — | Shell command to run on the host before backup |
-| `buoy.post_backup_cmd` | — | Shell command to run on the host after backup |
-| `buoy.pre_backup_exec` | — | Command to run inside the container before backup (docker exec) |
-| `buoy.post_backup_exec` | — | Command to run inside the container after backup (docker exec) |
+| `buoy.pre-backup-cmd` | — | Shell command to run on the host before backup |
+| `buoy.post-backup-cmd` | — | Shell command to run on the host after backup |
+| `buoy.pre-backup-exec` | — | Command to run inside the container before backup (docker exec) |
+| `buoy.post-backup-exec` | — | Command to run inside the container after backup (docker exec) |
 
 ### Schedule Format
 
@@ -128,7 +131,7 @@ buoy reads `com.docker.compose.project`, `com.docker.compose.service`, and `com.
 
 **Every container needs its own schedule.** When multiple containers in the same stack have close or identical schedules, buoy batches them: jobs arriving while a stack backup is running wait in a per-stack queue and run immediately after the current batch finishes. One coordinated stop/start cycle per batch, backing up one container per service.
 
-**Stop set:** buoy stops containers with `buoy.stop_before_backup=true` plus any container that transitively depends on a stopped container. Only containers being backed up in the current batch contribute to the stop decision. This ensures clean shutdowns: if the database stops, the API also stops rather than crashing on a lost connection.
+**Stop set:** buoy stops containers with `buoy.stop-before-backup=true` plus any container that transitively depends on a stopped container. Only containers being backed up in the current batch contribute to the stop decision. This ensures clean shutdowns: if the database stops, the API also stops rather than crashing on a lost connection.
 
 **Start order:** buoy restarts containers in dependency order (database before API) and waits for health checks before starting dependents — same behavior as `docker compose up`.
 
@@ -139,19 +142,19 @@ db:
   labels:
     buoy.enabled: "true"
     buoy.schedule: "0 3 * * *"
-    buoy.stop_before_backup: "true"
+    buoy.stop-before-backup: "true"
 
 api:
   labels:
     buoy.enabled: "true"
     buoy.schedule: "0 3 * * *"     # same schedule → batched
-    buoy.stop_before_backup: "false"
+    buoy.stop-before-backup: "false"
 
 cache:
   labels:
     buoy.enabled: "true"
     buoy.schedule: "0 3 * * *"     # same schedule → batched
-    buoy.stop_before_backup: "false"
+    buoy.stop-before-backup: "false"
 ```
 
 At 3 AM: DB, Cache, and API all fire. They batch together. DB has `stop=true` → API depends on DB → {DB, API} stop. Cache stays running. Back up each service. Restart DB, wait healthy, restart API.
@@ -219,9 +222,9 @@ The password is global — all per-container repos use the same one.
 
 Each container gets a separate restic repository. The URL is `<base_repo>/<compose_project>/<compose_service>` for compose stacks, or `<base_repo>/<container_name>` for standalone containers.
 
-Repos are initialized automatically when a container is first discovered.
+Repos are initialized automatically at backup time.
 
-Snapshots use clean relative paths. buoy changes into each mount's source directory before backing up, so snapshots contain `./data/file.db` instead of `/var/lib/docker/volumes/<hash>/_data/data/file.db`. Mounts are tagged (`mount:<name>`) for correct parent snapshot selection.
+Snapshots use clean relative paths: buoy changes into each mount's source directory and backs up individual entries, so snapshots contain `file.db`, `logs/` instead of `/var/lib/docker/volumes/<name>/_data/file.db`. Mounts are tagged (`mount:<name>`) for correct parent snapshot selection.
 
 ## Deployment
 
@@ -252,7 +255,7 @@ If a mount source doesn't exist inside buoy, it's skipped with a warning.
 
 ### Restart policy caveat
 
-Containers with `buoy.stop_before_backup=true` **must not** have `restart: always` (or similar). If they do, Docker restarts them immediately after buoy stops them, causing a race with the backup. Use `restart: "no"` or omit the restart policy on containers that buoy stops.
+Containers with `buoy.stop-before-backup=true` **must not** have `restart: always` (or similar). If they do, Docker restarts them immediately after buoy stops them, causing a race with the backup. Use `restart: "no"` or omit the restart policy on containers that buoy stops.
 
 ## Restoring
 

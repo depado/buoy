@@ -7,5 +7,15 @@
       "matchPackageNames": ["depado/github-actions"],
       "pinDigests": false
     }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": ["^Dockerfile$"],
+      "matchStrings": ["ARG RESTIC_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "restic/restic",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    }
   ]
 }

@@ -281,14 +281,29 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slo
 		l.Warn("failed to unlock repo", "error", err)
 	}
 
+	if len(cfg.IncludeVolumes) > 0 && len(cfg.ExcludeVolumes) > 0 {
+		l.Warn("both include-volumes and exclude-volumes set, exclude-volumes ignored")
+	}
+	if len(cfg.IncludeMounts) > 0 && len(cfg.ExcludeMounts) > 0 {
+		l.Warn("both include-mounts and exclude-mounts set, exclude-mounts ignored")
+	}
+
 	for _, m := range ctr.Mounts {
 		if m.Type == "tmpfs" {
 			continue
 		}
-		if contains(cfg.ExcludeVolumes, m.Name) {
+		if len(cfg.IncludeVolumes) > 0 {
+			if !contains(cfg.IncludeVolumes, m.Name) {
+				continue
+			}
+		} else if contains(cfg.ExcludeVolumes, m.Name) {
 			continue
 		}
-		if contains(cfg.ExcludeMounts, m.Source) || contains(cfg.ExcludeMounts, m.Destination) {
+		if len(cfg.IncludeMounts) > 0 {
+			if !contains(cfg.IncludeMounts, m.Source) && !contains(cfg.IncludeMounts, m.Destination) {
+				continue
+			}
+		} else if contains(cfg.ExcludeMounts, m.Source) || contains(cfg.ExcludeMounts, m.Destination) {
 			continue
 		}
 

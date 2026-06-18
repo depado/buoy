@@ -55,7 +55,9 @@ type BackupConfig struct {
 	Retention       RetentionConfig
 	StopBefore      bool
 	StopTimeout     time.Duration
+	IncludeVolumes  []string
 	ExcludeVolumes  []string
+	IncludeMounts   []string
 	ExcludeMounts   []string
 	ExcludePatterns []string
 	Files           []string
@@ -96,21 +98,27 @@ func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetenti
 	if v, ok := labels["buoy.repo"]; ok {
 		cfg.RepoOverride = v
 	}
-	if v, ok := labels["buoy.stop_before_backup"]; ok {
+	if v, ok := labels["buoy.stop-before-backup"]; ok {
 		cfg.StopBefore, _ = strconv.ParseBool(v)
 	}
-	if v, ok := labels["buoy.stop_timeout"]; ok {
+	if v, ok := labels["buoy.stop-timeout"]; ok {
 		if d, err := time.ParseDuration(v); err == nil {
 			cfg.StopTimeout = d
 		}
 	}
-	if v, ok := labels["buoy.exclude_volumes"]; ok {
+	if v, ok := labels["buoy.include-volumes"]; ok {
+		cfg.IncludeVolumes = splitAndTrim(v)
+	}
+	if v, ok := labels["buoy.include-mounts"]; ok {
+		cfg.IncludeMounts = splitAndTrim(v)
+	}
+	if v, ok := labels["buoy.exclude-volumes"]; ok {
 		cfg.ExcludeVolumes = splitAndTrim(v)
 	}
-	if v, ok := labels["buoy.exclude_mounts"]; ok {
+	if v, ok := labels["buoy.exclude-mounts"]; ok {
 		cfg.ExcludeMounts = splitAndTrim(v)
 	}
-	if v, ok := labels["buoy.exclude_patterns"]; ok {
+	if v, ok := labels["buoy.exclude-patterns"]; ok {
 		cfg.ExcludePatterns = splitAndTrim(v)
 	}
 	if v, ok := labels["buoy.files"]; ok {
@@ -119,16 +127,16 @@ func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetenti
 	if v, ok := labels["buoy.tags"]; ok {
 		cfg.Tags = splitAndTrim(v)
 	}
-	if v, ok := labels["buoy.pre_backup_cmd"]; ok {
+	if v, ok := labels["buoy.pre-backup-cmd"]; ok {
 		cfg.PreBackupCmd = v
 	}
-	if v, ok := labels["buoy.post_backup_cmd"]; ok {
+	if v, ok := labels["buoy.post-backup-cmd"]; ok {
 		cfg.PostBackupCmd = v
 	}
-	if v, ok := labels["buoy.pre_backup_exec"]; ok {
+	if v, ok := labels["buoy.pre-backup-exec"]; ok {
 		cfg.PreBackupExec = v
 	}
-	if v, ok := labels["buoy.post_backup_exec"]; ok {
+	if v, ok := labels["buoy.post-backup-exec"]; ok {
 		cfg.PostBackupExec = v
 	}
 
