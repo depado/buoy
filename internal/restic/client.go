@@ -143,6 +143,11 @@ func (c *Client) Backup(ctx context.Context, repo string, paths []string, opts B
 		return summary, fmt.Errorf("restic backup: %w", waitErr)
 	}
 
+	if len(errors) > 0 {
+		return summary, fmt.Errorf("restic backup: %d file-level errors (first: %s: %s)",
+			len(errors), errors[0].During, errors[0].Item)
+	}
+
 	return summary, nil
 }
 
@@ -163,6 +168,19 @@ func tryParseExitError(s string) *ExitError {
 // Forget applies a retention policy to remove old snapshots.
 // Uses --group-by host,tags to match the backup command's grouping.
 func (c *Client) Forget(ctx context.Context, repo string, policy RetentionPolicy) error {
+	args := forgetArgs(repo, policy)
+
+	var stderr bytes.Buffer
+	cmd := c.command(ctx, args...)
+	cmd.Stdout = io.Discard
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("restic forget: %w\n%s", err, stderr.String())
+	}
+	return nil
+}
+
+func forgetArgs(repo string, policy RetentionPolicy) []string {
 	args := []string{"forget", "-r", repo, "--json", "--group-by", "host,tags"}
 	if policy.KeepDaily > 0 {
 		args = append(args, "--keep-daily", fmt.Sprintf("%d", policy.KeepDaily))
@@ -179,23 +197,17 @@ func (c *Client) Forget(ctx context.Context, repo string, policy RetentionPolicy
 	if policy.KeepWithin != "" {
 		args = append(args, "--keep-within", policy.KeepWithin)
 	}
-
-	cmd := c.command(ctx, args...)
-	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("restic forget: %w", err)
-	}
-	return nil
+	return args
 }
 
 // Prune removes unreferenced data from the repository after forget.
 func (c *Client) Prune(ctx context.Context, repo string) error {
+	var stderr bytes.Buffer
 	cmd := c.command(ctx, "prune", "-r", repo)
 	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("restic prune: %w", err)
+		return fmt.Errorf("restic prune: %w\n%s", err, stderr.String())
 	}
 	return nil
 }
@@ -203,11 +215,12 @@ func (c *Client) Prune(ctx context.Context, repo string) error {
 // Snapshots lists all snapshots in the repository.
 func (c *Client) Snapshots(ctx context.Context, repo string) ([]Snapshot, error) {
 	var buf bytes.Buffer
+	var stderr bytes.Buffer
 	cmd := c.command(ctx, "snapshots", "-r", repo, "--json")
 	cmd.Stdout = &buf
-	cmd.Stderr = io.Discard
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("restic snapshots: %w", err)
+		return nil, fmt.Errorf("restic snapshots: %w\n%s", err, stderr.String())
 	}
 	return ParseSnapshots(&buf)
 }
@@ -215,22 +228,24 @@ func (c *Client) Snapshots(ctx context.Context, repo string) ([]Snapshot, error)
 // Stats returns statistics for the repository.
 func (c *Client) Stats(ctx context.Context, repo string) (*Stats, error) {
 	var buf bytes.Buffer
+	var stderr bytes.Buffer
 	cmd := c.command(ctx, "stats", "-r", repo, "--json")
 	cmd.Stdout = &buf
-	cmd.Stderr = io.Discard
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("restic stats: %w", err)
+		return nil, fmt.Errorf("restic stats: %w\n%s", err, stderr.String())
 	}
 	return ParseStats(&buf)
 }
 
 // Restore restores a snapshot to the given target path.
 func (c *Client) Restore(ctx context.Context, repo, snapshotID, targetPath string) error {
+	var stderr bytes.Buffer
 	cmd := c.command(ctx, "restore", snapshotID, "-r", repo, "--target", targetPath)
 	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("restic restore: %w", err)
+		return fmt.Errorf("restic restore: %w\n%s", err, stderr.String())
 	}
 	return nil
 }
