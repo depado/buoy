@@ -52,11 +52,6 @@ func serviceDeps(ctrs []*docker.Container) map[string][]depInfo {
 	return deps
 }
 
-// depConditions returns the full dependency list for a service.
-func depConditions(ctrs []*docker.Container, serviceName string) []depInfo {
-	return serviceDeps(ctrs)[serviceName]
-}
-
 // depConditionsFrom looks up the dependency list for a service from a
 // pre-computed dependency map. Prefer this over depConditions when the
 // caller already has the deps map from serviceDeps to avoid redundant

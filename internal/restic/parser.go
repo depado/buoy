@@ -75,11 +75,4 @@ func ParseStats(r io.Reader) (*Stats, error) {
 	return &stats, nil
 }
 
-// ParseInit decodes the JSON output from "restic init --json".
-func ParseInit(r io.Reader) (*InitResult, error) {
-	var result InitResult
-	if err := json.NewDecoder(r).Decode(&result); err != nil {
-		return nil, fmt.Errorf("parse init: %w", err)
-	}
-	return &result, nil
-}
+

@@ -44,12 +44,6 @@ type ExitError struct {
 	Message     string `json:"message"`
 }
 
-// InitResult is returned when a restic repository is successfully initialized.
-type InitResult struct {
-	ID         string `json:"id"`
-	Repository string `json:"repository"`
-}
-
 // Snapshot represents a restic snapshot.
 type Snapshot struct {
 	ID       string           `json:"id"`

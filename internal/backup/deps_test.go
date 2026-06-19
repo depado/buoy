@@ -94,25 +94,6 @@ func TestServiceDeps(t *testing.T) {
 	}
 }
 
-func TestDepConditions(t *testing.T) {
-	ctrs := []*docker.Container{
-		makeCtr("web", "proj", "db:service_healthy,redis"),
-	}
-	got := depConditions(ctrs, "web")
-	want := []depInfo{
-		{Name: "db", Condition: "service_healthy"},
-		{Name: "redis", Condition: "service_started"},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v, want %v", got, want)
-	}
-
-	got = depConditions(ctrs, "nonexistent")
-	if got != nil {
-		t.Errorf("expected nil for nonexistent service, got %v", got)
-	}
-}
-
 func TestTopologicalSort(t *testing.T) {
 	tests := []struct {
 		name string

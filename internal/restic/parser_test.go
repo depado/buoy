@@ -57,20 +57,6 @@ func TestParseStats(t *testing.T) {
 	}
 }
 
-func TestParseInit(t *testing.T) {
-	input := `{"id":"repo-id","repository":"/backup/repo"}`
-	result, err := ParseInit(strings.NewReader(input))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.ID != "repo-id" {
-		t.Errorf("expected ID 'repo-id', got %q", result.ID)
-	}
-	if result.Repository != "/backup/repo" {
-		t.Errorf("expected repository '/backup/repo', got %q", result.Repository)
-	}
-}
-
 func TestParseBackupStream_Summary(t *testing.T) {
 	lines := `{"message_type":"summary","files_new":5,"files_changed":0,"files_unmodified":0,"dirs_new":1,"dirs_changed":0,"dirs_unmodified":0,"data_blobs":1,"tree_blobs":1,"data_added":1024,"total_files_processed":5,"total_bytes_processed":2048,"total_duration":1.5,"snapshot_id":"snap1"}
 `
