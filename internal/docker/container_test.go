@@ -81,11 +81,27 @@ func TestParseRetention(t *testing.T) {
 			labels: map[string]string{"buoy.retention": "keep-within: 7d  , keep-daily : 5"},
 			want:   restic.RetentionPolicy{KeepDaily: 5, KeepWithin: "7d"},
 		},
+		{
+			name:   "keep-last",
+			labels: map[string]string{"buoy.retention": "keep-last:10"},
+			want:   restic.RetentionPolicy{KeepLast: 10},
+		},
+		{
+			name:   "keep-hourly",
+			labels: map[string]string{"buoy.retention": "keep-hourly:24"},
+			want:   restic.RetentionPolicy{KeepHourly: 24},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rc := &restic.RetentionPolicy{}
 			parseRetention(tt.labels, tt.defaultRetention, rc, nil)
+			if rc.KeepLast != tt.want.KeepLast {
+				t.Errorf("KeepLast: got %d, want %d", rc.KeepLast, tt.want.KeepLast)
+			}
+			if rc.KeepHourly != tt.want.KeepHourly {
+				t.Errorf("KeepHourly: got %d, want %d", rc.KeepHourly, tt.want.KeepHourly)
+			}
 			if rc.KeepDaily != tt.want.KeepDaily {
 				t.Errorf("KeepDaily: got %d, want %d", rc.KeepDaily, tt.want.KeepDaily)
 			}
@@ -343,7 +359,7 @@ func TestParseBackupConfig(t *testing.T) {
 				"buoy.pre-backup-cmd":     "pg_dump > /backup/dump.sql",
 				"buoy.post-backup-exec":   "echo done",
 			},
-			defaultRetention: "keep-daily:7",
+			defaultRetention: "keep-within:7d,keep-daily:7,keep-weekly:4,keep-monthly:6,keep-yearly:3",
 			want: BackupConfig{
 				Enabled:         true,
 				Schedule:        "@daily",

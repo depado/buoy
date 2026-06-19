@@ -21,6 +21,18 @@ func TestForgetArgs(t *testing.T) {
 			want:   []string{"forget", "-r", "/backup/repo", "--json", "--group-by", "host,tags"},
 		},
 		{
+			name:   "keep-last only",
+			repo:   "/backup/repo",
+			policy: RetentionPolicy{KeepLast: 10},
+			want:   []string{"forget", "-r", "/backup/repo", "--json", "--group-by", "host,tags", "--keep-last", "10"},
+		},
+		{
+			name:   "keep-hourly only",
+			repo:   "/backup/repo",
+			policy: RetentionPolicy{KeepHourly: 24},
+			want:   []string{"forget", "-r", "/backup/repo", "--json", "--group-by", "host,tags", "--keep-hourly", "24"},
+		},
+		{
 			name:   "keep-daily only",
 			repo:   "/backup/repo",
 			policy: RetentionPolicy{KeepDaily: 7},
@@ -29,9 +41,9 @@ func TestForgetArgs(t *testing.T) {
 		{
 			name:   "all keep flags",
 			repo:   "/backup/repo",
-			policy: RetentionPolicy{KeepDaily: 30, KeepWeekly: 4, KeepMonthly: 12, KeepYearly: 2},
+			policy: RetentionPolicy{KeepLast: 10, KeepHourly: 24, KeepDaily: 30, KeepWeekly: 4, KeepMonthly: 12, KeepYearly: 2},
 			want: []string{"forget", "-r", "/backup/repo", "--json", "--group-by", "host,tags",
-				"--keep-daily", "30", "--keep-weekly", "4", "--keep-monthly", "12", "--keep-yearly", "2"},
+				"--keep-last", "10", "--keep-hourly", "24", "--keep-daily", "30", "--keep-weekly", "4", "--keep-monthly", "12", "--keep-yearly", "2"},
 		},
 		{
 			name:   "keep-within only",

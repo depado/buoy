@@ -453,6 +453,12 @@ func (r *Runner) applyRetention(ctx context.Context, ctr *docker.Container, cfg 
 		return
 	}
 
+	l.Debug("applying retention", "policy", cfg.Retention, "repos", len(repos))
+	start := time.Now()
+	defer func() {
+		l.Info("retention complete", slog.Duration("duration", time.Since(start)))
+	}()
+
 	policy := cfg.Retention
 
 	for _, repo := range repos {

@@ -178,6 +178,10 @@ func parseRetention(labels map[string]string, defaultRetention string, rc *resti
 			continue
 		}
 		switch strings.TrimSpace(kv[0]) {
+		case "keep-last":
+			rc.KeepLast = val
+		case "keep-hourly":
+			rc.KeepHourly = val
 		case "keep-daily":
 			rc.KeepDaily = val
 		case "keep-weekly":

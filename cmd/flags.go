@@ -16,7 +16,7 @@ func addLoggerFlags(c *cobra.Command) {
 func addDaemonFlags(c *cobra.Command) {
 	c.PersistentFlags().Int("daemon.concurrency", 2, "max number of concurrent backups")
 	c.PersistentFlags().String("daemon.default_schedule", "", "default cron schedule for containers without buoy.schedule label")
-	c.PersistentFlags().String("daemon.default_retention", "keep-daily:7", "default retention policy for containers without buoy.retention label")
+	c.PersistentFlags().String("daemon.default_retention", "keep-within:7d,keep-daily:7,keep-weekly:4,keep-monthly:6,keep-yearly:3", "default retention policy for containers without buoy.retention label")
 	c.PersistentFlags().String("daemon.resync_interval", "5m", "interval for periodic label resync (e.g., 5m, 1h, 0 to disable)")
 	c.PersistentFlags().String("daemon.exec_timeout", "5m", "max time for docker exec hooks (e.g., 5m, 10m)")
 	c.PersistentFlags().String("daemon.health_wait_timeout", "5m", "max time to wait for container health/dependency satisfaction (e.g., 5m)")

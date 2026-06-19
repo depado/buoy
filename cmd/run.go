@@ -63,7 +63,7 @@ var runCmd = &cobra.Command{
 			return fmt.Errorf("restic binary not found: %s", resticBinary(conf))
 		}
 
-	resticClient := restic.New(resticBinary(conf), conf.Restic.Password, conf.Restic.Compression)
+		resticClient := restic.New(resticBinary(conf), conf.Restic.Password, conf.Restic.Compression)
 		hookExec := hook.New(dockerClient)
 		notifier, err := notify.New(conf.Notify.Urls, notify.ParseLevel(conf.Notify.Level), logger)
 		if err != nil {

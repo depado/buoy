@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -17,14 +18,11 @@ type Scheduler struct {
 	docker           *docker.Client
 	backup           *backup.Runner
 	sem              chan struct{}
-	mu               sync.Mutex
-	running          sync.Map
-	entries          sync.Map
-	groups           map[string][]*docker.Container
-	cronIDs          map[string]cron.EntryID
+	wg               sync.WaitGroup
+	registry         *containerRegistry
 	stacks           map[string]*stackQueue
 	stackMu          sync.Mutex
-	wg               sync.WaitGroup
+	active           atomic.Int64
 	logger           *slog.Logger
 	defaultSchedule  string
 	defaultRetention string
@@ -36,18 +34,19 @@ func New(d *docker.Client, r *backup.Runner, concurrency int, defaultSchedule, d
 		concurrency = 1
 	}
 
-	return &Scheduler{
-		cron: cron.New(
-			cron.WithChain(
-				cron.Recover(cronLogger{logger}),
-				cron.SkipIfStillRunning(cronLogger{logger}),
-			),
+	c := cron.New(
+		cron.WithChain(
+			cron.Recover(cronLogger{logger}),
+			cron.SkipIfStillRunning(cronLogger{logger}),
 		),
+	)
+
+	return &Scheduler{
+		cron:             c,
 		docker:           d,
 		backup:           r,
 		sem:              make(chan struct{}, concurrency),
-		groups:           make(map[string][]*docker.Container),
-		cronIDs:          make(map[string]cron.EntryID),
+		registry:         newContainerRegistry(c, logger),
 		stacks:           make(map[string]*stackQueue),
 		logger:           logger,
 		defaultSchedule:  defaultSchedule,
@@ -79,75 +78,19 @@ func (s *Scheduler) AddContainer(ctr *docker.Container) error {
 	}
 
 	key := scheduleGroupKey(ctr.ComposeProject, cfg.Schedule)
+	project := ctr.ComposeProject
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, loaded := s.entries.Load(ctr.ID); loaded {
-		return nil
-	}
-
-	if _, exists := s.cronIDs[key]; !exists {
-		cid, err := s.cron.AddFunc(cfg.Schedule, func() {
-			s.runScheduleGroup(key, ctr.ComposeProject)
-		})
-		if err != nil {
-			return err
-		}
-		s.cronIDs[key] = cid
-	}
-
-	s.entries.Store(ctr.ID, key)
-	s.groups[key] = append(s.groups[key], ctr)
-	s.logger.Debug("scheduled container", append(ctr.LogAttrs(), "schedule", cfg.Schedule)...)
-	return nil
+	return s.registry.register(ctr, key, cfg.Schedule, func() {
+		s.runScheduleGroup(key, project)
+	})
 }
 
 func (s *Scheduler) RemoveContainer(containerID string) {
-	v, ok := s.entries.LoadAndDelete(containerID)
-	if !ok {
-		return
-	}
-	groupKey := v.(string)
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	ctrs := s.groups[groupKey]
-	for i, c := range ctrs {
-		if c.ID == containerID {
-			s.groups[groupKey] = append(ctrs[:i], ctrs[i+1:]...)
-			break
-		}
-	}
-
-	if len(s.groups[groupKey]) == 0 {
-		delete(s.groups, groupKey)
-		if cid, ok := s.cronIDs[groupKey]; ok {
-			s.cron.Remove(cid)
-			delete(s.cronIDs, groupKey)
-		}
-	}
+	s.registry.unregister(containerID)
 }
 
 func (s *Scheduler) Running() bool {
-	var active bool
-	s.running.Range(func(_, _ any) bool { active = true; return false })
-	if active {
-		return true
-	}
-	s.stackMu.Lock()
-	for _, q := range s.stacks {
-		q.mu.Lock()
-		if q.active {
-			q.mu.Unlock()
-			s.stackMu.Unlock()
-			return true
-		}
-		q.mu.Unlock()
-	}
-	s.stackMu.Unlock()
-	return false
+	return s.active.Load() > 0
 }
 
 func (s *Scheduler) ScheduleCheck(schedule string) error {
@@ -155,14 +98,8 @@ func (s *Scheduler) ScheduleCheck(schedule string) error {
 		return nil
 	}
 	_, err := s.cron.AddFunc(schedule, func() {
+		s.active.Add(1)
 		s.wg.Add(1)
-		defer s.wg.Done()
-
-		for s.Running() {
-			s.logger.Debug("periodic check waiting for backups to complete")
-			time.Sleep(500 * time.Millisecond)
-		}
-
 		for i := 0; i < cap(s.sem); i++ {
 			s.sem <- struct{}{}
 		}
@@ -171,6 +108,9 @@ func (s *Scheduler) ScheduleCheck(schedule string) error {
 				<-s.sem
 			}
 		}()
+		defer s.active.Add(-1)
+		defer s.wg.Done()
+
 		s.logger.Info("running periodic restic check")
 		ctx, cancel := context.WithTimeout(context.Background(), s.backupTimeout)
 		defer cancel()
@@ -190,7 +130,7 @@ func (s *Scheduler) Resync(ctx context.Context) {
 	active := make(map[string]bool)
 	for _, ctr := range containers {
 		active[ctr.ID] = true
-		if _, ok := s.entries.Load(ctr.ID); !ok {
+		if !s.registry.has(ctr.ID) {
 			ctr := ctr
 			if err := s.AddContainer(&ctr); err != nil {
 				s.logger.Warn("resync: failed to add container", append(ctr.LogAttrs(), "error", err)...)
@@ -198,8 +138,7 @@ func (s *Scheduler) Resync(ctx context.Context) {
 		}
 	}
 
-	s.entries.Range(func(key, _ any) bool {
-		id := key.(string)
+	s.registry.forEachEntry(func(id, _ string) bool {
 		if !active[id] {
 			s.RemoveContainer(id)
 		}
@@ -208,27 +147,20 @@ func (s *Scheduler) Resync(ctx context.Context) {
 }
 
 func (s *Scheduler) runScheduleGroup(key, project string) {
-	s.mu.Lock()
-	ctrs := make([]*docker.Container, len(s.groups[key]))
-	copy(ctrs, s.groups[key])
-	s.mu.Unlock()
-
+	ctrs := s.registry.getGroup(key)
 	if len(ctrs) == 0 {
 		return
 	}
 
 	if project == "" {
 		for _, ctr := range ctrs {
-			if _, loaded := s.running.LoadOrStore(ctr.ID, true); loaded {
-				s.logger.Warn("backup already running, skipping", ctr.LogAttrs()...)
-				continue
-			}
+			s.active.Add(1)
 			s.wg.Add(1)
 			s.sem <- struct{}{}
 			go func(c *docker.Container) {
-				defer func() { <-s.sem }()
-				defer s.running.Delete(c.ID)
 				defer s.wg.Done()
+				defer func() { <-s.sem }()
+				defer s.active.Add(-1)
 				ctx, cancel := context.WithTimeout(context.Background(), s.backupTimeout)
 				defer cancel()
 				if err := s.backup.Run(ctx, c); err != nil {
@@ -243,9 +175,6 @@ func (s *Scheduler) runScheduleGroup(key, project string) {
 }
 
 func (s *Scheduler) enqueueBatch(project string, batch []*docker.Container) {
-	s.wg.Add(1)
-	defer s.wg.Done()
-
 	q := s.getStackQueue(project)
 
 	q.mu.Lock()
@@ -258,8 +187,19 @@ func (s *Scheduler) enqueueBatch(project string, batch []*docker.Container) {
 	q.active = true
 	q.mu.Unlock()
 
+	s.active.Add(1)
+	s.wg.Add(1)
 	s.sem <- struct{}{}
+
+	defer func() {
+		q.mu.Lock()
+		q.active = false
+		q.mu.Unlock()
+	}()
+
 	defer func() { <-s.sem }()
+	defer s.active.Add(-1)
+	defer s.wg.Done()
 
 	for {
 		q.mu.Lock()
@@ -268,14 +208,7 @@ func (s *Scheduler) enqueueBatch(project string, batch []*docker.Container) {
 		q.mu.Unlock()
 
 		if len(batch) == 0 {
-			q.mu.Lock()
-			if len(q.pending) == 0 {
-				q.active = false
-				q.mu.Unlock()
-				return
-			}
-			q.mu.Unlock()
-			continue
+			return
 		}
 
 		names := make([]string, len(batch))
@@ -307,10 +240,6 @@ func (s *Scheduler) getStackQueue(project string) *stackQueue {
 	return q
 }
 
-func scheduleGroupKey(project, schedule string) string {
-	return project + "::" + schedule
-}
-
 type stackQueue struct {
 	mu      sync.Mutex
 	pending []*docker.Container
@@ -322,7 +251,7 @@ type cronLogger struct {
 }
 
 func (l cronLogger) Info(msg string, keysAndValues ...interface{}) {
-	l.Logger.Debug(msg, keysAndValues...)
+	l.Debug(msg, keysAndValues...)
 }
 
 func (l cronLogger) Error(err error, msg string, keysAndValues ...interface{}) {

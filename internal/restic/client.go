@@ -210,6 +210,12 @@ func forgetArgs(repo string, policy RetentionPolicy, hostname string) []string {
 	if hostname != "" {
 		args = append(args, "--host", hostname)
 	}
+	if policy.KeepLast > 0 {
+		args = append(args, "--keep-last", fmt.Sprintf("%d", policy.KeepLast))
+	}
+	if policy.KeepHourly > 0 {
+		args = append(args, "--keep-hourly", fmt.Sprintf("%d", policy.KeepHourly))
+	}
 	if policy.KeepDaily > 0 {
 		args = append(args, "--keep-daily", fmt.Sprintf("%d", policy.KeepDaily))
 	}

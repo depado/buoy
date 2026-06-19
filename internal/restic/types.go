@@ -95,6 +95,8 @@ type BackupOptions struct {
 
 // RetentionPolicy defines how many snapshots to keep for each time period.
 type RetentionPolicy struct {
+	KeepLast    int
+	KeepHourly  int
 	KeepDaily   int
 	KeepWeekly  int
 	KeepMonthly int
