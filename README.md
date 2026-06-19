@@ -191,6 +191,12 @@ restic:
   password: "${RESTIC_PASSWORD}"
   repos:
     - /backup
+
+notify:
+  urls:                             # shoutrrr notification URLs
+    - slack://tokenA/tokenB/tokenC
+    - discord://token@channel
+  level: error                      # none, error, all
 ```
 
 ### Environment variables
@@ -202,12 +208,14 @@ BUOY_RESTIC_PASSWORD=my-password
 BUOY_RESTIC_REPOS=/backup,s3:s3.amazonaws.com/my-bucket
 BUOY_DAEMON_CONCURRENCY=2
 BUOY_LOG_LEVEL=debug
+BUOY_NOTIFY_URLS=slack://tokenA/tokenB/tokenC
+BUOY_NOTIFY_LEVEL=error
 ```
 
 ### CLI flags
 
 ```bash
-buoy run --daemon.concurrency 2 --restic.password my-password --restic.repos /backup --restic.repos s3:s3.amazonaws.com/bucket --log.level debug
+buoy run --daemon.concurrency 2 --restic.password my-password --restic.repos /backup --restic.repos s3:s3.amazonaws.com/bucket --log.level debug --notify.urls slack://tokenA/tokenB/tokenC --notify.level error
 ```
 
 ### Password precedence
@@ -218,6 +226,32 @@ buoy run --daemon.concurrency 2 --restic.password my-password --restic.repos /ba
 4. `RESTIC_PASSWORD_COMMAND` environment variable (buoy executes this)
 
 The password is global — all per-container repos use the same one.
+
+### Notifications
+
+buoy can send failure notifications via [shoutrrr](https://github.com/nicholas-fedor/shoutrrr),
+supporting 50+ services including Slack, Discord, Telegram, email, and Gotify.
+Configure one or more shoutrrr URLs and set the notification level:
+
+- `error` — notify on backup failures only (default)
+- `all` — notify on all backup events
+- `none` — disable notifications (or omit config)
+
+Each URL encodes both the service and its credentials. Examples:
+
+| Service | URL format |
+|---------|-----------|
+| Slack | `slack://hook:tokenA-tokenB-tokenC@webhook` |
+| Discord | `discord://token@channel` |
+| Telegram | `telegram://token@telegram?chats=@channel` |
+| Gotify | `gotify://host:port/token` |
+| Email (SMTP) | `smtp://user:pass@host:port/?from=sender@example.com&to=recipient@example.com` |
+
+See [shoutrrr's documentation](https://containrrr.dev/shoutrrr/latest/services/overview/)
+for the full list of services and URL formats.
+
+Notifications are best-effort — a notification failure logs a warning but
+never blocks or fails a backup.
 
 ## Repository Layout
 
@@ -247,6 +281,8 @@ services:
     environment:
       - BUOY_RESTIC_PASSWORD=${RESTIC_PASSWORD:?required}
       - BUOY_RESTIC_REPOS=/backup
+      # - BUOY_NOTIFY_URLS=slack://tokenA/tokenB/tokenC
+      # - BUOY_NOTIFY_LEVEL=error
     labels:
 
     restart: unless-stopped
