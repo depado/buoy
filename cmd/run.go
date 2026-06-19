@@ -87,6 +87,14 @@ var runCmd = &cobra.Command{
 
 		events, errs := watcher.Watch(ctx)
 
+		if conf.Daemon.CheckSchedule != "" {
+			if err := sched.ScheduleCheck(conf.Daemon.CheckSchedule); err != nil {
+				logger.Warn("failed to schedule periodic check", "error", err)
+			} else {
+				logger.Info("scheduled periodic restic check", "schedule", conf.Daemon.CheckSchedule)
+			}
+		}
+
 		sched.Start()
 
 		var resyncTicker <-chan time.Time

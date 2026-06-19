@@ -18,6 +18,7 @@ func addDaemonFlags(c *cobra.Command) {
 	c.PersistentFlags().String("daemon.resync_interval", "5m", "interval for periodic label resync (e.g., 5m, 1h, 0 to disable)")
 	c.PersistentFlags().String("daemon.exec_timeout", "5m", "max time for docker exec hooks (e.g., 5m, 10m)")
 	c.PersistentFlags().String("daemon.health_wait_timeout", "5m", "max time to wait for container health/dependency satisfaction (e.g., 5m)")
+	c.PersistentFlags().String("daemon.check_schedule", "", "cron schedule for periodic restic check (empty = disabled, e.g., '@weekly')")
 	c.PersistentFlags().String("restic.password", "", "restic repository password")
 	c.PersistentFlags().StringSlice("restic.repos", nil, "restic repository URLs (can be repeated)")
 }

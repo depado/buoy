@@ -592,6 +592,38 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
+func (r *Runner) CheckKnownRepos(ctx context.Context) {
+	l := r.logger.With("component", "check")
+	containers, err := r.docker.ListBackupContainers(ctx)
+	if err != nil {
+		l.Error("check: failed to list containers", "error", err)
+		return
+	}
+
+	seen := make(map[string]bool)
+	for _, ctr := range containers {
+		cfg := r.parseConfig(ctr.Labels)
+		repos, err := r.resolveRepos(&ctr, cfg)
+		if err != nil {
+			l.Warn("check: failed to resolve repos", "container", ctr.Name, "error", err)
+			continue
+		}
+		for _, repo := range repos {
+			if seen[repo] {
+				continue
+			}
+			seen[repo] = true
+			if err := r.restic.Check(ctx, repo); err != nil {
+				l.Error("check: repository check failed", "repo", repo, "error", err)
+				r.notifier.SendBackupError("repository-check",
+					fmt.Sprintf("Check failed for repo %s: %s", repo, err.Error()))
+			} else {
+				l.Info("check: repository ok", "repo", repo)
+			}
+		}
+	}
+}
+
 func mapKeys(m map[string]bool) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {

@@ -118,6 +118,19 @@ func (s *Scheduler) RemoveContainer(containerID string) {
 	}
 }
 
+func (s *Scheduler) ScheduleCheck(schedule string) error {
+	if schedule == "" {
+		return nil
+	}
+	_, err := s.cron.AddFunc(schedule, func() {
+		s.logger.Info("running periodic restic check")
+		s.sem <- struct{}{}
+		defer func() { <-s.sem }()
+		s.backup.CheckKnownRepos(context.Background())
+	})
+	return err
+}
+
 func (s *Scheduler) Resync(ctx context.Context) {
 	containers, err := s.docker.ListBackupContainers(ctx)
 	if err != nil {
