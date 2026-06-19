@@ -148,6 +148,10 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
 	r.applyRetention(ctx, fresh, cfg, l)
 
 	l.Info("backup complete")
+	r.notifier.SendInfo(
+		fmt.Sprintf("buoy backup complete: %s", ctr.Name),
+		fmt.Sprintf("Backup completed for container %s", ctr.Name),
+	)
 	return nil
 }
 
@@ -277,6 +281,10 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 	}
 
 	l.Info("stack backup complete")
+	r.notifier.SendInfo(
+		fmt.Sprintf("buoy stack backup complete: %s", project),
+		fmt.Sprintf("Backup completed for project %s (%d services)", project, len(fresh)),
+	)
 	return nil
 }
 
