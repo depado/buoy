@@ -19,6 +19,12 @@ func addDaemonFlags(c *cobra.Command) {
 	c.PersistentFlags().StringSlice("restic.repos", nil, "restic repository URLs (can be repeated)")
 }
 
+// addNotifyFlags adds flags for the notification configuration.
+func addNotifyFlags(c *cobra.Command) {
+	c.PersistentFlags().StringSlice("notify.urls", nil, "shoutrrr notification URLs (can be repeated)")
+	c.PersistentFlags().String("notify.level", "error", "notification level: none, error, all")
+}
+
 // AddConfigurationFlag adds support to provide a configuration file on the
 // command line.
 func addConfigurationFlag(c *cobra.Command) {

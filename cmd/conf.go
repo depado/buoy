@@ -41,12 +41,19 @@ type ResticConf struct {
 	Repos       []string `mapstructure:"repos"`
 }
 
+// NotifyConf configures failure notifications via shoutrrr.
+type NotifyConf struct {
+	Urls  []string `mapstructure:"urls"`
+	Level string   `mapstructure:"level"`
+}
+
 // Conf is the top-level configuration for buoy.
 type Conf struct {
 	Log    LogConf    `mapstructure:"log"`
 	Daemon DaemonConf `mapstructure:"daemon"`
 	Docker DockerConf `mapstructure:"docker"`
 	Restic ResticConf `mapstructure:"restic"`
+	Notify NotifyConf `mapstructure:"notify"`
 }
 
 // NewLogger creates a structured logger from the given configuration.

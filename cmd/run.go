@@ -15,6 +15,7 @@ import (
 	"github.com/depado/buoy/internal/backup"
 	"github.com/depado/buoy/internal/docker"
 	"github.com/depado/buoy/internal/hook"
+	"github.com/depado/buoy/internal/notify"
 	"github.com/depado/buoy/internal/restic"
 	"github.com/depado/buoy/internal/scheduler"
 )
@@ -51,8 +52,12 @@ var runCmd = &cobra.Command{
 
 		resticClient := restic.New(resticBinary(conf), conf.Restic.Password)
 		hookExec := hook.New(dockerClient)
+		notifier, err := notify.New(conf.Notify.Urls, notify.ParseLevel(conf.Notify.Level), logger)
+		if err != nil {
+			return fmt.Errorf("notify: %w", err)
+		}
 		ignoredIDs := &sync.Map{}
-		runner := backup.New(dockerClient, resticClient, hookExec, conf.Restic.Repos, conf.Daemon.DefaultSchedule, conf.Daemon.DefaultRetention, ignoredIDs, logger)
+		runner := backup.New(dockerClient, resticClient, hookExec, conf.Restic.Repos, conf.Daemon.DefaultSchedule, conf.Daemon.DefaultRetention, ignoredIDs, notifier, logger)
 		sched := scheduler.New(dockerClient, runner, conf.Daemon.Concurrency, conf.Daemon.DefaultSchedule, conf.Daemon.DefaultRetention, logger)
 
 		containers, err := dockerClient.ListBackupContainers(context.Background())

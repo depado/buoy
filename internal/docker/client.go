@@ -128,7 +128,7 @@ func (c *Client) ContainerWait(ctx context.Context, id string, condition contain
 
 // ExecInContainer runs a command inside a container and returns its exit code.
 func (c *Client) ExecInContainer(ctx context.Context, containerID, command string) (int, error) {
-	cmd := strings.Fields(command)
+	cmd := []string{"/bin/sh", "-c", command}
 	execResp, err := c.api.ExecCreate(ctx, containerID, client.ExecCreateOptions{
 		AttachStdout: true,
 		AttachStderr: true,

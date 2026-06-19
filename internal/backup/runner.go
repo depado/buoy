@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 
 	"github.com/depado/buoy/internal/docker"
 	"github.com/depado/buoy/internal/hook"
+	"github.com/depado/buoy/internal/notify"
 	"github.com/depado/buoy/internal/restic"
 )
 
@@ -24,10 +26,11 @@ type Runner struct {
 	defaultSchedule  string
 	defaultRetention string
 	ignoredIDs       *sync.Map
+	notifier         *notify.Notifier
 	logger           *slog.Logger
 }
 
-func New(d *docker.Client, r *restic.Client, h *hook.Executor, repos []string, defaultSchedule, defaultRetention string, ignoredIDs *sync.Map, logger *slog.Logger) *Runner {
+func New(d *docker.Client, r *restic.Client, h *hook.Executor, repos []string, defaultSchedule, defaultRetention string, ignoredIDs *sync.Map, notifier *notify.Notifier, logger *slog.Logger) *Runner {
 	return &Runner{
 		docker:           d,
 		restic:           r,
@@ -36,6 +39,7 @@ func New(d *docker.Client, r *restic.Client, h *hook.Executor, repos []string, d
 		defaultSchedule:  defaultSchedule,
 		defaultRetention: defaultRetention,
 		ignoredIDs:       ignoredIDs,
+		notifier:         notifier,
 		logger:           logger,
 	}
 }
@@ -51,13 +55,42 @@ func (r *Runner) resolveRepos(ctr *docker.Container, cfg docker.BackupConfig) ([
 	}
 	repos := make([]string, len(bases))
 	for i, base := range bases {
-		abs, err := filepath.Abs(ctr.RepoPath(base))
-		if err != nil {
-			return nil, fmt.Errorf("repo path for base %q: %w", base, err)
+		path := ctr.RepoPath(base)
+		if isLocalPath(path) {
+			abs, err := filepath.Abs(path)
+			if err != nil {
+				return nil, fmt.Errorf("repo path for base %q: %w", base, err)
+			}
+			path = abs
 		}
-		repos[i] = abs
+		repos[i] = path
 	}
 	return repos, nil
+}
+
+// isLocalPath reports whether p is a local filesystem path rather than a
+// remote backend URL. Local paths are absolute (/..., ./..., ../...) or
+// have no colon-separated scheme prefix (s3:, b2:, sftp:, etc.).
+func isLocalPath(p string) bool {
+	if filepath.IsAbs(p) {
+		return true
+	}
+	if strings.HasPrefix(p, "./") || strings.HasPrefix(p, "../") {
+		return true
+	}
+	// Check for scheme colon: restic remote backends use <scheme>:<path>.
+	// Colon can also appear in Windows paths (C:\) but buoy targets Linux
+	// containers. s3:, b2:, sftp:, rest:, rclone:, gs:, azure: all match.
+	idx := strings.Index(p, ":")
+	if idx == -1 {
+		return true
+	}
+	// Has a colon — could be remote or Windows. Treat as remote unless
+	// it's clearly a Windows path (letter-colon-backslash).
+	if idx == 1 && len(p) > 2 && p[2] == '\\' {
+		return true // Windows absolute path e.g. C:\...
+	}
+	return false
 }
 
 func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
@@ -204,7 +237,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 		l.Warn("dependency cycle detected", "service", svc, "project", project)
 	})
 	for _, svc := range startOrder {
-		if err := r.waitForDeps(ctx, all, svc, l); err != nil {
+		if err := r.waitForDeps(ctx, deps, all, svc, l); err != nil {
 			l.Warn("failed waiting for dependencies", "service", svc, "error", err)
 		}
 		for _, ctr := range services[svc] {
@@ -362,10 +395,14 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slo
 			result, err := r.restic.Backup(ctx, repo, paths, opts)
 			if err != nil {
 				l.Error("backup failed", "repo", repo, "mount", source, "error", err)
+				r.notifier.SendBackupError(ctr.Name,
+					fmt.Sprintf("Backup failed for mount %s on repo %s: %s", source, repo, err.Error()))
 				continue
 			}
 			if result == nil {
 				l.Error("backup produced no summary", "repo", repo, "mount", source)
+				r.notifier.SendBackupError(ctr.Name,
+					fmt.Sprintf("Backup produced no summary for mount %s on repo %s", source, repo))
 				continue
 			}
 			l.Info("backup complete",
@@ -396,18 +433,21 @@ func (r *Runner) applyRetention(ctx context.Context, ctr *docker.Container, cfg 
 	for _, repo := range repos {
 		if err := r.restic.Forget(ctx, repo, policy); err != nil {
 			l.Warn("forget failed", "repo", repo, "error", err)
+			r.notifier.SendBackupError(ctr.Name,
+				fmt.Sprintf("Forget failed on repo %s: %s", repo, err.Error()))
 		}
 		if err := r.restic.Prune(ctx, repo); err != nil {
 			l.Warn("prune failed", "repo", repo, "error", err)
+			r.notifier.SendBackupError(ctr.Name,
+				fmt.Sprintf("Prune failed on repo %s: %s", repo, err.Error()))
 		}
 	}
 }
 
-func (r *Runner) waitForDeps(ctx context.Context, ctrs []*docker.Container, serviceName string, l *slog.Logger) error {
-	deps := depConditions(ctrs, serviceName)
+func (r *Runner) waitForDeps(ctx context.Context, deps map[string][]depInfo, ctrs []*docker.Container, serviceName string, l *slog.Logger) error {
 	svcMap := serviceContainers(ctrs)
 
-	for _, dep := range deps {
+	for _, dep := range depConditionsFrom(deps, serviceName) {
 		depCtrs := svcMap[dep.Name]
 		if len(depCtrs) == 0 {
 			continue

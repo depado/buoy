@@ -57,6 +57,14 @@ func depConditions(ctrs []*docker.Container, serviceName string) []depInfo {
 	return serviceDeps(ctrs)[serviceName]
 }
 
+// depConditionsFrom looks up the dependency list for a service from a
+// pre-computed dependency map. Prefer this over depConditions when the
+// caller already has the deps map from serviceDeps to avoid redundant
+// label parsing.
+func depConditionsFrom(deps map[string][]depInfo, serviceName string) []depInfo {
+	return deps[serviceName]
+}
+
 // topological returns service names sorted so that dependencies come first.
 func topological(deps map[string][]depInfo, warn func(string)) []string {
 	depNames := make(map[string][]string)
