@@ -183,7 +183,8 @@ daemon:
   resync_interval: "5m" # interval for label resync (0 to disable)
   exec_timeout: "5m" # max time for docker exec hooks
   health_wait_timeout: "5m" # max time to wait for container health
-  # check_schedule: "@weekly"       # cron for periodic restic check (unset = disabled)
+  backup_timeout: "1h" # max time for a complete backup cycle
+  check_schedule: "@weekly" # cron for periodic restic check (empty = disabled)
 
 docker:
   host: unix:///var/run/docker.sock
@@ -191,6 +192,7 @@ docker:
 restic:
   binary_path: restic
   password: "${RESTIC_PASSWORD}"
+  compression: auto
   repos:
     - /backup
 
@@ -207,11 +209,14 @@ All config keys can be set as `BUOY_<SECTION>_<KEY>`:
 
 ```bash
 BUOY_RESTIC_PASSWORD=my-password
+BUOY_RESTIC_COMPRESSION=auto
 BUOY_RESTIC_REPOS=/backup,s3:s3.amazonaws.com/my-bucket
 BUOY_DAEMON_CONCURRENCY=2
 BUOY_DAEMON_RESYNC_INTERVAL=5m
 BUOY_DAEMON_EXEC_TIMEOUT=5m
 BUOY_DAEMON_HEALTH_WAIT_TIMEOUT=5m
+BUOY_DAEMON_BACKUP_TIMEOUT=1h
+BUOY_DAEMON_CHECK_SCHEDULE=@weekly
 BUOY_LOG_LEVEL=debug
 BUOY_NOTIFY_URLS=slack://tokenA/tokenB/tokenC
 BUOY_NOTIFY_LEVEL=error
@@ -220,7 +225,7 @@ BUOY_NOTIFY_LEVEL=error
 ### CLI flags
 
 ```bash
-buoy run --daemon.concurrency 2 --daemon.resync_interval 5m --daemon.exec_timeout 5m --daemon.health_wait_timeout 5m --restic.password my-password --restic.repos /backup --restic.repos s3:s3.amazonaws.com/bucket --log.level debug --notify.urls slack://tokenA/tokenB/tokenC --notify.level error
+buoy run --daemon.concurrency 2 --daemon.resync_interval 5m --daemon.exec_timeout 5m --daemon.health_wait_timeout 5m --daemon.backup_timeout 1h --daemon.check_schedule @weekly --restic.password my-password --restic.compression auto --restic.repos /backup --restic.repos s3:s3.amazonaws.com/bucket --log.level debug --notify.urls slack://tokenA/tokenB/tokenC --notify.level error
 ```
 
 ### Password precedence
@@ -260,6 +265,26 @@ for the full list of services and URL formats.
 
 Notifications are best-effort — a notification failure logs a warning but
 never blocks or fails a backup.
+
+### Periodic Repository Check
+
+buoy can periodically verify the structural integrity of all restic repositories
+with `restic check`. This is a lightweight verification that reads the repository
+index and ensures all pack files are referenced correctly.
+
+Configure via `daemon.check_schedule` (default: `@weekly`). Set to `""` to
+disable.
+
+```yaml
+daemon:
+  check_schedule: "@weekly"
+```
+
+When the check runs, buoy iterates over all known repositories (deduplicated
+across containers) and runs `restic check` on each. Failures are logged and
+optionally trigger notifications. This is a structural check only — it does
+not read pack file data (use the restic CLI directly for `restic check --read-data`
+for a full data integrity check).
 
 ## Repository Layout
 
