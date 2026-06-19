@@ -28,7 +28,8 @@ func New(binPath, password string) *Client {
 // Init initializes a new restic repository at the given location.
 func (c *Client) Init(ctx context.Context, repo string) error {
 	var stderr bytes.Buffer
-	cmd := c.command(ctx, "init", "-r", repo)
+	cmd, cleanup := c.command(ctx, "init", "-r", repo)
+	defer cleanup()
 	cmd.Stdout = io.Discard
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -41,7 +42,8 @@ func (c *Client) Init(ctx context.Context, repo string) error {
 // Returns false with no error if the repository does not exist (exit code 10).
 func (c *Client) RepoExists(ctx context.Context, repo string) (bool, error) {
 	var stderr bytes.Buffer
-	cmd := c.command(ctx, "cat", "config", "-r", repo)
+	cmd, cleanup := c.command(ctx, "cat", "config", "-r", repo)
+	defer cleanup()
 	cmd.Stdout = io.Discard
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -56,7 +58,8 @@ func (c *Client) RepoExists(ctx context.Context, repo string) (bool, error) {
 // Unlock removes stale locks from a repository. Safe to call before every backup.
 func (c *Client) Unlock(ctx context.Context, repo string) error {
 	var stderr bytes.Buffer
-	cmd := c.command(ctx, "unlock", "-r", repo)
+	cmd, cleanup := c.command(ctx, "unlock", "-r", repo)
+	defer cleanup()
 	cmd.Stdout = io.Discard
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -102,7 +105,8 @@ func (c *Client) Backup(ctx context.Context, repo string, paths []string, opts B
 		args = append(args, paths...)
 	}
 
-	cmd := c.command(ctx, args...)
+	cmd, cleanup := c.command(ctx, args...)
+	defer cleanup()
 	if opts.WorkDir != "" {
 		cmd.Dir = opts.WorkDir
 	}
@@ -171,7 +175,8 @@ func (c *Client) Forget(ctx context.Context, repo string, policy RetentionPolicy
 	args := forgetArgs(repo, policy)
 
 	var stderr bytes.Buffer
-	cmd := c.command(ctx, args...)
+	cmd, cleanup := c.command(ctx, args...)
+	defer cleanup()
 	cmd.Stdout = io.Discard
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -203,7 +208,8 @@ func forgetArgs(repo string, policy RetentionPolicy) []string {
 // Prune removes unreferenced data from the repository after forget.
 func (c *Client) Prune(ctx context.Context, repo string) error {
 	var stderr bytes.Buffer
-	cmd := c.command(ctx, "prune", "-r", repo)
+	cmd, cleanup := c.command(ctx, "prune", "-r", repo)
+	defer cleanup()
 	cmd.Stdout = io.Discard
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -217,7 +223,8 @@ func (c *Client) Prune(ctx context.Context, repo string) error {
 // For data integrity verification, use CheckReadData.
 func (c *Client) Check(ctx context.Context, repo string) error {
 	var stderr bytes.Buffer
-	cmd := c.command(ctx, "check", "-r", repo)
+	cmd, cleanup := c.command(ctx, "check", "-r", repo)
+	defer cleanup()
 	cmd.Stdout = io.Discard
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -231,7 +238,8 @@ func (c *Client) Check(ctx context.Context, repo string) error {
 // confidence in repository health.
 func (c *Client) CheckReadData(ctx context.Context, repo string) error {
 	var stderr bytes.Buffer
-	cmd := c.command(ctx, "check", "--read-data", "-r", repo)
+	cmd, cleanup := c.command(ctx, "check", "--read-data", "-r", repo)
+	defer cleanup()
 	cmd.Stdout = io.Discard
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -244,7 +252,8 @@ func (c *Client) CheckReadData(ctx context.Context, repo string) error {
 func (c *Client) Snapshots(ctx context.Context, repo string) ([]Snapshot, error) {
 	var buf bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := c.command(ctx, "snapshots", "-r", repo, "--json")
+	cmd, cleanup := c.command(ctx, "snapshots", "-r", repo, "--json")
+	defer cleanup()
 	cmd.Stdout = &buf
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -257,7 +266,8 @@ func (c *Client) Snapshots(ctx context.Context, repo string) ([]Snapshot, error)
 func (c *Client) Stats(ctx context.Context, repo string) (*Stats, error) {
 	var buf bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := c.command(ctx, "stats", "-r", repo, "--json")
+	cmd, cleanup := c.command(ctx, "stats", "-r", repo, "--json")
+	defer cleanup()
 	cmd.Stdout = &buf
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -269,7 +279,8 @@ func (c *Client) Stats(ctx context.Context, repo string) (*Stats, error) {
 // Restore restores a snapshot to the given target path.
 func (c *Client) Restore(ctx context.Context, repo, snapshotID, targetPath string) error {
 	var stderr bytes.Buffer
-	cmd := c.command(ctx, "restore", snapshotID, "-r", repo, "--target", targetPath)
+	cmd, cleanup := c.command(ctx, "restore", snapshotID, "-r", repo, "--target", targetPath)
+	defer cleanup()
 	cmd.Stdout = io.Discard
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -278,12 +289,39 @@ func (c *Client) Restore(ctx context.Context, repo, snapshotID, targetPath strin
 	return nil
 }
 
-func (c *Client) command(ctx context.Context, args ...string) *exec.Cmd {
+func (c *Client) command(ctx context.Context, args ...string) (*exec.Cmd, func()) {
+	f, err := os.CreateTemp("", "buoy-password-*")
+	if err != nil {
+		cmd := exec.CommandContext(ctx, c.binPath, args...)
+		cmd.Env = append(os.Environ(),
+			"RESTIC_PASSWORD="+c.password,
+			"RESTIC_COMPRESSION=auto",
+			"RESTIC_PROGRESS_FPS=1",
+		)
+		return cmd, func() {}
+	}
+	if _, err := f.WriteString(c.password); err != nil {
+		f.Close()              //nolint:errcheck
+		os.Remove(f.Name())    //nolint:errcheck
+		cmd := exec.CommandContext(ctx, c.binPath, args...)
+		cmd.Env = append(os.Environ(),
+			"RESTIC_PASSWORD="+c.password,
+			"RESTIC_COMPRESSION=auto",
+			"RESTIC_PROGRESS_FPS=1",
+		)
+		return cmd, func() {}
+	}
+	f.Close() //nolint:errcheck
+
+	args = append([]string{"--password-file", f.Name()}, args...)
 	cmd := exec.CommandContext(ctx, c.binPath, args...)
 	cmd.Env = append(os.Environ(),
-		"RESTIC_PASSWORD="+c.password,
 		"RESTIC_COMPRESSION=auto",
 		"RESTIC_PROGRESS_FPS=1",
 	)
-	return cmd
+
+	cleanup := func() {
+		os.Remove(f.Name()) //nolint:errcheck
+	}
+	return cmd, cleanup
 }
