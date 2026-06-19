@@ -46,13 +46,11 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/lib/docker/volumes:/var/lib/docker/volumes:ro
-      - /srv/data:/srv/data:ro  # bind mounts you want backed up
+      - /srv/data:/srv/data:ro # bind mounts you want backed up
     environment:
       - BUOY_RESTIC_PASSWORD=your-secure-password
       - BUOY_RESTIC_REPOS=/backup
       - BUOY_DAEMON_CONCURRENCY=2
-    labels:
-
     restart: unless-stopped
 ```
 
@@ -85,25 +83,25 @@ Every container in a compose stack must have its own `buoy.schedule`. When sched
 
 ## Label Reference
 
-| Label | Default | Description |
-|-------|---------|-------------|
-| `buoy.enabled` | — | Set to `"true"` to enable backup (required) |
-| `buoy.schedule` | Global `default_schedule` | Cron expression. Every container in a compose stack needs one. Falls back to global default. |
-| `buoy.repos` | Global `repos` | Comma-separated repo URLs, overrides the global list |
-| `buoy.retention` | Global `default_retention` | Retention rules. Falls back to global default. Final fallback: `keep-daily:7`. |
-| `buoy.stop-before-backup` | `"false"` | Stop the container before backing up. Defaults to `false` — opt-in to container stops. |
-| `buoy.stop-timeout` | `"30s"` | Timeout for container stop |
-| `buoy.include-volumes` | — | Comma-separated volume names to back up (overrides exclude) |
-| `buoy.include-mounts` | — | Comma-separated source or destination paths to back up (overrides exclude) |
-| `buoy.exclude-volumes` | — | Comma-separated volume names to skip |
-| `buoy.exclude-mounts` | — | Comma-separated source or destination paths to skip |
-| `buoy.exclude-patterns` | — | Comma-separated restic exclude patterns (e.g., `"*.log,*.tmp"`) |
-| `buoy.files` | — | Comma-separated file patterns to back up (uses `--files-from`). When set, only matching files are backed up, not the whole mount. Supports globs (`*.sql`) and `!` negation. |
-| `buoy.tags` | — | Comma-separated restic snapshot tags |
-| `buoy.pre-backup-cmd` | — | Shell command to run on the host before backup |
-| `buoy.post-backup-cmd` | — | Shell command to run on the host after backup |
-| `buoy.pre-backup-exec` | — | Command to run inside the container before backup (docker exec) |
-| `buoy.post-backup-exec` | — | Command to run inside the container after backup (docker exec) |
+| Label                     | Default                    | Description                                                                                                                                                                  |
+| ------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `buoy.enabled`            | —                          | Set to `"true"` to enable backup (required)                                                                                                                                  |
+| `buoy.schedule`           | Global `default_schedule`  | Cron expression. Every container in a compose stack needs one. Falls back to global default.                                                                                 |
+| `buoy.repos`              | Global `repos`             | Comma-separated repo URLs, overrides the global list                                                                                                                         |
+| `buoy.retention`          | Global `default_retention` | Retention rules. Falls back to global default. Final fallback: `keep-daily:7`.                                                                                               |
+| `buoy.stop-before-backup` | `"false"`                  | Stop the container before backing up. Defaults to `false` — opt-in to container stops.                                                                                       |
+| `buoy.stop-timeout`       | `"30s"`                    | Timeout for container stop                                                                                                                                                   |
+| `buoy.include-volumes`    | —                          | Comma-separated volume names to back up (overrides exclude)                                                                                                                  |
+| `buoy.include-mounts`     | —                          | Comma-separated source or destination paths to back up (overrides exclude)                                                                                                   |
+| `buoy.exclude-volumes`    | —                          | Comma-separated volume names to skip                                                                                                                                         |
+| `buoy.exclude-mounts`     | —                          | Comma-separated source or destination paths to skip                                                                                                                          |
+| `buoy.exclude-patterns`   | —                          | Comma-separated restic exclude patterns (e.g., `"*.log,*.tmp"`)                                                                                                              |
+| `buoy.files`              | —                          | Comma-separated file patterns to back up (uses `--files-from`). When set, only matching files are backed up, not the whole mount. Supports globs (`*.sql`) and `!` negation. |
+| `buoy.tags`               | —                          | Comma-separated restic snapshot tags                                                                                                                                         |
+| `buoy.pre-backup-cmd`     | —                          | Shell command to run on the host before backup                                                                                                                               |
+| `buoy.post-backup-cmd`    | —                          | Shell command to run on the host after backup                                                                                                                                |
+| `buoy.pre-backup-exec`    | —                          | Command to run inside the container before backup (docker exec)                                                                                                              |
+| `buoy.post-backup-exec`   | —                          | Command to run inside the container after backup (docker exec)                                                                                                               |
 
 ### Schedule Format
 
@@ -115,13 +113,13 @@ Shorthands: `@yearly`, `@monthly`, `@weekly`, `@daily`, `@hourly`, `@every 1h30m
 
 Comma-separated `key:value` pairs. Supported keys:
 
-| Key | Restic Flag | Example |
-|-----|------------|---------|
-| `keep-daily` | `--keep-daily N` | `keep-daily:7` |
-| `keep-weekly` | `--keep-weekly N` | `keep-weekly:4` |
-| `keep-monthly` | `--keep-monthly N` | `keep-monthly:6` |
-| `keep-yearly` | `--keep-yearly N` | `keep-yearly:1` |
-| `keep-within` | `--keep-within DURATION` | `keep-within:30d` |
+| Key            | Restic Flag              | Example           |
+| -------------- | ------------------------ | ----------------- |
+| `keep-daily`   | `--keep-daily N`         | `keep-daily:7`    |
+| `keep-weekly`  | `--keep-weekly N`        | `keep-weekly:4`   |
+| `keep-monthly` | `--keep-monthly N`       | `keep-monthly:6`  |
+| `keep-yearly`  | `--keep-yearly N`        | `keep-yearly:1`   |
+| `keep-within`  | `--keep-within DURATION` | `keep-within:30d` |
 
 All keys are optional. Omitted keys are not passed to restic.
 
@@ -147,13 +145,13 @@ db:
 api:
   labels:
     buoy.enabled: "true"
-    buoy.schedule: "0 3 * * *"     # same schedule → batched
+    buoy.schedule: "0 3 * * *" # same schedule → batched
     buoy.stop-before-backup: "false"
 
 cache:
   labels:
     buoy.enabled: "true"
-    buoy.schedule: "0 3 * * *"     # same schedule → batched
+    buoy.schedule: "0 3 * * *" # same schedule → batched
     buoy.stop-before-backup: "false"
 ```
 
@@ -180,11 +178,11 @@ log:
 
 daemon:
   concurrency: 2
-  default_schedule: ""              # global fallback for buoy.schedule
+  default_schedule: "" # global fallback for buoy.schedule
   default_retention: "keep-daily:7" # global fallback for buoy.retention
-  resync_interval: "5m"             # interval for label resync (0 to disable)
-  exec_timeout: "5m"                # max time for docker exec hooks
-  health_wait_timeout: "5m"         # max time to wait for container health
+  resync_interval: "5m" # interval for label resync (0 to disable)
+  exec_timeout: "5m" # max time for docker exec hooks
+  health_wait_timeout: "5m" # max time to wait for container health
   # check_schedule: "@weekly"       # cron for periodic restic check (unset = disabled)
 
 docker:
@@ -197,10 +195,10 @@ restic:
     - /backup
 
 notify:
-  urls:                             # shoutrrr notification URLs
+  urls: # shoutrrr notification URLs
     - slack://tokenA/tokenB/tokenC
     - discord://token@channel
-  level: error                      # none, error, all
+  level: error # none, error, all
 ```
 
 ### Environment variables
@@ -249,12 +247,12 @@ Configure one or more shoutrrr URLs and set the notification level:
 
 Each URL encodes both the service and its credentials. Examples:
 
-| Service | URL format |
-|---------|-----------|
-| Slack | `slack://hook:tokenA-tokenB-tokenC@webhook` |
-| Discord | `discord://token@channel` |
-| Telegram | `telegram://token@telegram?chats=@channel` |
-| Gotify | `gotify://host:port/token` |
+| Service      | URL format                                                                     |
+| ------------ | ------------------------------------------------------------------------------ |
+| Slack        | `slack://hook:tokenA-tokenB-tokenC@webhook`                                    |
+| Discord      | `discord://token@channel`                                                      |
+| Telegram     | `telegram://token@telegram?chats=@channel`                                     |
+| Gotify       | `gotify://host:port/token`                                                     |
 | Email (SMTP) | `smtp://user:pass@host:port/?from=sender@example.com&to=recipient@example.com` |
 
 See [shoutrrr's documentation](https://containrrr.dev/shoutrrr/latest/services/overview/)
@@ -287,7 +285,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/lib/docker/volumes:/var/lib/docker/volumes:ro
-      - /srv/app-data:/srv/app-data:ro  # each bind mount explicitly
+      - /srv/app-data:/srv/app-data:ro # each bind mount explicitly
     environment:
       - BUOY_RESTIC_PASSWORD=${RESTIC_PASSWORD:?required}
       - BUOY_RESTIC_REPOS=/backup
@@ -353,9 +351,9 @@ Configure one or more repos for 3-2-1 backup strategy. Each container backs up t
 ```yaml
 restic:
   repos:
-    - /backup                          # local copy
-    - s3:s3.amazonaws.com/my-bucket    # offsite copy
-    - b2:my-bucket:/buoy               # different media
+    - /backup # local copy
+    - s3:s3.amazonaws.com/my-bucket # offsite copy
+    - b2:my-bucket:/buoy # different media
 ```
 
 ## Development

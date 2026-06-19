@@ -24,6 +24,7 @@ type Scheduler struct {
 	cronIDs          map[string]cron.EntryID
 	stacks           map[string]*stackQueue
 	stackMu          sync.Mutex
+	wg               sync.WaitGroup
 	logger           *slog.Logger
 	defaultSchedule  string
 	defaultRetention string
@@ -60,7 +61,14 @@ func (s *Scheduler) Start() {
 }
 
 func (s *Scheduler) Stop() context.Context {
-	return s.cron.Stop()
+	cronDone := s.cron.Stop()
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-cronDone.Done()
+		s.wg.Wait()
+		cancel()
+	}()
+	return ctx
 }
 
 func (s *Scheduler) AddContainer(ctr *docker.Container) error {
@@ -122,14 +130,48 @@ func (s *Scheduler) RemoveContainer(containerID string) {
 	}
 }
 
+func (s *Scheduler) Running() bool {
+	var active bool
+	s.running.Range(func(_, _ any) bool { active = true; return false })
+	if active {
+		return true
+	}
+	s.stackMu.Lock()
+	for _, q := range s.stacks {
+		q.mu.Lock()
+		if q.active {
+			q.mu.Unlock()
+			s.stackMu.Unlock()
+			return true
+		}
+		q.mu.Unlock()
+	}
+	s.stackMu.Unlock()
+	return false
+}
+
 func (s *Scheduler) ScheduleCheck(schedule string) error {
 	if schedule == "" {
 		return nil
 	}
 	_, err := s.cron.AddFunc(schedule, func() {
+		s.wg.Add(1)
+		defer s.wg.Done()
+
+		for s.Running() {
+			s.logger.Debug("periodic check waiting for backups to complete")
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		for i := 0; i < cap(s.sem); i++ {
+			s.sem <- struct{}{}
+		}
+		defer func() {
+			for i := 0; i < cap(s.sem); i++ {
+				<-s.sem
+			}
+		}()
 		s.logger.Info("running periodic restic check")
-		s.sem <- struct{}{}
-		defer func() { <-s.sem }()
 		ctx, cancel := context.WithTimeout(context.Background(), s.backupTimeout)
 		defer cancel()
 		s.backup.CheckKnownRepos(ctx)
@@ -181,10 +223,12 @@ func (s *Scheduler) runScheduleGroup(key, project string) {
 				s.logger.Warn("backup already running, skipping", ctr.LogAttrs()...)
 				continue
 			}
+			s.wg.Add(1)
 			s.sem <- struct{}{}
 			go func(c *docker.Container) {
 				defer func() { <-s.sem }()
 				defer s.running.Delete(c.ID)
+				defer s.wg.Done()
 				ctx, cancel := context.WithTimeout(context.Background(), s.backupTimeout)
 				defer cancel()
 				if err := s.backup.Run(ctx, c); err != nil {
@@ -199,6 +243,9 @@ func (s *Scheduler) runScheduleGroup(key, project string) {
 }
 
 func (s *Scheduler) enqueueBatch(project string, batch []*docker.Container) {
+	s.wg.Add(1)
+	defer s.wg.Done()
+
 	q := s.getStackQueue(project)
 
 	q.mu.Lock()
@@ -275,7 +322,7 @@ type cronLogger struct {
 }
 
 func (l cronLogger) Info(msg string, keysAndValues ...interface{}) {
-	l.Logger.Info(msg, keysAndValues...)
+	l.Logger.Debug(msg, keysAndValues...)
 }
 
 func (l cronLogger) Error(err error, msg string, keysAndValues ...interface{}) {

@@ -41,6 +41,18 @@ var runCmd = &cobra.Command{
 			return fmt.Errorf("restic.repos is required")
 		}
 
+		logger.Info("configuration",
+			"concurrency", conf.Daemon.Concurrency,
+			"binary", resticBinary(conf),
+			"repos", conf.Restic.Repos,
+			"compression", conf.Restic.Compression,
+			"default_schedule", conf.Daemon.DefaultSchedule,
+			"default_retention", conf.Daemon.DefaultRetention,
+			"resync_interval", conf.Daemon.ResyncInterval,
+			"check_schedule", conf.Daemon.CheckSchedule,
+			"notify_level", conf.Notify.Level,
+		)
+
 		dockerClient, err := docker.New(conf.Docker.Host)
 		if err != nil {
 			return err
@@ -51,19 +63,8 @@ var runCmd = &cobra.Command{
 			return fmt.Errorf("restic binary not found: %s", resticBinary(conf))
 		}
 
-		resticClient := restic.New(resticBinary(conf), conf.Restic.Password, conf.Restic.Compression)
+	resticClient := restic.New(resticBinary(conf), conf.Restic.Password, conf.Restic.Compression)
 		hookExec := hook.New(dockerClient)
-
-		testPath := conf.Restic.Repos[0] + "/buoy-password-check"
-		exists, err := resticClient.RepoExists(context.Background(), testPath)
-		if err != nil {
-			return fmt.Errorf("restic password validation failed (check repo %q): %w", testPath, err)
-		}
-		if exists {
-			logger.Debug("password validation passed", "repo", testPath)
-		} else {
-			logger.Debug("password validation skipped (repo not yet initialized)", "repo", testPath)
-		}
 		notifier, err := notify.New(conf.Notify.Urls, notify.ParseLevel(conf.Notify.Level), logger)
 		if err != nil {
 			return fmt.Errorf("notify: %w", err)
@@ -149,7 +150,11 @@ var runCmd = &cobra.Command{
 			case <-resyncTicker:
 				sched.Resync(ctx)
 			case sig := <-sigs:
-				logger.Info("received signal, shutting down", "signal", sig)
+				if sched.Running() {
+					logger.Warn("received signal, backup in progress — waiting for completion", "signal", sig)
+				} else {
+					logger.Info("received signal, shutting down", "signal", sig)
+				}
 				cancel()
 				done := sched.Stop()
 				<-done.Done()
