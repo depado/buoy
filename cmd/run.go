@@ -58,7 +58,11 @@ var runCmd = &cobra.Command{
 			return fmt.Errorf("notify: %w", err)
 		}
 		ignoredIDs := &sync.Map{}
-		runner := backup.New(dockerClient, resticClient, hookExec, conf.Restic.Repos, conf.Daemon.DefaultSchedule, conf.Daemon.DefaultRetention, ignoredIDs, notifier, logger)
+		runner := backup.New(dockerClient, resticClient, hookExec, conf.Restic.Repos,
+			conf.Daemon.DefaultSchedule, conf.Daemon.DefaultRetention, ignoredIDs,
+			notifier, logger,
+			parseDurationOrDefault(conf.Daemon.ExecTimeout, 5*time.Minute),
+			parseDurationOrDefault(conf.Daemon.HealthWaitTimeout, 5*time.Minute))
 		sched := scheduler.New(dockerClient, runner, conf.Daemon.Concurrency, conf.Daemon.DefaultSchedule, conf.Daemon.DefaultRetention, logger)
 
 		containers, err := dockerClient.ListBackupContainers(context.Background())
@@ -150,6 +154,17 @@ func countStacks(containers []docker.Container) int {
 		}
 	}
 	return len(stacks)
+}
+
+func parseDurationOrDefault(s string, defaultDuration time.Duration) time.Duration {
+	if s == "" {
+		return defaultDuration
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return defaultDuration
+	}
+	return d
 }
 
 func parseResyncInterval(s string) time.Duration {

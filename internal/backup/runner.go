@@ -19,28 +19,32 @@ import (
 )
 
 type Runner struct {
-	docker           *docker.Client
-	restic           *restic.Client
-	hook             *hook.Executor
-	repos            []string
-	defaultSchedule  string
-	defaultRetention string
-	ignoredIDs       *sync.Map
-	notifier         *notify.Notifier
-	logger           *slog.Logger
+	docker            *docker.Client
+	restic            *restic.Client
+	hook              *hook.Executor
+	repos             []string
+	defaultSchedule   string
+	defaultRetention  string
+	ignoredIDs        *sync.Map
+	notifier          *notify.Notifier
+	logger            *slog.Logger
+	execTimeout       time.Duration
+	healthWaitTimeout time.Duration
 }
 
-func New(d *docker.Client, r *restic.Client, h *hook.Executor, repos []string, defaultSchedule, defaultRetention string, ignoredIDs *sync.Map, notifier *notify.Notifier, logger *slog.Logger) *Runner {
+func New(d *docker.Client, r *restic.Client, h *hook.Executor, repos []string, defaultSchedule, defaultRetention string, ignoredIDs *sync.Map, notifier *notify.Notifier, logger *slog.Logger, execTimeout, healthWaitTimeout time.Duration) *Runner {
 	return &Runner{
-		docker:           d,
-		restic:           r,
-		hook:             h,
-		repos:            repos,
-		defaultSchedule:  defaultSchedule,
-		defaultRetention: defaultRetention,
-		ignoredIDs:       ignoredIDs,
-		notifier:         notifier,
-		logger:           logger,
+		docker:            d,
+		restic:            r,
+		hook:              h,
+		repos:             repos,
+		defaultSchedule:   defaultSchedule,
+		defaultRetention:  defaultRetention,
+		ignoredIDs:        ignoredIDs,
+		notifier:          notifier,
+		logger:            logger,
+		execTimeout:       execTimeout,
+		healthWaitTimeout: healthWaitTimeout,
 	}
 }
 
@@ -281,7 +285,9 @@ func (r *Runner) runPreHooks(ctx context.Context, ctr *docker.Container, cfg doc
 		}
 	}
 	if cfg.PreBackupExec != "" {
-		if err := r.hook.ExecInContainer(ctx, ctr.ID, cfg.PreBackupExec); err != nil {
+		execCtx, cancel := context.WithTimeout(ctx, r.execTimeout)
+		defer cancel()
+		if err := r.hook.ExecInContainer(execCtx, ctr.ID, cfg.PreBackupExec); err != nil {
 			l.Warn("pre-backup exec failed", "error", err)
 		}
 	}
@@ -289,7 +295,9 @@ func (r *Runner) runPreHooks(ctx context.Context, ctr *docker.Container, cfg doc
 
 func (r *Runner) runPostHooks(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) {
 	if cfg.PostBackupExec != "" {
-		if err := r.hook.ExecInContainer(ctx, ctr.ID, cfg.PostBackupExec); err != nil {
+		execCtx, cancel := context.WithTimeout(ctx, r.execTimeout)
+		defer cancel()
+		if err := r.hook.ExecInContainer(execCtx, ctr.ID, cfg.PostBackupExec); err != nil {
 			l.Warn("post-backup exec failed", "error", err)
 		}
 	}
@@ -468,6 +476,9 @@ func (r *Runner) waitForDeps(ctx context.Context, deps map[string][]depInfo, ctr
 }
 
 func (r *Runner) waitForCondition(ctx context.Context, ctr *docker.Container, condition string) error {
+	ctx, cancel := context.WithTimeout(ctx, r.healthWaitTimeout)
+	defer cancel()
+
 	check := func() (bool, error) {
 		fresh, err := r.docker.InspectContainer(ctx, ctr.ID)
 		if err != nil {
@@ -519,6 +530,9 @@ func (r *Runner) waitForCondition(ctx context.Context, ctr *docker.Container, co
 }
 
 func (r *Runner) waitRunning(ctx context.Context, ctr *docker.Container) {
+	ctx, cancel := context.WithTimeout(ctx, r.healthWaitTimeout)
+	defer cancel()
+
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 

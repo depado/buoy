@@ -22,10 +22,12 @@ type LogConf struct {
 
 // DaemonConf configures the buoy daemon.
 type DaemonConf struct {
-	Concurrency      int    `mapstructure:"concurrency"`
-	DefaultSchedule  string `mapstructure:"default_schedule"`
-	DefaultRetention string `mapstructure:"default_retention"`
-	ResyncInterval   string `mapstructure:"resync_interval"`
+	Concurrency       int    `mapstructure:"concurrency"`
+	DefaultSchedule   string `mapstructure:"default_schedule"`
+	DefaultRetention  string `mapstructure:"default_retention"`
+	ResyncInterval    string `mapstructure:"resync_interval"`
+	ExecTimeout       string `mapstructure:"exec_timeout"`
+	HealthWaitTimeout string `mapstructure:"health_wait_timeout"`
 }
 
 // DockerConf configures the Docker Engine connection.
