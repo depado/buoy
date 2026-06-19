@@ -98,7 +98,7 @@ var runCmd = &cobra.Command{
 		sched.Start()
 
 		var resyncTicker <-chan time.Time
-		if resyncInterval := parseResyncInterval(conf.Daemon.ResyncInterval); resyncInterval > 0 {
+		if resyncInterval := parseDurationOrDefault(conf.Daemon.ResyncInterval, 0); resyncInterval > 0 {
 			t := time.NewTicker(resyncInterval)
 			defer t.Stop()
 			resyncTicker = t.C
@@ -175,13 +175,3 @@ func parseDurationOrDefault(s string, defaultDuration time.Duration) time.Durati
 	return d
 }
 
-func parseResyncInterval(s string) time.Duration {
-	if s == "" || s == "0" {
-		return 0
-	}
-	d, err := time.ParseDuration(s)
-	if err != nil {
-		return 0
-	}
-	return d
-}
