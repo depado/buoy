@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/depado/buoy/internal/docker"
@@ -106,6 +107,7 @@ func topologicalSort(deps map[string][]string, warn func(string)) []string {
 		result = append(result, node)
 	}
 
+	sort.Strings(all)
 	for _, node := range all {
 		if !visited[node] {
 			visit(node)
