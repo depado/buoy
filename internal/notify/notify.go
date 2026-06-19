@@ -13,7 +13,7 @@ import (
 type Level int
 
 const (
-	LevelNone  Level = iota
+	LevelNone Level = iota
 	LevelError
 	LevelAll
 )

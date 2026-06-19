@@ -85,7 +85,7 @@ func TestParseRetention(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rc := &restic.RetentionPolicy{}
-			parseRetention(tt.labels, tt.defaultRetention, rc)
+			parseRetention(tt.labels, tt.defaultRetention, rc, nil)
 			if rc.KeepDaily != tt.want.KeepDaily {
 				t.Errorf("KeepDaily: got %d, want %d", rc.KeepDaily, tt.want.KeepDaily)
 			}
@@ -107,10 +107,10 @@ func TestParseRetention(t *testing.T) {
 
 func TestRepoPath(t *testing.T) {
 	tests := []struct {
-		name    string
-		ctr     Container
-		base    string
-		want    string
+		name string
+		ctr  Container
+		base string
+		want string
 	}{
 		{
 			name: "standalone container",
@@ -229,8 +229,8 @@ func TestParseBackupConfig(t *testing.T) {
 			},
 		},
 		{
-			name:   "no schedule, default set",
-			labels: map[string]string{"buoy.enabled": "true"},
+			name:            "no schedule, default set",
+			labels:          map[string]string{"buoy.enabled": "true"},
 			defaultSchedule: "@daily",
 			want: BackupConfig{
 				Enabled:     true,
@@ -312,9 +312,9 @@ func TestParseBackupConfig(t *testing.T) {
 		{
 			name: "hook commands",
 			labels: map[string]string{
-				"buoy.pre-backup-cmd":  "echo pre",
-				"buoy.post-backup-cmd": "echo post",
-				"buoy.pre-backup-exec": "echo pre exec",
+				"buoy.pre-backup-cmd":   "echo pre",
+				"buoy.post-backup-cmd":  "echo post",
+				"buoy.pre-backup-exec":  "echo pre exec",
 				"buoy.post-backup-exec": "echo post exec",
 			},
 			want: BackupConfig{
@@ -329,19 +329,19 @@ func TestParseBackupConfig(t *testing.T) {
 		{
 			name: "full config with all labels set",
 			labels: map[string]string{
-				"buoy.enabled":          "true",
-				"buoy.schedule":         "@daily",
-				"buoy.repos":            "/custom/repo",
-				"buoy.retention":        "keep-daily:30,keep-weekly:4",
+				"buoy.enabled":            "true",
+				"buoy.schedule":           "@daily",
+				"buoy.repos":              "/custom/repo",
+				"buoy.retention":          "keep-daily:30,keep-weekly:4",
 				"buoy.stop-before-backup": "true",
-				"buoy.stop-timeout":     "2m",
-				"buoy.include-volumes":  "data",
-				"buoy.exclude-mounts":   "/tmp",
-				"buoy.exclude-patterns": "*.log",
-				"buoy.files":            "important.txt",
-				"buoy.tags":             "critical, db",
-				"buoy.pre-backup-cmd":   "pg_dump > /backup/dump.sql",
-				"buoy.post-backup-exec": "echo done",
+				"buoy.stop-timeout":       "2m",
+				"buoy.include-volumes":    "data",
+				"buoy.exclude-mounts":     "/tmp",
+				"buoy.exclude-patterns":   "*.log",
+				"buoy.files":              "important.txt",
+				"buoy.tags":               "critical, db",
+				"buoy.pre-backup-cmd":     "pg_dump > /backup/dump.sql",
+				"buoy.post-backup-exec":   "echo done",
 			},
 			defaultRetention: "keep-daily:7",
 			want: BackupConfig{
@@ -363,7 +363,7 @@ func TestParseBackupConfig(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ParseBackupConfig(tt.labels, tt.defaultSchedule, tt.defaultRetention)
+			got := ParseBackupConfig(tt.labels, tt.defaultSchedule, tt.defaultRetention, nil)
 			if got.Enabled != tt.want.Enabled {
 				t.Errorf("Enabled: got %v, want %v", got.Enabled, tt.want.Enabled)
 			}

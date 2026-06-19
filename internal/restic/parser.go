@@ -74,5 +74,3 @@ func ParseStats(r io.Reader) (*Stats, error) {
 	}
 	return &stats, nil
 }
-
-

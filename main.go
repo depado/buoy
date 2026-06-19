@@ -25,7 +25,7 @@ func run() {
 func main() {
 	root := &cobra.Command{
 		Use:           "buoy",
-		Short:         "Simple go project",
+		Short:         "Backup Docker container volumes with restic",
 		Version:       cmd.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,

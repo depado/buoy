@@ -49,7 +49,7 @@ func New(d *docker.Client, r *restic.Client, h *hook.Executor, repos []string, d
 }
 
 func (r *Runner) parseConfig(labels map[string]string) docker.BackupConfig {
-	return docker.ParseBackupConfig(labels, r.defaultSchedule, r.defaultRetention)
+	return docker.ParseBackupConfig(labels, r.defaultSchedule, r.defaultRetention, r.logger)
 }
 
 func (r *Runner) resolveRepos(ctr *docker.Container, cfg docker.BackupConfig) ([]string, error) {
@@ -219,7 +219,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 			r.ignore(ctr.ID)
 			ignoredInBatch[ctr.ID] = true
 			sl.Debug("stopping container")
-			cfg := docker.ParseBackupConfig(ctr.Labels, "", "")
+			cfg := docker.ParseBackupConfig(ctr.Labels, "", "", l)
 			if err := r.docker.StopContainer(ctx, ctr.ID, cfg.StopTimeout); err != nil {
 				sl.Warn("failed to stop container", "error", err)
 				stopFailed[ctr.ID] = true
@@ -377,6 +377,8 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slo
 			source := m.Source
 			if _, err := os.Stat(source); os.IsNotExist(err) {
 				repoL.Warn("mount source does not exist, skipping", "source", source, "type", m.Type)
+				r.notifier.SendBackupError(ctr.Name,
+					fmt.Sprintf("Mount source not found (backup skipped): %s (%s)", source, m.Type))
 				continue
 			}
 
@@ -398,6 +400,8 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slo
 				entries, err := os.ReadDir(source)
 				if err != nil {
 					repoL.Warn("failed to read source directory, skipping", "source", source, "error", err)
+					r.notifier.SendBackupError(ctr.Name,
+						fmt.Sprintf("Failed to read mount source (backup skipped): %s (%v)", source, err))
 					continue
 				}
 				if len(entries) == 0 {
@@ -452,7 +456,7 @@ func (r *Runner) applyRetention(ctx context.Context, ctr *docker.Container, cfg 
 	policy := cfg.Retention
 
 	for _, repo := range repos {
-		if err := r.restic.Forget(ctx, repo, policy); err != nil {
+		if err := r.restic.Forget(ctx, repo, policy, ctr.Name); err != nil {
 			l.Warn("forget failed", "repo", repo, "error", err)
 			r.notifier.SendBackupError(ctr.Name,
 				fmt.Sprintf("Forget failed on repo %s: %s", repo, err.Error()))

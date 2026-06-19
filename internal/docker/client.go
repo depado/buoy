@@ -104,7 +104,10 @@ func (c *Client) StopContainer(ctx context.Context, id string, timeout time.Dura
 // StartContainer starts a container.
 func (c *Client) StartContainer(ctx context.Context, id string) error {
 	_, err := c.api.ContainerStart(ctx, id, client.ContainerStartOptions{})
-	return err
+	if err != nil {
+		return fmt.Errorf("start container %s: %w", id, err)
+	}
+	return nil
 }
 
 // ContainerWait blocks until the container reaches the given condition.

@@ -29,6 +29,7 @@ type DaemonConf struct {
 	ExecTimeout       string `mapstructure:"exec_timeout"`
 	HealthWaitTimeout string `mapstructure:"health_wait_timeout"`
 	CheckSchedule     string `mapstructure:"check_schedule"`
+	BackupTimeout     string `mapstructure:"backup_timeout"`
 }
 
 // DockerConf configures the Docker Engine connection.

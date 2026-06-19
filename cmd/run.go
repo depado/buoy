@@ -51,8 +51,19 @@ var runCmd = &cobra.Command{
 			return fmt.Errorf("restic binary not found: %s", resticBinary(conf))
 		}
 
-		resticClient := restic.New(resticBinary(conf), conf.Restic.Password)
+		resticClient := restic.New(resticBinary(conf), conf.Restic.Password, conf.Restic.Compression)
 		hookExec := hook.New(dockerClient)
+
+		testPath := conf.Restic.Repos[0] + "/buoy-password-check"
+		exists, err := resticClient.RepoExists(context.Background(), testPath)
+		if err != nil {
+			return fmt.Errorf("restic password validation failed (check repo %q): %w", testPath, err)
+		}
+		if exists {
+			logger.Debug("password validation passed", "repo", testPath)
+		} else {
+			logger.Debug("password validation skipped (repo not yet initialized)", "repo", testPath)
+		}
 		notifier, err := notify.New(conf.Notify.Urls, notify.ParseLevel(conf.Notify.Level), logger)
 		if err != nil {
 			return fmt.Errorf("notify: %w", err)
@@ -63,7 +74,8 @@ var runCmd = &cobra.Command{
 			notifier, logger,
 			parseDurationOrDefault(conf.Daemon.ExecTimeout, 5*time.Minute),
 			parseDurationOrDefault(conf.Daemon.HealthWaitTimeout, 5*time.Minute))
-		sched := scheduler.New(dockerClient, runner, conf.Daemon.Concurrency, conf.Daemon.DefaultSchedule, conf.Daemon.DefaultRetention, logger)
+		sched := scheduler.New(dockerClient, runner, conf.Daemon.Concurrency, conf.Daemon.DefaultSchedule, conf.Daemon.DefaultRetention,
+			parseDurationOrDefault(conf.Daemon.BackupTimeout, 1*time.Hour), logger)
 
 		containers, err := dockerClient.ListBackupContainers(context.Background())
 		if err != nil {
@@ -122,7 +134,7 @@ var runCmd = &cobra.Command{
 						logger.Warn("failed to inspect on event", "id", evt.ID, "error", err)
 						continue
 					}
-					cfg := docker.ParseBackupConfig(ctr.Labels, "", "")
+					cfg := docker.ParseBackupConfig(ctr.Labels, "", "", slog.Default())
 					if !cfg.Enabled {
 						continue
 					}
@@ -170,8 +182,8 @@ func parseDurationOrDefault(s string, defaultDuration time.Duration) time.Durati
 	}
 	d, err := time.ParseDuration(s)
 	if err != nil {
+		slog.Warn("invalid duration, using default", "value", s, "default", defaultDuration)
 		return defaultDuration
 	}
 	return d
 }
-

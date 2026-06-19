@@ -14,11 +14,14 @@ func addLoggerFlags(c *cobra.Command) {
 
 // addDaemonFlags adds flags for the daemon configuration.
 func addDaemonFlags(c *cobra.Command) {
-	c.PersistentFlags().Int("daemon.concurrency", 1, "max number of concurrent backups")
+	c.PersistentFlags().Int("daemon.concurrency", 2, "max number of concurrent backups")
+	c.PersistentFlags().String("daemon.default_schedule", "", "default cron schedule for containers without buoy.schedule label")
+	c.PersistentFlags().String("daemon.default_retention", "keep-daily:7", "default retention policy for containers without buoy.retention label")
 	c.PersistentFlags().String("daemon.resync_interval", "5m", "interval for periodic label resync (e.g., 5m, 1h, 0 to disable)")
 	c.PersistentFlags().String("daemon.exec_timeout", "5m", "max time for docker exec hooks (e.g., 5m, 10m)")
 	c.PersistentFlags().String("daemon.health_wait_timeout", "5m", "max time to wait for container health/dependency satisfaction (e.g., 5m)")
-	c.PersistentFlags().String("daemon.check_schedule", "", "cron schedule for periodic restic check (empty = disabled, e.g., '@weekly')")
+	c.PersistentFlags().String("daemon.backup_timeout", "1h", "max time for a backup cycle (e.g., 1h, 30m, 0 to disable)")
+	c.PersistentFlags().String("docker.host", "unix:///var/run/docker.sock", "Docker daemon socket path")
 	c.PersistentFlags().String("restic.password", "", "restic repository password")
 	c.PersistentFlags().StringSlice("restic.repos", nil, "restic repository URLs (can be repeated)")
 }

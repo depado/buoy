@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/robfig/cron/v3"
 
@@ -12,23 +13,24 @@ import (
 )
 
 type Scheduler struct {
-	cron    *cron.Cron
-	docker  *docker.Client
-	backup  *backup.Runner
-	sem     chan struct{}
-	mu      sync.Mutex
-	running sync.Map
-	entries sync.Map
-	groups  map[string][]*docker.Container
-	cronIDs map[string]cron.EntryID
-	stacks  map[string]*stackQueue
-	stackMu           sync.Mutex
-	logger            *slog.Logger
-	defaultSchedule   string
-	defaultRetention  string
+	cron             *cron.Cron
+	docker           *docker.Client
+	backup           *backup.Runner
+	sem              chan struct{}
+	mu               sync.Mutex
+	running          sync.Map
+	entries          sync.Map
+	groups           map[string][]*docker.Container
+	cronIDs          map[string]cron.EntryID
+	stacks           map[string]*stackQueue
+	stackMu          sync.Mutex
+	logger           *slog.Logger
+	defaultSchedule  string
+	defaultRetention string
+	backupTimeout    time.Duration
 }
 
-func New(d *docker.Client, r *backup.Runner, concurrency int, defaultSchedule, defaultRetention string, logger *slog.Logger) *Scheduler {
+func New(d *docker.Client, r *backup.Runner, concurrency int, defaultSchedule, defaultRetention string, backupTimeout time.Duration, logger *slog.Logger) *Scheduler {
 	if concurrency < 1 {
 		concurrency = 1
 	}
@@ -36,6 +38,7 @@ func New(d *docker.Client, r *backup.Runner, concurrency int, defaultSchedule, d
 	return &Scheduler{
 		cron: cron.New(
 			cron.WithChain(
+				cron.Recover(cronLogger{logger}),
 				cron.SkipIfStillRunning(cronLogger{logger}),
 			),
 		),
@@ -48,6 +51,7 @@ func New(d *docker.Client, r *backup.Runner, concurrency int, defaultSchedule, d
 		logger:           logger,
 		defaultSchedule:  defaultSchedule,
 		defaultRetention: defaultRetention,
+		backupTimeout:    backupTimeout,
 	}
 }
 
@@ -60,7 +64,7 @@ func (s *Scheduler) Stop() context.Context {
 }
 
 func (s *Scheduler) AddContainer(ctr *docker.Container) error {
-	cfg := docker.ParseBackupConfig(ctr.Labels, s.defaultSchedule, s.defaultRetention)
+	cfg := docker.ParseBackupConfig(ctr.Labels, s.defaultSchedule, s.defaultRetention, s.logger)
 	if cfg.Schedule == "" {
 		s.logger.Warn("no schedule, skipping", ctr.LogAttrs()...)
 		return nil
@@ -126,7 +130,9 @@ func (s *Scheduler) ScheduleCheck(schedule string) error {
 		s.logger.Info("running periodic restic check")
 		s.sem <- struct{}{}
 		defer func() { <-s.sem }()
-		s.backup.CheckKnownRepos(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), s.backupTimeout)
+		defer cancel()
+		s.backup.CheckKnownRepos(ctx)
 	})
 	return err
 }
@@ -179,7 +185,9 @@ func (s *Scheduler) runScheduleGroup(key, project string) {
 			go func(c *docker.Container) {
 				defer func() { <-s.sem }()
 				defer s.running.Delete(c.ID)
-				if err := s.backup.Run(context.Background(), c); err != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), s.backupTimeout)
+				defer cancel()
+				if err := s.backup.Run(ctx, c); err != nil {
 					s.logger.Error("backup failed", append(c.LogAttrs(), "error", err)...)
 				}
 			}(ctr)
@@ -233,9 +241,11 @@ func (s *Scheduler) enqueueBatch(project string, batch []*docker.Container) {
 		}
 		s.logger.Debug("processing stack batch", "project", project, "containers", names)
 
-		if err := s.backup.RunStackBatch(context.Background(), project, batch); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), s.backupTimeout)
+		if err := s.backup.RunStackBatch(ctx, project, batch); err != nil {
 			s.logger.Error("stack batch backup failed", "project", project, "error", err)
 		}
+		cancel()
 	}
 }
 

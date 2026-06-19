@@ -8,10 +8,11 @@ import (
 
 func TestForgetArgs(t *testing.T) {
 	tests := []struct {
-		name   string
-		repo   string
-		policy RetentionPolicy
-		want   []string
+		name     string
+		repo     string
+		policy   RetentionPolicy
+		hostname string
+		want     []string
 	}{
 		{
 			name:   "empty policy",
@@ -29,7 +30,7 @@ func TestForgetArgs(t *testing.T) {
 			name:   "all keep flags",
 			repo:   "/backup/repo",
 			policy: RetentionPolicy{KeepDaily: 30, KeepWeekly: 4, KeepMonthly: 12, KeepYearly: 2},
-			want:   []string{"forget", "-r", "/backup/repo", "--json", "--group-by", "host,tags",
+			want: []string{"forget", "-r", "/backup/repo", "--json", "--group-by", "host,tags",
 				"--keep-daily", "30", "--keep-weekly", "4", "--keep-monthly", "12", "--keep-yearly", "2"},
 		},
 		{
@@ -42,13 +43,20 @@ func TestForgetArgs(t *testing.T) {
 			name:   "mixed keep-daily and keep-within",
 			repo:   "/backup/repo",
 			policy: RetentionPolicy{KeepDaily: 14, KeepWithin: "7d"},
-			want:   []string{"forget", "-r", "/backup/repo", "--json", "--group-by", "host,tags",
+			want: []string{"forget", "-r", "/backup/repo", "--json", "--group-by", "host,tags",
 				"--keep-daily", "14", "--keep-within", "7d"},
+		},
+		{
+			name:     "keep-daily with hostname",
+			repo:     "/backup/repo",
+			policy:   RetentionPolicy{KeepDaily: 7},
+			hostname: "myapp",
+			want:     []string{"forget", "-r", "/backup/repo", "--json", "--group-by", "host,tags", "--host", "myapp", "--keep-daily", "7"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := forgetArgs(tt.repo, tt.policy)
+			got := forgetArgs(tt.repo, tt.policy, tt.hostname)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("got %v, want %v", got, tt.want)
 			}

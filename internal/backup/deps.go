@@ -154,7 +154,7 @@ func stopSet(batch []*docker.Container, all []*docker.Container) map[string]bool
 	stop := make(map[string]bool)
 
 	for _, ctr := range batch {
-		cfg := docker.ParseBackupConfig(ctr.Labels, "", "")
+		cfg := docker.ParseBackupConfig(ctr.Labels, "", "", nil)
 		if !cfg.StopBefore {
 			continue
 		}
