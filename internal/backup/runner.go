@@ -219,6 +219,8 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 			if err := r.docker.StopContainer(ctx, ctr.ID, cfg.StopTimeout); err != nil {
 				sl.Warn("failed to stop container", "error", err)
 				stopFailed[ctr.ID] = true
+				r.release(ctr.ID)
+				delete(ignoredInBatch, ctr.ID)
 				continue
 			}
 			if err := r.docker.ContainerWait(ctx, ctr.ID, container.WaitConditionNotRunning); err != nil {
