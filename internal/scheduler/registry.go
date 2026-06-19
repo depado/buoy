@@ -32,8 +32,11 @@ func (r *containerRegistry) register(ctr *docker.Container, key, schedule string
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, exists := r.index[ctr.ID]; exists {
-		return nil
+	if existingKey, exists := r.index[ctr.ID]; exists {
+		if existingKey == key {
+			return nil
+		}
+		r.unregisterLocked(ctr.ID)
 	}
 
 	if _, exists := r.cronIDs[key]; !exists {
@@ -53,7 +56,10 @@ func (r *containerRegistry) register(ctr *docker.Container, key, schedule string
 func (r *containerRegistry) unregister(containerID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.unregisterLocked(containerID)
+}
 
+func (r *containerRegistry) unregisterLocked(containerID string) {
 	groupKey, ok := r.index[containerID]
 	if !ok {
 		return

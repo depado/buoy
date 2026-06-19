@@ -286,6 +286,7 @@ func (c *Client) command(ctx context.Context, args ...string) (*exec.Cmd, func()
 
 	args = append([]string{"--password-file", f.Name()}, args...)
 	cmd := exec.CommandContext(ctx, c.binPath, args...)
+	detachProcessGroup(cmd)
 	cmd.Env = append(os.Environ(),
 		"RESTIC_COMPRESSION="+c.compression,
 		"RESTIC_PROGRESS_FPS=1",
