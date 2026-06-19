@@ -182,6 +182,10 @@ daemon:
   concurrency: 2
   default_schedule: ""              # global fallback for buoy.schedule
   default_retention: "keep-daily:7" # global fallback for buoy.retention
+  resync_interval: "5m"             # interval for label resync (0 to disable)
+  exec_timeout: "5m"                # max time for docker exec hooks
+  health_wait_timeout: "5m"         # max time to wait for container health
+  # check_schedule: "@weekly"       # cron for periodic restic check (unset = disabled)
 
 docker:
   host: unix:///var/run/docker.sock
@@ -207,6 +211,9 @@ All config keys can be set as `BUOY_<SECTION>_<KEY>`:
 BUOY_RESTIC_PASSWORD=my-password
 BUOY_RESTIC_REPOS=/backup,s3:s3.amazonaws.com/my-bucket
 BUOY_DAEMON_CONCURRENCY=2
+BUOY_DAEMON_RESYNC_INTERVAL=5m
+BUOY_DAEMON_EXEC_TIMEOUT=5m
+BUOY_DAEMON_HEALTH_WAIT_TIMEOUT=5m
 BUOY_LOG_LEVEL=debug
 BUOY_NOTIFY_URLS=slack://tokenA/tokenB/tokenC
 BUOY_NOTIFY_LEVEL=error
@@ -215,17 +222,20 @@ BUOY_NOTIFY_LEVEL=error
 ### CLI flags
 
 ```bash
-buoy run --daemon.concurrency 2 --restic.password my-password --restic.repos /backup --restic.repos s3:s3.amazonaws.com/bucket --log.level debug --notify.urls slack://tokenA/tokenB/tokenC --notify.level error
+buoy run --daemon.concurrency 2 --daemon.resync_interval 5m --daemon.exec_timeout 5m --daemon.health_wait_timeout 5m --restic.password my-password --restic.repos /backup --restic.repos s3:s3.amazonaws.com/bucket --log.level debug --notify.urls slack://tokenA/tokenB/tokenC --notify.level error
 ```
 
 ### Password precedence
 
-1. `restic.password` in config file
-2. `RESTIC_PASSWORD` environment variable (set externally)
-3. `RESTIC_PASSWORD_FILE` environment variable
-4. `RESTIC_PASSWORD_COMMAND` environment variable (buoy executes this)
+buoy requires a password to start. Set it via config, env var, or CLI flag.
 
-The password is global — all per-container repos use the same one.
+1. `restic.password` in config file
+2. `BUOY_RESTIC_PASSWORD` environment variable
+3. `--restic.password` CLI flag
+
+The password is global — all per-container repos use the same one. Buoy passes
+it to restic via a temporary `--password-file` rather than the `RESTIC_PASSWORD`
+environment variable.
 
 ### Notifications
 
