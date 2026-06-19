@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -84,6 +85,13 @@ var runCmd = &cobra.Command{
 
 		sched.Start()
 
+		var resyncTicker <-chan time.Time
+		if resyncInterval := parseResyncInterval(conf.Daemon.ResyncInterval); resyncInterval > 0 {
+			t := time.NewTicker(resyncInterval)
+			defer t.Stop()
+			resyncTicker = t.C
+		}
+
 		sigs := make(chan os.Signal, 1)
 		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
@@ -114,6 +122,8 @@ var runCmd = &cobra.Command{
 				}
 			case err := <-errs:
 				logger.Warn("docker event stream error", "error", err)
+			case <-resyncTicker:
+				sched.Resync(ctx)
 			case sig := <-sigs:
 				logger.Info("received signal, shutting down", "signal", sig)
 				cancel()
@@ -140,4 +150,15 @@ func countStacks(containers []docker.Container) int {
 		}
 	}
 	return len(stacks)
+}
+
+func parseResyncInterval(s string) time.Duration {
+	if s == "" || s == "0" {
+		return 0
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0
+	}
+	return d
 }

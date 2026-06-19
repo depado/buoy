@@ -15,6 +15,7 @@ func addLoggerFlags(c *cobra.Command) {
 // addDaemonFlags adds flags for the daemon configuration.
 func addDaemonFlags(c *cobra.Command) {
 	c.PersistentFlags().Int("daemon.concurrency", 1, "max number of concurrent backups")
+	c.PersistentFlags().String("daemon.resync_interval", "5m", "interval for periodic label resync (e.g., 5m, 1h, 0 to disable)")
 	c.PersistentFlags().String("restic.password", "", "restic repository password")
 	c.PersistentFlags().StringSlice("restic.repos", nil, "restic repository URLs (can be repeated)")
 }

@@ -25,6 +25,7 @@ type DaemonConf struct {
 	Concurrency      int    `mapstructure:"concurrency"`
 	DefaultSchedule  string `mapstructure:"default_schedule"`
 	DefaultRetention string `mapstructure:"default_retention"`
+	ResyncInterval   string `mapstructure:"resync_interval"`
 }
 
 // DockerConf configures the Docker Engine connection.
