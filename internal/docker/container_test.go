@@ -3,6 +3,8 @@ package docker
 import (
 	"testing"
 	"time"
+
+	"github.com/depado/buoy/internal/restic"
 )
 
 func TestSplitAndTrim(t *testing.T) {
@@ -41,48 +43,48 @@ func TestParseRetention(t *testing.T) {
 		name             string
 		labels           map[string]string
 		defaultRetention string
-		want             RetentionConfig
+		want             restic.RetentionPolicy
 	}{
 		{
 			name:   "empty label, empty default",
 			labels: map[string]string{},
-			want:   RetentionConfig{},
+			want:   restic.RetentionPolicy{},
 		},
 		{
 			name:             "empty label, default set",
 			labels:           map[string]string{},
 			defaultRetention: "keep-daily:14",
-			want:             RetentionConfig{KeepDaily: 14},
+			want:             restic.RetentionPolicy{KeepDaily: 14},
 		},
 		{
 			name:   "label set with all keys",
 			labels: map[string]string{"buoy.retention": "keep-daily:30,keep-weekly:4,keep-monthly:12,keep-yearly:2"},
-			want:   RetentionConfig{KeepDaily: 30, KeepWeekly: 4, KeepMonthly: 12, KeepYearly: 2},
+			want:   restic.RetentionPolicy{KeepDaily: 30, KeepWeekly: 4, KeepMonthly: 12, KeepYearly: 2},
 		},
 		{
 			name:   "keep-within string value",
 			labels: map[string]string{"buoy.retention": "keep-within:7d"},
-			want:   RetentionConfig{KeepWithin: "7d"},
+			want:   restic.RetentionPolicy{KeepWithin: "7d"},
 		},
 		{
 			name:   "malformed key:value silently skipped",
 			labels: map[string]string{"buoy.retention": "bad_entry"},
-			want:   RetentionConfig{},
+			want:   restic.RetentionPolicy{},
 		},
 		{
 			name:   "mixed valid and invalid entries",
 			labels: map[string]string{"buoy.retention": "keep-daily:10,bad_entry,keep-weekly:3"},
-			want:   RetentionConfig{KeepDaily: 10, KeepWeekly: 3},
+			want:   restic.RetentionPolicy{KeepDaily: 10, KeepWeekly: 3},
 		},
 		{
 			name:   "keep-within with spaces",
 			labels: map[string]string{"buoy.retention": "keep-within: 7d  , keep-daily : 5"},
-			want:   RetentionConfig{KeepDaily: 5, KeepWithin: "7d"},
+			want:   restic.RetentionPolicy{KeepDaily: 5, KeepWithin: "7d"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rc := &RetentionConfig{}
+			rc := &restic.RetentionPolicy{}
 			parseRetention(tt.labels, tt.defaultRetention, rc)
 			if rc.KeepDaily != tt.want.KeepDaily {
 				t.Errorf("KeepDaily: got %d, want %d", rc.KeepDaily, tt.want.KeepDaily)
@@ -204,7 +206,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				Enabled:     true,
 				StopTimeout: 30 * time.Second,
-				Retention:   RetentionConfig{KeepDaily: 7},
+				Retention:   restic.RetentionPolicy{KeepDaily: 7},
 			},
 		},
 		{
@@ -212,7 +214,7 @@ func TestParseBackupConfig(t *testing.T) {
 			labels: map[string]string{},
 			want: BackupConfig{
 				StopTimeout: 30 * time.Second,
-				Retention:   RetentionConfig{KeepDaily: 7},
+				Retention:   restic.RetentionPolicy{KeepDaily: 7},
 			},
 		},
 		{
@@ -223,7 +225,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				Enabled:     true,
 				StopTimeout: 30 * time.Second,
-				Retention:   RetentionConfig{KeepDaily: 7},
+				Retention:   restic.RetentionPolicy{KeepDaily: 7},
 			},
 		},
 		{
@@ -234,7 +236,7 @@ func TestParseBackupConfig(t *testing.T) {
 				Enabled:     true,
 				Schedule:    "@daily",
 				StopTimeout: 30 * time.Second,
-				Retention:   RetentionConfig{KeepDaily: 7},
+				Retention:   restic.RetentionPolicy{KeepDaily: 7},
 			},
 		},
 		{
@@ -242,7 +244,7 @@ func TestParseBackupConfig(t *testing.T) {
 			labels: map[string]string{"buoy.stop-timeout": "5m"},
 			want: BackupConfig{
 				StopTimeout: 5 * time.Minute,
-				Retention:   RetentionConfig{KeepDaily: 7},
+				Retention:   restic.RetentionPolicy{KeepDaily: 7},
 			},
 		},
 		{
@@ -250,7 +252,7 @@ func TestParseBackupConfig(t *testing.T) {
 			labels: map[string]string{"buoy.stop-timeout": "not_a_duration"},
 			want: BackupConfig{
 				StopTimeout: 30 * time.Second,
-				Retention:   RetentionConfig{KeepDaily: 7},
+				Retention:   restic.RetentionPolicy{KeepDaily: 7},
 			},
 		},
 		{
@@ -259,7 +261,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				IncludeVolumes: []string{"vol1", "vol2"},
 				StopTimeout:    30 * time.Second,
-				Retention:      RetentionConfig{KeepDaily: 7},
+				Retention:      restic.RetentionPolicy{KeepDaily: 7},
 			},
 		},
 		{
@@ -268,7 +270,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				ExcludeVolumes: []string{"vol1", "vol2"},
 				StopTimeout:    30 * time.Second,
-				Retention:      RetentionConfig{KeepDaily: 7},
+				Retention:      restic.RetentionPolicy{KeepDaily: 7},
 			},
 		},
 		{
@@ -277,7 +279,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				IncludeMounts: []string{"/data", "/config"},
 				StopTimeout:   30 * time.Second,
-				Retention:     RetentionConfig{KeepDaily: 7},
+				Retention:     restic.RetentionPolicy{KeepDaily: 7},
 			},
 		},
 		{
@@ -286,7 +288,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				ExcludeMounts: []string{"/data", "/config"},
 				StopTimeout:   30 * time.Second,
-				Retention:     RetentionConfig{KeepDaily: 7},
+				Retention:     restic.RetentionPolicy{KeepDaily: 7},
 			},
 		},
 		{
@@ -295,7 +297,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				Tags:        []string{"foo", "bar"},
 				StopTimeout: 30 * time.Second,
-				Retention:   RetentionConfig{KeepDaily: 7},
+				Retention:   restic.RetentionPolicy{KeepDaily: 7},
 			},
 		},
 		{
@@ -304,7 +306,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				ExcludePatterns: []string{"*.log", "*.tmp"},
 				StopTimeout:     30 * time.Second,
-				Retention:       RetentionConfig{KeepDaily: 7},
+				Retention:       restic.RetentionPolicy{KeepDaily: 7},
 			},
 		},
 		{
@@ -321,7 +323,7 @@ func TestParseBackupConfig(t *testing.T) {
 				PreBackupExec:  "echo pre exec",
 				PostBackupExec: "echo post exec",
 				StopTimeout:    30 * time.Second,
-				Retention:      RetentionConfig{KeepDaily: 7},
+				Retention:      restic.RetentionPolicy{KeepDaily: 7},
 			},
 		},
 		{
@@ -355,7 +357,7 @@ func TestParseBackupConfig(t *testing.T) {
 				Tags:            []string{"critical", "db"},
 				PreBackupCmd:    "pg_dump > /backup/dump.sql",
 				PostBackupExec:  "echo done",
-				Retention:       RetentionConfig{KeepDaily: 30, KeepWeekly: 4},
+				Retention:       restic.RetentionPolicy{KeepDaily: 30, KeepWeekly: 4},
 			},
 		},
 	}

@@ -441,13 +441,7 @@ func (r *Runner) applyRetention(ctx context.Context, ctr *docker.Container, cfg 
 		return
 	}
 
-	policy := restic.RetentionPolicy{
-		KeepDaily:   cfg.Retention.KeepDaily,
-		KeepWeekly:  cfg.Retention.KeepWeekly,
-		KeepMonthly: cfg.Retention.KeepMonthly,
-		KeepYearly:  cfg.Retention.KeepYearly,
-		KeepWithin:  cfg.Retention.KeepWithin,
-	}
+	policy := cfg.Retention
 
 	for _, repo := range repos {
 		if err := r.restic.Forget(ctx, repo, policy); err != nil {

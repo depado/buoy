@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/moby/moby/api/types/container"
+
+	"github.com/depado/buoy/internal/restic"
 )
 
 // Container represents a Docker container with its backup-relevant metadata.
@@ -52,7 +54,7 @@ type BackupConfig struct {
 	Enabled         bool
 	Schedule        string
 	ReposOverride   []string
-	Retention       RetentionConfig
+	Retention       restic.RetentionPolicy
 	StopBefore      bool
 	StopTimeout     time.Duration
 	IncludeVolumes  []string
@@ -68,21 +70,12 @@ type BackupConfig struct {
 	PostBackupExec  string
 }
 
-// RetentionConfig defines how many snapshots to keep for each time period.
-type RetentionConfig struct {
-	KeepDaily   int
-	KeepWeekly  int
-	KeepMonthly int
-	KeepYearly  int
-	KeepWithin  string
-}
-
 // ParseBackupConfig extracts backup configuration from Docker labels.
 // Unrecognized labels are ignored. Missing optional labels fall back to defaults.
 func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetention string) BackupConfig {
 	cfg := BackupConfig{
 		StopTimeout: 30 * time.Second,
-		Retention: RetentionConfig{
+		Retention: restic.RetentionPolicy{
 			KeepDaily: 7,
 		},
 	}
@@ -145,7 +138,7 @@ func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetenti
 	return cfg
 }
 
-func parseRetention(labels map[string]string, defaultRetention string, rc *RetentionConfig) {
+func parseRetention(labels map[string]string, defaultRetention string, rc *restic.RetentionPolicy) {
 	v, ok := labels["buoy.retention"]
 	if !ok {
 		v = defaultRetention
