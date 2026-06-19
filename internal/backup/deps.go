@@ -1,8 +1,6 @@
 package backup
 
 import (
-	"io"
-	"log/slog"
 	"sort"
 	"strings"
 
@@ -18,8 +16,6 @@ const (
 	ServiceRunningOrHealthy      DepCondition = "service_running_or_healthy"
 	ServiceCompletedSuccessfully DepCondition = "service_completed_successfully"
 )
-
-var discardLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 type depInfo struct {
 	Name      string
@@ -166,7 +162,7 @@ func stopSet(batch []*docker.Container, all []*docker.Container) map[string]bool
 	stop := make(map[string]bool)
 
 	for _, ctr := range batch {
-		cfg := docker.ParseBackupConfig(ctr.Labels, "", "", discardLogger)
+		cfg := docker.ParseBackupConfig(ctr.Labels, "", "")
 		if !cfg.StopBefore {
 			continue
 		}

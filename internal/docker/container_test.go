@@ -1,15 +1,11 @@
 package docker
 
 import (
-	"io"
-	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/depado/buoy/internal/restic"
 )
-
-var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 func TestSplitAndTrim(t *testing.T) {
 	tests := []struct {
@@ -99,7 +95,7 @@ func TestParseRetention(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rc := &restic.RetentionPolicy{}
-			parseRetention(tt.labels, tt.defaultRetention, rc, testLogger)
+			parseRetention(tt.labels, tt.defaultRetention, rc)
 			if rc.KeepLast != tt.want.KeepLast {
 				t.Errorf("KeepLast: got %d, want %d", rc.KeepLast, tt.want.KeepLast)
 			}
@@ -383,7 +379,7 @@ func TestParseBackupConfig(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ParseBackupConfig(tt.labels, tt.defaultSchedule, tt.defaultRetention, testLogger)
+			got := ParseBackupConfig(tt.labels, tt.defaultSchedule, tt.defaultRetention)
 			if got.Enabled != tt.want.Enabled {
 				t.Errorf("Enabled: got %v, want %v", got.Enabled, tt.want.Enabled)
 			}

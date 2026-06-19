@@ -196,6 +196,7 @@ func parseDurationOrDefault(s string, defaultDuration time.Duration) time.Durati
 	}
 	d, err := time.ParseDuration(s)
 	if err != nil {
+		slog.Warn("invalid duration, using default", "value", s, "default", defaultDuration)
 		return defaultDuration
 	}
 	return d

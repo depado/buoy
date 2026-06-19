@@ -71,7 +71,7 @@ func (s *Scheduler) Stop() context.Context {
 }
 
 func (s *Scheduler) AddContainer(ctr *docker.Container) error {
-	cfg := docker.ParseBackupConfig(ctr.Labels, s.defaultSchedule, s.defaultRetention, s.logger)
+	cfg := docker.ParseBackupConfig(ctr.Labels, s.defaultSchedule, s.defaultRetention)
 	if !cfg.Enabled {
 		return nil
 	}

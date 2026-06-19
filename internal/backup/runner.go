@@ -67,7 +67,7 @@ func New(cfg *RunnerConfig) *Runner {
 }
 
 func (r *Runner) parseConfig(labels map[string]string) docker.BackupConfig {
-	return docker.ParseBackupConfig(labels, r.defaultSchedule, r.defaultRetention, r.logger)
+	return docker.ParseBackupConfig(labels, r.defaultSchedule, r.defaultRetention)
 }
 
 func (r *Runner) resolveRepos(ctr *docker.Container, cfg docker.BackupConfig) ([]string, error) {
@@ -130,7 +130,7 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
 
 	cfg := r.parseConfig(fresh.Labels)
 
-	r.runPreHooks(ctx, fresh, cfg, l)
+	r.runPreHooks(ctx, fresh, cfg)
 
 	l.Info("starting backup", "stop", cfg.StopBefore)
 	wasRunning := false
@@ -162,8 +162,8 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
 		r.waitRunning(ctx, fresh)
 	}
 
-	r.runPostHooks(ctx, fresh, cfg, l)
-	r.applyRetention(ctx, fresh, cfg, l)
+	r.runPostHooks(ctx, fresh, cfg)
+	r.applyRetention(ctx, fresh, cfg)
 
 	if backupErr != nil {
 		l.Error("backup completed with failures", "error", backupErr)
@@ -218,7 +218,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 		go func(c *docker.Container) {
 			defer wg.Done()
 			cfg := r.parseConfig(c.Labels)
-			r.runPreHooks(ctx, c, cfg, l)
+			r.runPreHooks(ctx, c, cfg)
 		}(ctr)
 	}
 	wg.Wait()
@@ -243,7 +243,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 			r.ignore(ctr.ID)
 			ignoredInBatch[ctr.ID] = true
 			sl.Debug("stopping container")
-			cfg := docker.ParseBackupConfig(ctr.Labels, "", "", l)
+			cfg := docker.ParseBackupConfig(ctr.Labels, "", "")
 			if err := r.docker.StopContainer(ctx, ctr.ID, cfg.StopTimeout); err != nil {
 				sl.Warn("failed to stop container", "error", err)
 				stopFailed[ctr.ID] = true
@@ -302,8 +302,8 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 
 	for _, ctr := range fresh {
 		cfg := r.parseConfig(ctr.Labels)
-		r.runPostHooks(ctx, ctr, cfg, l)
-		r.applyRetention(ctx, ctr, cfg, l)
+		r.runPostHooks(ctx, ctr, cfg)
+		r.applyRetention(ctx, ctr, cfg)
 	}
 
 	for id := range ignoredInBatch {
@@ -322,32 +322,32 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 	return nil
 }
 
-func (r *Runner) runPreHooks(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) {
+func (r *Runner) runPreHooks(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig) {
 	if cfg.PreBackupCmd != "" {
 		if err := r.hook.ExecOnHost(ctx, cfg.PreBackupCmd); err != nil {
-			l.Warn("pre-backup host command failed", "error", err)
+			slog.Warn("pre-backup host command failed", "error", err)
 		}
 	}
 	if cfg.PreBackupExec != "" {
 		execCtx, cancel := context.WithTimeout(ctx, r.execTimeout)
 		defer cancel()
 		if err := r.hook.ExecInContainer(execCtx, ctr.ID, cfg.PreBackupExec); err != nil {
-			l.Warn("pre-backup exec failed", "error", err)
+			slog.Warn("pre-backup exec failed", "error", err)
 		}
 	}
 }
 
-func (r *Runner) runPostHooks(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) {
+func (r *Runner) runPostHooks(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig) {
 	if cfg.PostBackupExec != "" {
 		execCtx, cancel := context.WithTimeout(ctx, r.execTimeout)
 		defer cancel()
 		if err := r.hook.ExecInContainer(execCtx, ctr.ID, cfg.PostBackupExec); err != nil {
-			l.Warn("post-backup exec failed", "error", err)
+			slog.Warn("post-backup exec failed", "error", err)
 		}
 	}
 	if cfg.PostBackupCmd != "" {
 		if err := r.hook.ExecOnHost(ctx, cfg.PostBackupCmd); err != nil {
-			l.Warn("post-backup host command failed", "error", err)
+			slog.Warn("post-backup host command failed", "error", err)
 		}
 	}
 }
@@ -504,29 +504,29 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slo
 	return nil
 }
 
-func (r *Runner) applyRetention(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) {
+func (r *Runner) applyRetention(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig) {
 	repos, err := r.resolveRepos(ctr, cfg)
 	if err != nil {
-		l.Warn("failed to resolve repo paths, skipping retention", "error", err)
+		slog.Warn("failed to resolve repo paths, skipping retention", "error", err)
 		return
 	}
 
-	l.Debug("applying retention", "policy", cfg.Retention, "repos", len(repos))
+	slog.Debug("applying retention", "policy", cfg.Retention, "repos", len(repos))
 	start := time.Now()
 	defer func() {
-		l.Info("retention complete", slog.Duration("duration", time.Since(start)))
+		slog.Info("retention complete", slog.Duration("duration", time.Since(start)))
 	}()
 
 	policy := cfg.Retention
 
 	for _, repo := range repos {
 		if err := r.restic.Forget(ctx, repo, policy, ctr.Name); err != nil {
-			l.Warn("forget failed", "repo", repo, "error", err)
+			slog.Warn("forget failed", "repo", repo, "error", err)
 			r.notifier.SendBackupError(ctr.Name,
 				fmt.Sprintf("Forget failed on repo %s: %s", repo, err.Error()))
 		}
 		if err := r.restic.Prune(ctx, repo); err != nil {
-			l.Warn("prune failed", "repo", repo, "error", err)
+			slog.Warn("prune failed", "repo", repo, "error", err)
 			r.notifier.SendBackupError(ctr.Name,
 				fmt.Sprintf("Prune failed on repo %s: %s", repo, err.Error()))
 		}

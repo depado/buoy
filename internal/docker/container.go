@@ -73,7 +73,7 @@ type BackupConfig struct {
 
 // ParseBackupConfig extracts backup configuration from Docker labels.
 // Unrecognized labels are ignored. Missing optional labels fall back to defaults.
-func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetention string, log *slog.Logger) BackupConfig {
+func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetention string) BackupConfig {
 	cfg := BackupConfig{
 		StopTimeout: 30 * time.Second,
 		Retention: restic.RetentionPolicy{
@@ -84,7 +84,7 @@ func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetenti
 	if v, ok := labels["buoy.enabled"]; ok {
 		enabled, err := strconv.ParseBool(v)
 		if err != nil {
-			log.Warn("invalid buoy.enabled, defaulting to false", "value", v)
+			slog.Warn("invalid buoy.enabled, defaulting to false", "value", v)
 		}
 		cfg.Enabled = enabled
 	}
@@ -99,14 +99,14 @@ func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetenti
 	if v, ok := labels["buoy.stop-before-backup"]; ok {
 		stop, err := strconv.ParseBool(v)
 		if err != nil {
-			log.Warn("invalid buoy.stop-before-backup, defaulting to false", "value", v)
+			slog.Warn("invalid buoy.stop-before-backup, defaulting to false", "value", v)
 		}
 		cfg.StopBefore = stop
 	}
 	if v, ok := labels["buoy.stop-timeout"]; ok {
 		d, err := time.ParseDuration(v)
 		if err != nil {
-			log.Warn("invalid buoy.stop-timeout, using default 30s", "value", v)
+			slog.Warn("invalid buoy.stop-timeout, using default 30s", "value", v)
 		} else {
 			cfg.StopTimeout = d
 		}
@@ -145,12 +145,12 @@ func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetenti
 		cfg.PostBackupExec = v
 	}
 
-	parseRetention(labels, defaultRetention, &cfg.Retention, log)
+	parseRetention(labels, defaultRetention, &cfg.Retention)
 
 	return cfg
 }
 
-func parseRetention(labels map[string]string, defaultRetention string, rc *restic.RetentionPolicy, log *slog.Logger) {
+func parseRetention(labels map[string]string, defaultRetention string, rc *restic.RetentionPolicy) {
 	v, ok := labels["buoy.retention"]
 	if !ok {
 		v = defaultRetention
@@ -161,7 +161,7 @@ func parseRetention(labels map[string]string, defaultRetention string, rc *resti
 	for _, part := range splitAndTrim(v) {
 		kv := strings.SplitN(part, ":", 2)
 		if len(kv) != 2 {
-			log.Warn("invalid retention entry, expected key:value", "entry", part)
+			slog.Warn("invalid retention entry, expected key:value", "entry", part)
 			continue
 		}
 		val, err := strconv.Atoi(strings.TrimSpace(kv[1]))
@@ -169,7 +169,7 @@ func parseRetention(labels map[string]string, defaultRetention string, rc *resti
 			if strings.TrimSpace(kv[0]) == "keep-within" {
 				rc.KeepWithin = strings.TrimSpace(kv[1])
 			} else {
-				log.Warn("invalid retention value, entry skipped", "key", kv[0], "value", kv[1])
+				slog.Warn("invalid retention value, entry skipped", "key", kv[0], "value", kv[1])
 			}
 			continue
 		}
