@@ -126,7 +126,11 @@ func NewConf() (*Conf, error) {
 		viper.AddConfigPath("/config/")
 	}
 
-	viper.ReadInConfig() //nolint:errcheck
+	if err := viper.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return nil, fmt.Errorf("unable to read config file: %w", err)
+		}
+	}
 	conf := &Conf{}
 	if err := viper.Unmarshal(conf); err != nil {
 		return conf, fmt.Errorf("unable to unmarshal conf: %w", err)
