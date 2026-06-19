@@ -163,7 +163,7 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
 	}
 
 	r.runPostHooks(ctx, fresh, cfg)
-	r.applyRetention(ctx, fresh, cfg)
+	r.applyRetention(ctx, fresh, cfg, l)
 
 	if backupErr != nil {
 		l.Error("backup completed with failures", "error", backupErr)
@@ -303,7 +303,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 	for _, ctr := range fresh {
 		cfg := r.parseConfig(ctr.Labels)
 		r.runPostHooks(ctx, ctr, cfg)
-		r.applyRetention(ctx, ctr, cfg)
+		r.applyRetention(ctx, ctr, cfg, l)
 	}
 
 	for id := range ignoredInBatch {
@@ -358,46 +358,46 @@ type mountError struct {
 	err   error
 }
 
-func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slog.Logger) error {
+func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, logger *slog.Logger) error {
 	cfg := r.parseConfig(ctr.Labels)
 
 	repos, err := r.resolveRepos(ctr, cfg)
 	if err != nil {
-		l.Warn("failed to resolve repo paths, skipping backup", "error", err)
+		logger.Warn("failed to resolve repo paths, skipping backup", "error", err)
 		return err
 	}
 
 	if len(cfg.IncludeVolumes) > 0 && len(cfg.ExcludeVolumes) > 0 {
-		l.Warn("both include-volumes and exclude-volumes set, exclude-volumes ignored")
+		logger.Warn("both include-volumes and exclude-volumes set, exclude-volumes ignored")
 	}
 	if len(cfg.IncludeMounts) > 0 && len(cfg.ExcludeMounts) > 0 {
-		l.Warn("both include-mounts and exclude-mounts set, exclude-mounts ignored")
+		logger.Warn("both include-mounts and exclude-mounts set, exclude-mounts ignored")
 	}
 
 	mountCount := 0
 	var failures []mountError
 
 	for _, repo := range repos {
-		repoL := l.With("repo", repo)
+		l := logger.With("repo", repo)
 
 		exists, err := r.restic.RepoExists(ctx, repo)
 		if err != nil {
-			repoL.Warn("failed to check repo, skipping repo", "error", err)
+			l.Warn("failed to check repo, skipping repo", "error", err)
 			failures = append(failures, mountError{repo: repo, err: fmt.Errorf("repo check: %w", err)})
 			continue
 		}
 		if !exists {
-			repoL.Debug("repo not found, initializing")
+			l.Debug("repo not found, initializing")
 			if err := r.restic.Init(ctx, repo); err != nil {
-				repoL.Warn("failed to init repo, skipping repo", "error", err)
+				l.Warn("failed to init repo, skipping repo", "error", err)
 				failures = append(failures, mountError{repo: repo, err: fmt.Errorf("repo init: %w", err)})
 				continue
 			}
-			repoL.Info("initialized repo")
+			l.Info("initialized repo")
 		}
 
 		if err := r.restic.Unlock(ctx, repo); err != nil {
-			repoL.Warn("failed to unlock repo", "error", err)
+			l.Warn("failed to unlock repo", "error", err)
 		}
 
 		for _, m := range ctr.Mounts {
@@ -422,7 +422,7 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slo
 			mountCount++
 			source := m.Source
 			if _, err := os.Stat(source); os.IsNotExist(err) {
-				repoL.Warn("mount source does not exist, skipping", "source", source, "type", m.Type)
+				l.Warn("mount source does not exist, skipping", "source", source, "type", m.Type)
 				r.notifier.SendBackupError(ctr.Name,
 					fmt.Sprintf("Mount source not found (backup skipped): %s (%s)", source, m.Type))
 				failures = append(failures, mountError{mount: source, repo: repo, err: fmt.Errorf("mount source not found")})
@@ -446,14 +446,14 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slo
 			if len(cfg.Files) == 0 {
 				entries, err := os.ReadDir(source)
 				if err != nil {
-					repoL.Warn("failed to read source directory, skipping", "source", source, "error", err)
+					l.Warn("failed to read source directory, skipping", "source", source, "error", err)
 					r.notifier.SendBackupError(ctr.Name,
 						fmt.Sprintf("Failed to read mount source (backup skipped): %s (%v)", source, err))
 					failures = append(failures, mountError{mount: source, repo: repo, err: fmt.Errorf("read dir: %w", err)})
 					continue
 				}
 				if len(entries) == 0 {
-					repoL.Debug("source directory is empty, skipping", "source", source)
+					l.Debug("source directory is empty, skipping", "source", source)
 					continue
 				}
 				paths = make([]string, 0, len(entries))
@@ -504,36 +504,39 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slo
 	return nil
 }
 
-func (r *Runner) applyRetention(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig) {
+func (r *Runner) applyRetention(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, logger *slog.Logger) {
 	repos, err := r.resolveRepos(ctr, cfg)
 	if err != nil {
-		slog.Warn("failed to resolve repo paths, skipping retention", "error", err)
+		logger.Warn("failed to resolve repo paths, skipping retention", "error", err)
 		return
 	}
 
-	slog.Debug("applying retention", "policy", cfg.Retention, "repos", len(repos))
-	start := time.Now()
-	defer func() {
-		slog.Info("retention complete", slog.Duration("duration", time.Since(start)))
-	}()
-
+	logger.Debug("applying retention", "policy", cfg.Retention, "repos", len(repos))
 	policy := cfg.Retention
 
 	for _, repo := range repos {
+		l := logger
+		if ctr.ComposeService != "" {
+			l = logger.With("service", ctr.ComposeService)
+		}
+		l = l.With("repo", repo)
+
+		start := time.Now()
 		if err := r.restic.Forget(ctx, repo, policy, ctr.Name); err != nil {
-			slog.Warn("forget failed", "repo", repo, "error", err)
+			l.Warn("forget failed", "error", err)
 			r.notifier.SendBackupError(ctr.Name,
 				fmt.Sprintf("Forget failed on repo %s: %s", repo, err.Error()))
 		}
 		if err := r.restic.Prune(ctx, repo); err != nil {
-			slog.Warn("prune failed", "repo", repo, "error", err)
+			l.Warn("prune failed", "error", err)
 			r.notifier.SendBackupError(ctr.Name,
 				fmt.Sprintf("Prune failed on repo %s: %s", repo, err.Error()))
 		}
+		l.Info("retention complete", slog.Duration("duration", time.Since(start)))
 	}
 }
 
-func (r *Runner) waitForDeps(ctx context.Context, deps map[string][]depInfo, ctrs []*docker.Container, serviceName string, l *slog.Logger) error {
+func (r *Runner) waitForDeps(ctx context.Context, deps map[string][]depInfo, ctrs []*docker.Container, serviceName string, logger *slog.Logger) error {
 	svcMap := serviceContainers(ctrs)
 
 	for _, dep := range depConditionsFrom(deps, serviceName) {
@@ -542,14 +545,15 @@ func (r *Runner) waitForDeps(ctx context.Context, deps map[string][]depInfo, ctr
 			continue
 		}
 		for _, ctr := range depCtrs {
-			l.With("dependency", dep.Name, "condition", dep.Condition).Debug("waiting for dependency")
+			l := logger.With("dependency", dep.Name, "condition", dep.Condition)
+			l.Debug("waiting for dependency")
 			if err := r.waitForCondition(ctx, ctr, dep.Condition); err != nil {
 				return err
 			}
 			if dep.Condition == ServiceHealthy {
-				l.With("dependency", dep.Name).Info("container healthy")
+				l.Info("container healthy")
 			} else {
-				l.With("dependency", dep.Name).Debug("dependency satisfied")
+				l.Debug("dependency satisfied")
 			}
 		}
 	}
