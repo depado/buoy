@@ -404,7 +404,16 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, l *slo
 
 			result, err := r.restic.Backup(ctx, repo, paths, opts)
 			if err != nil {
-				l.Error("backup failed", "repo", repo, "mount", source, "error", err)
+				if result != nil {
+					l.Error("backup completed with errors",
+						"repo", repo,
+						"mount", source,
+						"snapshot", result.SnapshotID,
+						"error", err,
+					)
+				} else {
+					l.Error("backup failed", "repo", repo, "mount", source, "error", err)
+				}
 				r.notifier.SendBackupError(ctr.Name,
 					fmt.Sprintf("Backup failed for mount %s on repo %s: %s", source, repo, err.Error()))
 				continue
