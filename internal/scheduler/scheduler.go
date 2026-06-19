@@ -72,6 +72,9 @@ func (s *Scheduler) Stop() context.Context {
 
 func (s *Scheduler) AddContainer(ctr *docker.Container) error {
 	cfg := docker.ParseBackupConfig(ctr.Labels, s.defaultSchedule, s.defaultRetention, s.logger)
+	if !cfg.Enabled {
+		return nil
+	}
 	if cfg.Schedule == "" {
 		s.logger.Warn("no schedule, skipping", ctr.LogAttrs()...)
 		return nil

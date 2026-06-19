@@ -7,14 +7,14 @@ import (
 	"github.com/depado/buoy/internal/docker"
 )
 
-func makeCtr(svc, project string, depsLabel string) *docker.Container {
+func makeCtr(svc string, depsLabel string) *docker.Container {
 	labels := map[string]string{}
 	if depsLabel != "" {
 		labels["com.docker.compose.depends_on"] = depsLabel
 	}
 	return &docker.Container{
 		ComposeService: svc,
-		ComposeProject: project,
+		ComposeProject: "proj",
 		Labels:         labels,
 	}
 }
@@ -40,40 +40,40 @@ func TestServiceDeps(t *testing.T) {
 		{
 			name: "single service with depends_on",
 			ctrs: []*docker.Container{
-				makeCtr("web", "proj", "db"),
+				makeCtr("web", "db"),
 			},
 			want: map[string][]depInfo{
-				"web": {{Name: "db", Condition: "service_started"}},
+				"web": {{Name: "db", Condition: ServiceStarted}},
 			},
 		},
 		{
 			name: "service with multiple dependencies",
 			ctrs: []*docker.Container{
-				makeCtr("web", "proj", "db,redis"),
+				makeCtr("web", "db,redis"),
 			},
 			want: map[string][]depInfo{
 				"web": {
-					{Name: "db", Condition: "service_started"},
-					{Name: "redis", Condition: "service_started"},
+					{Name: "db", Condition: ServiceStarted},
+					{Name: "redis", Condition: ServiceStarted},
 				},
 			},
 		},
 		{
 			name: "depends_on with service_healthy condition",
 			ctrs: []*docker.Container{
-				makeCtr("web", "proj", "db:service_healthy"),
+				makeCtr("web", "db:service_healthy"),
 			},
 			want: map[string][]depInfo{
-				"web": {{Name: "db", Condition: "service_healthy"}},
+				"web": {{Name: "db", Condition: ServiceHealthy}},
 			},
 		},
 		{
 			name: "depends_on without explicit condition defaults to service_started",
 			ctrs: []*docker.Container{
-				makeCtr("web", "proj", "db::restart"),
+				makeCtr("web", "db::restart"),
 			},
 			want: map[string][]depInfo{
-				"web": {{Name: "db", Condition: "service_started"}},
+				"web": {{Name: "db", Condition: ServiceStarted}},
 			},
 		},
 		{
@@ -305,8 +305,8 @@ func TestServiceContainers(t *testing.T) {
 
 func TestBuildDependents(t *testing.T) {
 	ctrs := []*docker.Container{
-		makeCtr("web", "proj", "api"),
-		makeCtr("api", "proj", "db"),
+		makeCtr("web", "api"),
+		makeCtr("api", "db"),
 	}
 	got := buildDependents(ctrs)
 	want := map[string][]string{
@@ -327,7 +327,7 @@ func TestStopSet(t *testing.T) {
 	}{
 		{
 			name:  "no stop_before_backup -> empty stop set",
-			batch: []*docker.Container{makeCtr("web", "proj", "db")},
+			batch: []*docker.Container{makeCtr("web", "db")},
 			all:   []*docker.Container{},
 			want:  map[string]bool{},
 		},
@@ -353,8 +353,8 @@ func TestStopSet(t *testing.T) {
 				},
 			},
 			all: []*docker.Container{
-				makeCtr("api", "proj", "web"),
-				makeCtr("web", "proj", ""),
+				makeCtr("api", "web"),
+				makeCtr("web", ""),
 			},
 			want: map[string]bool{"web": true, "api": true},
 		},
@@ -368,7 +368,7 @@ func TestStopSet(t *testing.T) {
 				},
 			},
 			all: []*docker.Container{
-				makeCtr("api", "proj", "db"),
+				makeCtr("api", "db"),
 			},
 			want: map[string]bool{"db": true, "api": true},
 		},
@@ -382,8 +382,8 @@ func TestStopSet(t *testing.T) {
 				},
 			},
 			all: []*docker.Container{
-				makeCtr("b", "proj", "a"),
-				makeCtr("c", "proj", "b"),
+				makeCtr("b", "a"),
+				makeCtr("c", "b"),
 			},
 			want: map[string]bool{"a": true, "b": true, "c": true},
 		},

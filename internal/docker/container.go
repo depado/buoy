@@ -83,7 +83,7 @@ func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetenti
 
 	if v, ok := labels["buoy.enabled"]; ok {
 		enabled, err := strconv.ParseBool(v)
-		if err != nil && log != nil {
+		if err != nil {
 			log.Warn("invalid buoy.enabled, defaulting to false", "value", v)
 		}
 		cfg.Enabled = enabled
@@ -98,7 +98,7 @@ func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetenti
 	}
 	if v, ok := labels["buoy.stop-before-backup"]; ok {
 		stop, err := strconv.ParseBool(v)
-		if err != nil && log != nil {
+		if err != nil {
 			log.Warn("invalid buoy.stop-before-backup, defaulting to false", "value", v)
 		}
 		cfg.StopBefore = stop
@@ -106,9 +106,7 @@ func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetenti
 	if v, ok := labels["buoy.stop-timeout"]; ok {
 		d, err := time.ParseDuration(v)
 		if err != nil {
-			if log != nil {
-				log.Warn("invalid buoy.stop-timeout, using default 30s", "value", v)
-			}
+			log.Warn("invalid buoy.stop-timeout, using default 30s", "value", v)
 		} else {
 			cfg.StopTimeout = d
 		}
@@ -163,16 +161,14 @@ func parseRetention(labels map[string]string, defaultRetention string, rc *resti
 	for _, part := range splitAndTrim(v) {
 		kv := strings.SplitN(part, ":", 2)
 		if len(kv) != 2 {
-			if log != nil {
-				log.Warn("invalid retention entry, expected key:value", "entry", part)
-			}
+			log.Warn("invalid retention entry, expected key:value", "entry", part)
 			continue
 		}
 		val, err := strconv.Atoi(strings.TrimSpace(kv[1]))
 		if err != nil {
 			if strings.TrimSpace(kv[0]) == "keep-within" {
 				rc.KeepWithin = strings.TrimSpace(kv[1])
-			} else if log != nil {
+			} else {
 				log.Warn("invalid retention value, entry skipped", "key", kv[0], "value", kv[1])
 			}
 			continue

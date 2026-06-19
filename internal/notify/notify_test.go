@@ -35,27 +35,25 @@ func TestNew_Disabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if n != nil {
-		t.Error("expected nil notifier when level is none")
+	if n.sender != nil {
+		t.Error("expected nil sender for disabled notifier at level none")
 	}
 
 	n, err = New([]string{}, LevelError, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if n != nil {
-		t.Error("expected nil notifier when urls is empty")
+	if n.sender != nil {
+		t.Error("expected nil sender for disabled notifier with empty urls")
 	}
 }
 
-func TestSendBackupError_NilNotifier(t *testing.T) {
-	var n *Notifier
-	// Must not panic.
-	n.SendBackupError("test-container", "test error message")
+func TestSendBackupError_NoOpNotifier(t *testing.T) {
+	// Must not panic with no-op sentinel.
+	disabledNotifier.SendBackupError("test-container", "test error message")
 }
 
-func TestSendInfo_NilNotifier(t *testing.T) {
-	var n *Notifier
-	// Must not panic.
-	n.SendInfo("title", "test message")
+func TestSendInfo_NoOpNotifier(t *testing.T) {
+	// Must not panic with no-op sentinel.
+	disabledNotifier.SendInfo("title", "test message")
 }

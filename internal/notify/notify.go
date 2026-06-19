@@ -38,12 +38,14 @@ type Notifier struct {
 	logger *slog.Logger
 }
 
+var disabledNotifier = &Notifier{}
+
 // New creates a Notifier from shoutrrr service URLs. If urls is empty or
-// level is LevelNone, returns a nil Notifier (notifications disabled).
+// level is LevelNone, returns a no-op Notifier (notifications disabled).
 // Unknown services in the URLs cause a creation error.
 func New(urls []string, level Level, logger *slog.Logger) (*Notifier, error) {
 	if level == LevelNone || len(urls) == 0 {
-		return nil, nil
+		return disabledNotifier, nil
 	}
 
 	sender, err := shoutrrr.CreateSender(urls...)
@@ -62,7 +64,7 @@ func New(urls []string, level Level, logger *slog.Logger) (*Notifier, error) {
 // The notifier handles shoutrrr errors internally — they are logged as
 // warnings but never propagated to the caller.
 func (n *Notifier) SendBackupError(ctrName, msg string) {
-	if n == nil {
+	if n.sender == nil {
 		return
 	}
 	title := fmt.Sprintf("buoy backup failed: %s", ctrName)
@@ -78,7 +80,7 @@ func (n *Notifier) SendBackupError(ctrName, msg string) {
 // SendInfo sends an informational notification. Only delivered when Level is
 // LevelAll.
 func (n *Notifier) SendInfo(title, msg string) {
-	if n == nil || n.level < LevelAll {
+	if n.sender == nil || n.level < LevelAll {
 		return
 	}
 	params := &types.Params{"title": title}

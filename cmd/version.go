@@ -15,7 +15,7 @@ var Build = "unknown"
 // BuildDate is the timestamp the binary was built, injected at build time.
 var BuildDate = "unknown"
 
-// Descriptive help text for version command
+// Descriptive help text for version command.
 var versionHelp = `
 This command will output the build number, version number and build date of buoy.
 The build number corresponds to the sha1 commit the binary was built against,
@@ -25,7 +25,7 @@ Finally the build date corresponds to the date the binary was built.
 If both values are "unknown" make sure to build buoy with "make".
 `
 
-// versionCmd is a command that will display the build number and version (if any)
+// versionCmd is a command that will display the build number and version (if any).
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Show build, version and build date",

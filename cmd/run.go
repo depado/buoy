@@ -69,14 +69,27 @@ var runCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("notify: %w", err)
 		}
+		backupTimeout := parseDurationOrDefault(conf.Daemon.BackupTimeout, 1*time.Hour)
+		execTimeout := parseDurationOrDefault(conf.Daemon.ExecTimeout, 5*time.Minute)
+		healthWaitTimeout := parseDurationOrDefault(conf.Daemon.HealthWaitTimeout, 5*time.Minute)
 		ignoredIDs := &sync.Map{}
-		runner := backup.New(dockerClient, resticClient, hookExec, conf.Restic.Repos,
-			conf.Daemon.DefaultSchedule, conf.Daemon.DefaultRetention, ignoredIDs,
-			notifier, logger,
-			parseDurationOrDefault(conf.Daemon.ExecTimeout, 5*time.Minute),
-			parseDurationOrDefault(conf.Daemon.HealthWaitTimeout, 5*time.Minute))
+
+		runner := backup.New(&backup.RunnerConfig{
+			Docker:            dockerClient,
+			Restic:            resticClient,
+			Hook:              hookExec,
+			Repos:             conf.Restic.Repos,
+			DefaultSchedule:   conf.Daemon.DefaultSchedule,
+			DefaultRetention:  conf.Daemon.DefaultRetention,
+			IgnoredIDs:        ignoredIDs,
+			Notifier:          notifier,
+			Logger:            logger,
+			ExecTimeout:       execTimeout,
+			HealthWaitTimeout: healthWaitTimeout,
+			BackupTimeout:     backupTimeout,
+		})
 		sched := scheduler.New(dockerClient, runner, conf.Daemon.Concurrency, conf.Daemon.DefaultSchedule, conf.Daemon.DefaultRetention,
-			parseDurationOrDefault(conf.Daemon.BackupTimeout, 1*time.Hour), logger)
+			backupTimeout, logger)
 
 		containers, err := dockerClient.ListBackupContainers(context.Background())
 		if err != nil {
@@ -135,10 +148,6 @@ var runCmd = &cobra.Command{
 						logger.Warn("failed to inspect on event", "id", evt.ID, "error", err)
 						continue
 					}
-					cfg := docker.ParseBackupConfig(ctr.Labels, "", "", slog.Default())
-					if !cfg.Enabled {
-						continue
-					}
 					if err := sched.AddContainer(ctr); err != nil {
 						logger.Warn("failed to schedule on event", "container", ctr.Name, "error", err)
 					}
@@ -187,7 +196,6 @@ func parseDurationOrDefault(s string, defaultDuration time.Duration) time.Durati
 	}
 	d, err := time.ParseDuration(s)
 	if err != nil {
-		slog.Warn("invalid duration, using default", "value", s, "default", defaultDuration)
 		return defaultDuration
 	}
 	return d

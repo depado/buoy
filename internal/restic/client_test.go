@@ -111,11 +111,12 @@ func TestTryParseExitError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := tryParseExitError(tt.input)
-			if tt.want == nil && got != nil {
+			switch {
+			case tt.want == nil && got != nil:
 				t.Errorf("expected nil, got %+v", got)
-			} else if tt.want != nil && got == nil {
+			case tt.want != nil && got == nil:
 				t.Error("expected non-nil, got nil")
-			} else if tt.want != nil && got != nil {
+			case tt.want != nil && got != nil:
 				if got.Message != tt.want.Message || got.Code != tt.want.Code {
 					t.Errorf("got %+v, want %+v", got, tt.want)
 				}

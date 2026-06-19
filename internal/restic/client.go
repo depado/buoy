@@ -32,18 +32,7 @@ func New(binPath, password, compression string) *Client {
 
 // Init initializes a new restic repository at the given location.
 func (c *Client) Init(ctx context.Context, repo string) error {
-	var stderr bytes.Buffer
-	cmd, cleanup, err := c.command(ctx, "init", "-r", repo)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-	cmd.Stdout = io.Discard
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("restic init: %w\n%s", err, stderr.String())
-	}
-	return nil
+	return c.runSimple(ctx, "init", "init", "-r", repo)
 }
 
 // RepoExists checks whether a restic repository exists at the given location.
@@ -68,18 +57,7 @@ func (c *Client) RepoExists(ctx context.Context, repo string) (bool, error) {
 
 // Unlock removes stale locks from a repository. Safe to call before every backup.
 func (c *Client) Unlock(ctx context.Context, repo string) error {
-	var stderr bytes.Buffer
-	cmd, cleanup, err := c.command(ctx, "unlock", "-r", repo)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-	cmd.Stdout = io.Discard
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("restic unlock: %w\n%s", err, stderr.String())
-	}
-	return nil
+	return c.runSimple(ctx, "unlock", "unlock", "-r", repo)
 }
 
 // Backup runs a restic backup of the given paths. If opts.Files is set, those
@@ -189,20 +167,7 @@ func tryParseExitError(s string) *ExitError {
 // Forget applies a retention policy to remove old snapshots.
 // Uses --group-by host,tags to match the backup command's grouping.
 func (c *Client) Forget(ctx context.Context, repo string, policy RetentionPolicy, hostname string) error {
-	args := forgetArgs(repo, policy, hostname)
-
-	var stderr bytes.Buffer
-	cmd, cleanup, err := c.command(ctx, args...)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-	cmd.Stdout = io.Discard
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("restic forget: %w\n%s", err, stderr.String())
-	}
-	return nil
+	return c.runSimple(ctx, "forget", forgetArgs(repo, policy, hostname)...)
 }
 
 func forgetArgs(repo string, policy RetentionPolicy, hostname string) []string {
@@ -236,54 +201,21 @@ func forgetArgs(repo string, policy RetentionPolicy, hostname string) []string {
 
 // Prune removes unreferenced data from the repository after forget.
 func (c *Client) Prune(ctx context.Context, repo string) error {
-	var stderr bytes.Buffer
-	cmd, cleanup, err := c.command(ctx, "prune", "-r", repo)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-	cmd.Stdout = io.Discard
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("restic prune: %w\n%s", err, stderr.String())
-	}
-	return nil
+	return c.runSimple(ctx, "prune", "prune", "-r", repo)
 }
 
 // Check verifies the integrity of a restic repository.
 // Uses restic check with no additional flags (structure check only).
 // For data integrity verification, use CheckReadData.
 func (c *Client) Check(ctx context.Context, repo string) error {
-	var stderr bytes.Buffer
-	cmd, cleanup, err := c.command(ctx, "check", "-r", repo)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-	cmd.Stdout = io.Discard
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("restic check: %w\n%s", err, stderr.String())
-	}
-	return nil
+	return c.runSimple(ctx, "check", "check", "-r", repo)
 }
 
 // CheckReadData verifies the integrity of a restic repository including
 // reading all pack files. This is I/O intensive but provides the highest
 // confidence in repository health.
 func (c *Client) CheckReadData(ctx context.Context, repo string) error {
-	var stderr bytes.Buffer
-	cmd, cleanup, err := c.command(ctx, "check", "--read-data", "-r", repo)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-	cmd.Stdout = io.Discard
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("restic check: %w\n%s", err, stderr.String())
-	}
-	return nil
+	return c.runSimple(ctx, "check", "check", "--read-data", "-r", repo)
 }
 
 // Snapshots lists all snapshots in the repository.
@@ -322,8 +254,12 @@ func (c *Client) Stats(ctx context.Context, repo string) (*Stats, error) {
 
 // Restore restores a snapshot to the given target path.
 func (c *Client) Restore(ctx context.Context, repo, snapshotID, targetPath string) error {
+	return c.runSimple(ctx, "restore", "restore", snapshotID, "-r", repo, "--target", targetPath)
+}
+
+func (c *Client) runSimple(ctx context.Context, op string, args ...string) error {
 	var stderr bytes.Buffer
-	cmd, cleanup, err := c.command(ctx, "restore", snapshotID, "-r", repo, "--target", targetPath)
+	cmd, cleanup, err := c.command(ctx, args...)
 	if err != nil {
 		return err
 	}
@@ -331,7 +267,7 @@ func (c *Client) Restore(ctx context.Context, repo, snapshotID, targetPath strin
 	cmd.Stdout = io.Discard
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("restic restore: %w\n%s", err, stderr.String())
+		return fmt.Errorf("restic %s: %w\n%s", op, err, stderr.String())
 	}
 	return nil
 }

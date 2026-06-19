@@ -40,8 +40,8 @@ func NewWatcher(docker *Client, logger *slog.Logger) *Watcher {
 // Watch starts watching for container start and die events.
 // Returns two channels: events and errors. Both are closed when ctx is cancelled.
 func (w *Watcher) Watch(ctx context.Context) (<-chan Event, <-chan error) {
-	eventsCh := make(chan Event)
-	errCh := make(chan error, 1)
+	eventsCh := make(chan Event, 64)
+	errCh := make(chan error, 16)
 
 	go w.loop(ctx, eventsCh, errCh)
 	return eventsCh, errCh

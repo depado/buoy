@@ -41,7 +41,6 @@ type DockerConf struct {
 type ResticConf struct {
 	BinaryPath  string   `mapstructure:"binary_path"`
 	Password    string   `mapstructure:"password"`
-	CacheDir    string   `mapstructure:"cache_dir"`
 	Compression string   `mapstructure:"compression"`
 	Repos       []string `mapstructure:"repos"`
 }

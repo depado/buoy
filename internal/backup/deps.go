@@ -1,15 +1,29 @@
 package backup
 
 import (
+	"io"
+	"log/slog"
 	"sort"
 	"strings"
 
 	"github.com/depado/buoy/internal/docker"
 )
 
+// DepCondition represents a Docker Compose dependency condition.
+type DepCondition string
+
+const (
+	ServiceStarted               DepCondition = "service_started"
+	ServiceHealthy               DepCondition = "service_healthy"
+	ServiceRunningOrHealthy      DepCondition = "service_running_or_healthy"
+	ServiceCompletedSuccessfully DepCondition = "service_completed_successfully"
+)
+
+var discardLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
+
 type depInfo struct {
 	Name      string
-	Condition string
+	Condition DepCondition
 }
 
 // orderForStopFromDeps returns service names in reverse dependency order
@@ -43,9 +57,9 @@ func serviceDeps(ctrs []*docker.Container) map[string][]depInfo {
 			if len(parts) == 0 || parts[0] == "" {
 				continue
 			}
-			info := depInfo{Name: parts[0], Condition: "service_started"}
+			info := depInfo{Name: parts[0], Condition: ServiceStarted}
 			if len(parts) > 1 && parts[1] != "" {
-				info.Condition = parts[1]
+				info.Condition = DepCondition(parts[1])
 			}
 			deps[svc] = append(deps[svc], info)
 		}
@@ -54,9 +68,7 @@ func serviceDeps(ctrs []*docker.Container) map[string][]depInfo {
 }
 
 // depConditionsFrom looks up the dependency list for a service from a
-// pre-computed dependency map. Prefer this over depConditions when the
-// caller already has the deps map from serviceDeps to avoid redundant
-// label parsing.
+// pre-computed dependency map.
 func depConditionsFrom(deps map[string][]depInfo, serviceName string) []depInfo {
 	return deps[serviceName]
 }
@@ -154,7 +166,7 @@ func stopSet(batch []*docker.Container, all []*docker.Container) map[string]bool
 	stop := make(map[string]bool)
 
 	for _, ctr := range batch {
-		cfg := docker.ParseBackupConfig(ctr.Labels, "", "", nil)
+		cfg := docker.ParseBackupConfig(ctr.Labels, "", "", discardLogger)
 		if !cfg.StopBefore {
 			continue
 		}
