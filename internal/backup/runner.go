@@ -103,11 +103,12 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
 		if err := r.docker.StopContainer(ctx, fresh.ID, cfg.StopTimeout); err != nil {
 			return fmt.Errorf("stop container: %w", err)
 		}
-		if err := r.docker.ContainerWait(ctx, fresh.ID, container.WaitConditionNotRunning); err != nil {
-			return fmt.Errorf("wait for stop: %w", err)
-		}
-		l.Info("container stopped")
 		wasRunning = true
+		if err := r.docker.ContainerWait(ctx, fresh.ID, container.WaitConditionNotRunning); err != nil {
+			l.Warn("container wait for stop failed, proceeding anyway", "error", err)
+		} else {
+			l.Info("container stopped")
+		}
 	}
 
 	backupErr := r.backupMounts(ctx, fresh, cfg, repos, l)
