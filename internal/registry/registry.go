@@ -100,6 +100,13 @@ func (r *Registry) upsertRepoEntry(b *bolt.Bucket, repo string, ctr *docker.Cont
 		if err := json.Unmarshal(existing, &entry); err != nil {
 			return fmt.Errorf("unmarshal repo entry %s: %w", repo, err)
 		}
+		if entry.ContainerID == ctr.ID &&
+			entry.ContainerName == ctr.Name &&
+			entry.ComposeProject == ctr.ComposeProject &&
+			entry.ComposeService == ctr.ComposeService &&
+			!entry.Orphaned {
+			return nil
+		}
 		entry.ContainerID = ctr.ID
 		entry.ContainerName = ctr.Name
 		entry.ComposeProject = ctr.ComposeProject
