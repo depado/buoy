@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 )
 
 // Client wraps the restic binary and provides methods for all backup operations.
@@ -286,7 +287,7 @@ func (c *Client) command(ctx context.Context, args ...string) (*exec.Cmd, func()
 
 	args = append([]string{"--password-file", f.Name()}, args...)
 	cmd := exec.CommandContext(ctx, c.binPath, args...)
-	detachProcessGroup(cmd)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = append(os.Environ(),
 		"RESTIC_COMPRESSION="+c.compression,
 		"RESTIC_PROGRESS_FPS=1",

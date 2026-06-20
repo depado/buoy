@@ -332,6 +332,12 @@ If a mount source doesn't exist inside buoy, it's skipped with a warning.
 
 Containers with `buoy.stop-before-backup=true` **must not** have `restart: always` (or similar). If they do, Docker restarts them immediately after buoy stops them, causing a race with the backup. Use `restart: "no"` or omit the restart policy on containers that buoy stops.
 
+### Signal handling
+
+On Unix systems, pressing Ctrl+C sends SIGINT to the entire foreground process group, which includes restic child processes. buoy prevents this by placing restic in its own process group (`Setpgid`). This means backups complete cleanly even when buoy receives a shutdown signal.
+
+When building from source on Windows, this protection is not applied. If you encounter partial backups during shutdown on Windows, consider running buoy inside the Linux container image instead.
+
 ## Restoring
 
 buoy does not have a built-in restore command. Use restic directly:

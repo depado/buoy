@@ -1,0 +1,72 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - gosec
+    - gocritic
+    - revive
+    - copyloopvar
+    - durationcheck
+    - gochecknoinits
+    - godot
+    - nilerr
+    - prealloc
+    - tparallel
+    - unconvert
+    - unparam
+    - bodyclose
+
+  settings:
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: empty-block
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: exported
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: unnecessary-stmt
+        - name: unreachable-code
+        - name: var-declaration
+        - name: var-naming
+        - name: waitgroup-by-value
+      severity: warning
+
+    gosec:
+      excludes:
+        - G204
+      severity: medium
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - std-error-handling
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party
+      - vendor

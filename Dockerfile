@@ -10,9 +10,10 @@ COPY . .
 RUN make
 
 ARG RESTIC_VERSION=0.19.0
-RUN wget -q "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_amd64.bz2" && \
-    bunzip2 "restic_${RESTIC_VERSION}_linux_amd64.bz2" && \
-    mv "restic_${RESTIC_VERSION}_linux_amd64" /usr/local/bin/restic && \
+ARG TARGETARCH
+RUN wget -q "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_${TARGETARCH}.bz2" && \
+    bunzip2 "restic_${RESTIC_VERSION}_linux_${TARGETARCH}.bz2" && \
+    mv "restic_${RESTIC_VERSION}_linux_${TARGETARCH}" /usr/local/bin/restic && \
     chmod +x /usr/local/bin/restic
 
 FROM gcr.io/distroless/static@sha256:3592aa8171c77482f62bbc4164e6a2d141c6122554ace66e5cc910cadb961ff0
