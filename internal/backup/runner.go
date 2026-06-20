@@ -125,7 +125,9 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
 	}
 
 	r.runPostHooks(ctx, fresh, cfg)
-	r.applyRetention(ctx, fresh, cfg, repos, l)
+	if backupErr == nil {
+		r.applyRetention(ctx, fresh, cfg, repos, l)
+	}
 
 	if backupErr != nil {
 		l.Error("backup completed with failures", "error", backupErr)
@@ -279,7 +281,9 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 	for _, ctr := range fresh {
 		cfg := containerCfg[ctr.ID]
 		r.runPostHooks(ctx, ctr, cfg)
-		r.applyRetention(ctx, ctr, cfg, containerRepos[ctr.ID], l)
+		if _, failed := backupErrors[ctr.ComposeService]; !failed {
+			r.applyRetention(ctx, ctr, cfg, containerRepos[ctr.ID], l)
+		}
 	}
 
 	for id := range ignoredInBatch {
