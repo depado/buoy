@@ -47,11 +47,15 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/lib/docker/volumes:/var/lib/docker/volumes:ro
       - /srv/data:/srv/data:ro # bind mounts you want backed up
+      - buoy_data:/data      # state persistence
     environment:
       - BUOY_RESTIC_PASSWORD=your-secure-password
       - BUOY_RESTIC_REPOS=/backup
       - BUOY_DAEMON_CONCURRENCY=2
     restart: unless-stopped
+
+volumes:
+  buoy_data:
 ```
 
 ### 2. Label a container for backup
@@ -185,6 +189,7 @@ daemon:
   health_wait_timeout: "5m" # max time to wait for container health
   backup_timeout: "1h" # max time for a complete backup cycle
   check_schedule: "@weekly" # cron for periodic restic check (empty = disabled)
+  db_path: "./buoy.db" # path to the bbolt state database
 
 docker:
   host: unix:///var/run/docker.sock
@@ -195,6 +200,12 @@ restic:
   compression: auto
   repos:
     - /backup
+
+api:
+  enabled: true              # enable the HTTP API server
+  host: "0.0.0.0"            # API listen host
+  port: 8080                 # API listen port
+  token: ""                  # bearer token (empty = no auth)
 
 notify:
   urls: # shoutrrr notification URLs
@@ -217,6 +228,11 @@ BUOY_DAEMON_EXEC_TIMEOUT=5m
 BUOY_DAEMON_HEALTH_WAIT_TIMEOUT=5m
 BUOY_DAEMON_BACKUP_TIMEOUT=1h
 BUOY_DAEMON_CHECK_SCHEDULE=@weekly
+BUOY_DAEMON_DB_PATH=./buoy.db
+BUOY_API_ENABLED=true
+BUOY_API_HOST=0.0.0.0
+BUOY_API_PORT=8080
+BUOY_API_TOKEN=my-secret-token
 BUOY_LOG_LEVEL=debug
 BUOY_NOTIFY_URLS=slack://tokenA/tokenB/tokenC
 BUOY_NOTIFY_LEVEL=error
@@ -225,7 +241,7 @@ BUOY_NOTIFY_LEVEL=error
 ### CLI flags
 
 ```bash
-buoy run --daemon.concurrency 2 --daemon.resync_interval 5m --daemon.exec_timeout 5m --daemon.health_wait_timeout 5m --daemon.backup_timeout 1h --daemon.check_schedule @weekly --restic.password my-password --restic.compression auto --restic.repos /backup --restic.repos s3:s3.amazonaws.com/bucket --log.level debug --notify.urls slack://tokenA/tokenB/tokenC --notify.level error
+buoy run --daemon.concurrency 2 --daemon.resync_interval 5m --daemon.exec_timeout 5m --daemon.health_wait_timeout 5m --daemon.backup_timeout 1h --daemon.check_schedule @weekly --restic.password my-password --restic.compression auto --restic.repos /backup --restic.repos s3:s3.amazonaws.com/bucket --api.enabled true --api.host 0.0.0.0 --api.port 8080 --api.token my-secret-token --log.level debug --notify.urls slack://tokenA/tokenB/tokenC --notify.level error
 ```
 
 ### Password precedence
@@ -280,11 +296,70 @@ daemon:
   check_schedule: "@weekly"
 ```
 
-When the check runs, buoy iterates over all known repositories (deduplicated
-across containers) and runs `restic check` on each. Failures are logged and
-optionally trigger notifications. This is a structural check only — it does
-not read pack file data (use the restic CLI directly for `restic check --read-data`
-for a full data integrity check).
+When the check runs, buoy reads known repositories from its persistent state
+database (`buoy.db`). Failures are logged and optionally trigger notifications.
+This is a structural check only — it does not read pack file data (use the CLI
+or API for `restic check --read-data` if needed).
+
+### State Persistence
+
+buoy maintains a [bbolt](https://github.com/etcd-io/bbolt) database at the path
+configured by `daemon.db_path` (default `./buoy.db`). This database tracks
+every repository buoy has ever managed: when it was created, when it was last
+backed up, and whether the associated container still exists.
+
+This enables:
+- **Orphaned repo detection**: repos belonging to removed containers are tracked
+  rather than forgotten, so you can still run retention, integrity checks, or
+  manually clean them up
+- **Cross-restart awareness**: the repository list survives daemon restarts
+
+The database is a single file. Mount a volume or bind mount at the directory
+containing it to persist state across container recreates.
+
+### HTTP API
+
+buoy exposes a read/write HTTP API on `api.host:api.port` (default
+`0.0.0.0:8080`) for querying and operating on repositories. Authentication is
+via a Bearer token (`api.token`); when the token is empty, no authentication is
+required.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/health` | Health check (no auth) |
+| `GET` | `/api/v1/repos` | List all known repos. `?orphaned=true` to show only orphaned |
+| `POST` | `/api/v1/repos/check` | Run `restic check` on all repos. `?read-data=true` for full check |
+| `POST` | `/api/v1/repos/stats` | Aggregate `restic stats` across all repos |
+| `POST` | `/api/v1/repos/unlock` | Unlock all repos |
+| `POST` | `/api/v1/repos/forget` | Run `restic forget` with `?retention=keep-daily:7,...` |
+| `POST` | `/api/v1/repos/prune` | Run `restic prune` on all repos |
+
+Connect to the API from a local or remote buoy CLI, or use it as the backend
+for a dashboard/aggregator.
+
+### CLI: `buoy repo`
+
+buoy provides a `repo` subcommand for querying and operating on managed
+repositories. The CLI communicates with a running buoy daemon via its HTTP API.
+
+Set `--api.url` and `--api.token` per command, or use the `BUOY_URL` /
+`BUOY_TOKEN` environment variables. Defaults to `http://127.0.0.1:8080`.
+
+```bash
+buoy repo list                    # list all repos
+buoy repo list --orphaned         # show only orphaned repos
+buoy repo check                   # structural integrity check
+buoy repo check --read-data       # full data integrity check
+buoy repo stats                   # storage usage across all repos
+buoy repo unlock                  # unlock all repos
+buoy repo forget --retention keep-daily:7,keep-weekly:4
+buoy repo prune                   # prune all repos
+
+# Remote daemon with auth
+export BUOY_URL=https://buoy.internal.example.com
+export BUOY_TOKEN=secret123
+buoy repo stats
+```
 
 ## Repository Layout
 
@@ -311,6 +386,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/lib/docker/volumes:/var/lib/docker/volumes:ro
       - /srv/app-data:/srv/app-data:ro # each bind mount explicitly
+      - buoy_data:/data             # state persistence
     environment:
       - BUOY_RESTIC_PASSWORD=${RESTIC_PASSWORD:?required}
       - BUOY_RESTIC_REPOS=/backup
@@ -319,6 +395,9 @@ services:
     labels:
 
     restart: unless-stopped
+
+volumes:
+  buoy_data:
 ```
 
 Each path buoy needs to read must be mounted explicitly:

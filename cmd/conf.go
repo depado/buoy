@@ -30,6 +30,7 @@ type DaemonConf struct {
 	HealthWaitTimeout string `mapstructure:"health_wait_timeout"`
 	CheckSchedule     string `mapstructure:"check_schedule"`
 	BackupTimeout     string `mapstructure:"backup_timeout"`
+	DBPath            string `mapstructure:"db_path"`
 }
 
 // DockerConf configures the Docker Engine connection.
@@ -51,6 +52,14 @@ type NotifyConf struct {
 	Level string   `mapstructure:"level"`
 }
 
+// APIConf configures the HTTP API server.
+type APIConf struct {
+	Enabled bool   `mapstructure:"enabled"`
+	Host    string `mapstructure:"host"`
+	Port    int    `mapstructure:"port"`
+	Token   string `mapstructure:"token"`
+}
+
 // Conf is the top-level configuration for buoy.
 type Conf struct {
 	Log    LogConf    `mapstructure:"log"`
@@ -58,6 +67,7 @@ type Conf struct {
 	Docker DockerConf `mapstructure:"docker"`
 	Restic ResticConf `mapstructure:"restic"`
 	Notify NotifyConf `mapstructure:"notify"`
+	API    APIConf    `mapstructure:"api"`
 }
 
 // NewLogger creates a structured logger from the given configuration.

@@ -5,3 +5,4 @@ test/
 repos/
 dist/
 coverage.txt
+buoy.db

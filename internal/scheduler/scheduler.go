@@ -11,6 +11,7 @@ import (
 
 	"github.com/depado/buoy/internal/backup"
 	"github.com/depado/buoy/internal/docker"
+	"github.com/depado/buoy/internal/registry"
 )
 
 type Scheduler struct {
@@ -19,7 +20,8 @@ type Scheduler struct {
 	backup           *backup.Runner
 	sem              chan struct{}
 	wg               sync.WaitGroup
-	registry         *containerRegistry
+	containerReg     *containerRegistry
+	repoReg          *registry.Registry
 	stacks           map[string]*stackQueue
 	stackMu          sync.Mutex
 	active           atomic.Int64
@@ -29,7 +31,7 @@ type Scheduler struct {
 	backupTimeout    time.Duration
 }
 
-func New(d *docker.Client, r *backup.Runner, concurrency int, defaultSchedule, defaultRetention string, backupTimeout time.Duration, logger *slog.Logger) *Scheduler {
+func New(d *docker.Client, r *backup.Runner, reg *registry.Registry, concurrency int, defaultSchedule, defaultRetention string, backupTimeout time.Duration, logger *slog.Logger) *Scheduler {
 	if concurrency < 1 {
 		concurrency = 1
 	}
@@ -46,7 +48,8 @@ func New(d *docker.Client, r *backup.Runner, concurrency int, defaultSchedule, d
 		docker:           d,
 		backup:           r,
 		sem:              make(chan struct{}, concurrency),
-		registry:         newContainerRegistry(c, logger),
+		containerReg:     newContainerRegistry(c, logger),
+		repoReg:          reg,
 		stacks:           make(map[string]*stackQueue),
 		logger:           logger,
 		defaultSchedule:  defaultSchedule,
@@ -80,16 +83,22 @@ func (s *Scheduler) AddContainer(ctr *docker.Container) error {
 		return nil
 	}
 
+	if _, err := s.repoReg.SyncContainer(ctr, cfg); err != nil {
+		s.logger.Warn("failed to persist container repos", append(ctr.LogAttrs(), "error", err)...)
+	}
+
 	key := scheduleGroupKey(ctr.ComposeProject, cfg.Schedule)
 	project := ctr.ComposeProject
 
-	return s.registry.register(ctr, key, cfg.Schedule, func() {
+	return s.containerReg.register(ctr, key, cfg.Schedule, func() {
 		s.runScheduleGroup(key, project)
 	})
 }
 
 func (s *Scheduler) RemoveContainer(containerID string) {
-	s.registry.unregister(containerID)
+	s.containerReg.unregister(containerID)
+	_ = s.repoReg.MarkOrphaned(containerID)
+	s.logger.Debug("removed container from schedule", "id", containerID)
 }
 
 func (s *Scheduler) Running() bool {
@@ -117,7 +126,9 @@ func (s *Scheduler) ScheduleCheck(schedule string) error {
 		s.logger.Info("running periodic restic check")
 		ctx, cancel := context.WithTimeout(context.Background(), s.backupTimeout)
 		defer cancel()
+		start := time.Now()
 		s.backup.CheckKnownRepos(ctx)
+		s.logger.Info("periodic restic check complete", slog.Duration("duration", time.Since(start)))
 	})
 	return err
 }
@@ -133,7 +144,7 @@ func (s *Scheduler) Resync(ctx context.Context) {
 	active := make(map[string]bool)
 	for _, ctr := range containers {
 		active[ctr.ID] = true
-		if !s.registry.has(ctr.ID) {
+		if !s.containerReg.has(ctr.ID) {
 			ctr := ctr
 			if err := s.AddContainer(&ctr); err != nil {
 				s.logger.Warn("resync: failed to add container", append(ctr.LogAttrs(), "error", err)...)
@@ -141,7 +152,7 @@ func (s *Scheduler) Resync(ctx context.Context) {
 		}
 	}
 
-	s.registry.forEachEntry(func(id, _ string) bool {
+	s.containerReg.forEachEntry(func(id, _ string) bool {
 		if !active[id] {
 			s.RemoveContainer(id)
 		}
@@ -150,7 +161,7 @@ func (s *Scheduler) Resync(ctx context.Context) {
 }
 
 func (s *Scheduler) runScheduleGroup(key, project string) {
-	ctrs := s.registry.getGroup(key)
+	ctrs := s.containerReg.getGroup(key)
 	if len(ctrs) == 0 {
 		return
 	}
@@ -169,6 +180,7 @@ func (s *Scheduler) runScheduleGroup(key, project string) {
 				if err := s.backup.Run(ctx, c); err != nil {
 					s.logger.Error("backup failed", append(c.LogAttrs(), "error", err)...)
 				}
+				s.pruneDead(c)
 			}(ctr)
 		}
 		return
@@ -229,6 +241,10 @@ func (s *Scheduler) enqueueBatch(project string, batch []*docker.Container) {
 			s.logger.Error("stack batch backup failed", "project", project, "error", err)
 		}
 		cancel()
+
+		for _, ctr := range batch {
+			s.pruneDead(ctr)
+		}
 	}
 }
 
@@ -241,6 +257,16 @@ func (s *Scheduler) getStackQueue(project string) *stackQueue {
 		s.stacks[project] = q
 	}
 	return q
+}
+
+func (s *Scheduler) pruneDead(ctr *docker.Container) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := s.docker.InspectContainer(ctx, ctr.ID)
+	if err != nil {
+		s.logger.Debug("container no longer exists, removing from schedule", append(ctr.LogAttrs(), "error", err)...)
+		s.RemoveContainer(ctr.ID)
+	}
 }
 
 type stackQueue struct {

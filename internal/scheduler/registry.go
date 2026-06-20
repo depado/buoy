@@ -100,8 +100,13 @@ func (r *containerRegistry) has(containerID string) bool {
 
 func (r *containerRegistry) forEachEntry(fn func(id, key string) bool) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	entries := make(map[string]string, len(r.index))
 	for id, key := range r.index {
+		entries[id] = key
+	}
+	r.mu.Unlock()
+
+	for id, key := range entries {
 		if !fn(id, key) {
 			return
 		}

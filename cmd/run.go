@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -13,10 +14,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/depado/buoy/internal/api"
 	"github.com/depado/buoy/internal/backup"
 	"github.com/depado/buoy/internal/docker"
 	"github.com/depado/buoy/internal/hook"
 	"github.com/depado/buoy/internal/notify"
+	"github.com/depado/buoy/internal/registry"
 	"github.com/depado/buoy/internal/restic"
 	"github.com/depado/buoy/internal/scheduler"
 )
@@ -51,7 +54,14 @@ var runCmd = &cobra.Command{
 			"resync_interval", conf.Daemon.ResyncInterval,
 			"check_schedule", conf.Daemon.CheckSchedule,
 			"notify_level", conf.Notify.Level,
+			"db_path", conf.Daemon.DBPath,
 		)
+
+		reg, err := registry.Open(conf.Daemon.DBPath, conf.Restic.Repos)
+		if err != nil {
+			return fmt.Errorf("open registry: %w", err)
+		}
+		defer reg.Close()
 
 		dockerClient, err := docker.New(conf.Docker.Host)
 		if err != nil {
@@ -78,7 +88,7 @@ var runCmd = &cobra.Command{
 			Docker:            dockerClient,
 			Restic:            resticClient,
 			Hook:              hookExec,
-			Repos:             conf.Restic.Repos,
+			Registry:          reg,
 			DefaultSchedule:   conf.Daemon.DefaultSchedule,
 			DefaultRetention:  conf.Daemon.DefaultRetention,
 			IgnoredIDs:        ignoredIDs,
@@ -88,8 +98,18 @@ var runCmd = &cobra.Command{
 			HealthWaitTimeout: healthWaitTimeout,
 			BackupTimeout:     backupTimeout,
 		})
-		sched := scheduler.New(dockerClient, runner, conf.Daemon.Concurrency, conf.Daemon.DefaultSchedule, conf.Daemon.DefaultRetention,
+		sched := scheduler.New(dockerClient, runner, reg, conf.Daemon.Concurrency, conf.Daemon.DefaultSchedule, conf.Daemon.DefaultRetention,
 			backupTimeout, logger)
+
+		var apiSrv *api.Server
+		if conf.API.Enabled {
+			apiSrv = api.New(reg, resticClient, conf.API.Token, conf.API.Host, conf.API.Port, Version, logger)
+			go func() {
+				if err := apiSrv.Start(); err != nil && err != http.ErrServerClosed {
+					logger.Error("api server error", "error", err)
+				}
+			}()
+		}
 
 		containers, err := dockerClient.ListBackupContainers(context.Background())
 		if err != nil {
@@ -165,6 +185,13 @@ var runCmd = &cobra.Command{
 					logger.Info("received signal, shutting down", "signal", sig)
 				}
 				cancel()
+				if apiSrv != nil {
+					shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer shutdownCancel()
+					if err := apiSrv.Shutdown(shutdownCtx); err != nil {
+						logger.Warn("api server shutdown error", "error", err)
+					}
+				}
 				done := sched.Stop()
 				<-done.Done()
 				return nil

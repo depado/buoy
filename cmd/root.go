@@ -21,6 +21,8 @@ func Setup(root *cobra.Command) {
 		os.Exit(1)
 	}
 
+	setupRepoCommands()
+	root.AddCommand(repoCmd)
 	root.AddCommand(versionCmd)
 	root.AddCommand(runCmd)
 

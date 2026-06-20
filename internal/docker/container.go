@@ -158,36 +158,7 @@ func parseRetention(labels map[string]string, defaultRetention string, rc *resti
 	if v == "" {
 		return
 	}
-	for _, part := range splitAndTrim(v) {
-		kv := strings.SplitN(part, ":", 2)
-		if len(kv) != 2 {
-			slog.Warn("invalid retention entry, expected key:value", "entry", part)
-			continue
-		}
-		val, err := strconv.Atoi(strings.TrimSpace(kv[1]))
-		if err != nil {
-			if strings.TrimSpace(kv[0]) == "keep-within" {
-				rc.KeepWithin = strings.TrimSpace(kv[1])
-			} else {
-				slog.Warn("invalid retention value, entry skipped", "key", kv[0], "value", kv[1])
-			}
-			continue
-		}
-		switch strings.TrimSpace(kv[0]) {
-		case "keep-last":
-			rc.KeepLast = val
-		case "keep-hourly":
-			rc.KeepHourly = val
-		case "keep-daily":
-			rc.KeepDaily = val
-		case "keep-weekly":
-			rc.KeepWeekly = val
-		case "keep-monthly":
-			rc.KeepMonthly = val
-		case "keep-yearly":
-			rc.KeepYearly = val
-		}
-	}
+	*rc = restic.ParseRetentionPolicy(v)
 }
 
 func splitAndTrim(s string) []string {

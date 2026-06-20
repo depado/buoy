@@ -1,0 +1,181 @@
+package api
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"os"
+	"time"
+
+	"github.com/depado/buoy/internal/registry"
+	"github.com/depado/buoy/internal/restic"
+)
+
+const defaultTimeout = 5 * time.Minute
+
+type Client struct {
+	BaseURL string
+	Token   string
+	client  *http.Client
+}
+
+func NewClient(baseURL, token string) *Client {
+	return &Client{
+		BaseURL: baseURL,
+		Token:   token,
+		client:  &http.Client{Timeout: defaultTimeout},
+	}
+}
+
+func DefaultClient() *Client {
+	return NewClient(
+		envOrDefault("BUOY_URL", "http://127.0.0.1:8080"),
+		os.Getenv("BUOY_TOKEN"),
+	)
+}
+
+func (c *Client) doRequest(method, path string) (*http.Response, error) {
+	req, err := http.NewRequest(method, c.BaseURL+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	if c.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request: %w", err)
+	}
+	return resp, nil
+}
+
+func (c *Client) ListRepos(orphaned bool) ([]registry.RepoEntry, error) {
+	path := "/api/v1/repos" + orphanParam(orphaned)
+	resp, err := c.doRequest("GET", path)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return decodeJSON[[]registry.RepoEntry](resp)
+}
+
+func (c *Client) CheckRepos(readData bool, orphaned bool) ([]CheckResult, error) {
+	params := make(url.Values)
+	if readData {
+		params.Set("read-data", "true")
+	}
+	if orphaned {
+		params.Set("orphaned", "true")
+	}
+	path := "/api/v1/repos/check"
+	if q := params.Encode(); q != "" {
+		path += "?" + q
+	}
+	resp, err := c.doRequest("POST", path)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return decodeJSON[[]CheckResult](resp)
+}
+
+type CheckResult struct {
+	Repo  string `json:"repo"`
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
+func (c *Client) StatsRepos() (*StatsResponse, error) {
+	resp, err := c.doRequest("POST", "/api/v1/repos/stats")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	stats, err := decodeJSON[StatsResponse](resp)
+	if err != nil {
+		return nil, err
+	}
+	return &stats, nil
+}
+
+type StatsResponse struct {
+	Total *restic.Stats `json:"total"`
+	Repos []RepoStats   `json:"repos"`
+}
+
+type RepoStats struct {
+	Repo  string        `json:"repo"`
+	Stats *restic.Stats `json:"stats,omitempty"`
+	Error string        `json:"error,omitempty"`
+}
+
+func (c *Client) UnlockRepos(orphaned bool) ([]OpResult, error) {
+	path := "/api/v1/repos/unlock" + nonOrphanedParam(orphaned)
+	resp, err := c.doRequest("POST", path)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return decodeJSON[[]OpResult](resp)
+}
+
+type OpResult struct {
+	Repo  string `json:"repo"`
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
+func (c *Client) ForgetRepos(retention string, orphaned bool) ([]OpResult, error) {
+	path := "/api/v1/repos/forget?retention=" + url.QueryEscape(retention)
+	if orphaned {
+		path += "&orphaned=true"
+	}
+	resp, err := c.doRequest("POST", path)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return decodeJSON[[]OpResult](resp)
+}
+
+func (c *Client) PruneRepos(orphaned bool) ([]OpResult, error) {
+	path := "/api/v1/repos/prune" + nonOrphanedParam(orphaned)
+	resp, err := c.doRequest("POST", path)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return decodeJSON[[]OpResult](resp)
+}
+
+func decodeJSON[T any](resp *http.Response) (T, error) {
+	var v T
+	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
+		return v, fmt.Errorf("decode response: %w", err)
+	}
+	return v, nil
+}
+
+func envOrDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+func orphanParam(v bool) string {
+	if v {
+		return "?orphaned=true"
+	}
+	return ""
+}
+
+func nonOrphanedParam(orphaned bool) string {
+	if orphaned {
+		return "?orphaned=true"
+	}
+	return "?orphaned=false"
+}
