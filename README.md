@@ -1,13 +1,20 @@
-# buoy
+<div align="center">
+
+<h1>buoy</h1>
+
+Backup Docker container volumes and bind mounts with [restic](https://restic.net/).
+
+buoy is a daemon that discovers Docker containers via labels, stops them, backs up their mounted volumes using restic, restarts them, and applies retention policies — all on cron schedules.
+
+[![shieldcn](https://shieldcn.dev/group/github/ci/depado/buoy+github/release/depado/buoy+github/license/depado/buoy+github/last-commit/depado/buoy.svg?variant=branded)](https://shieldcn.dev)
+[![shieldcn](https://shieldcn.dev/group/github/stars/depado/buoy+github/contributors/depado/buoy+github/issues/depado/buoy.svg?variant=branded)](https://shieldcn.dev)
+
+</div>
 
 > [!WARNING]
 > **Work in progress.** buoy is experimental and under active development.
 > APIs, labels, and behavior may change without notice. Not yet recommended
 > for production use.
-
-Backup Docker container volumes and bind mounts with [restic](https://restic.net/).
-
-buoy is a daemon that discovers Docker containers via labels, stops them, backs up their mounted volumes using restic, restarts them, and applies retention policies — all on cron schedules.
 
 ## How It Works
 
@@ -47,7 +54,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/lib/docker/volumes:/var/lib/docker/volumes:ro
       - /srv/data:/srv/data:ro # bind mounts you want backed up
-      - buoy_data:/data      # state persistence
+      - buoy_data:/data # state persistence
     environment:
       - BUOY_RESTIC_PASSWORD=your-secure-password
       - BUOY_RESTIC_REPOS=/backup
@@ -62,24 +69,21 @@ volumes:
 
 ```yaml
 services:
-  postgres:
-    image: postgres:16
+  myapp:
+    image: myapp:latest
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - app_data:/data
     labels:
       buoy.enabled: "true"
       buoy.schedule: "0 3 * * *"
-      buoy.retention: "keep-daily:7,keep-weekly:4,keep-monthly:6"
-      buoy.tags: "database,production"
-      buoy.files: "dump.sql"
-      buoy.pre-backup-exec: "pg_dumpall -U postgres -f /var/lib/postgresql/data/dump.sql"
-      buoy.post-backup-exec: "rm /var/lib/postgresql/data/dump.sql"
 
 volumes:
-  postgres_data:
+  app_data:
 ```
 
 That's it. buoy discovers the container, initializes a restic repo at `/backup/<project>/<service>` at backup time, and backs it up daily at 3 AM.
+
+See [Examples](#examples) for more advanced setups with hooks, file patterns, and compose stacks.
 
 ### Compose stacks
 
@@ -131,35 +135,13 @@ All keys are optional. Omitted keys are not passed to restic.
 
 buoy reads `com.docker.compose.project`, `com.docker.compose.service`, and `com.docker.compose.depends_on` labels that Docker Compose sets automatically.
 
-**Every container needs its own schedule.** When multiple containers in the same stack have close or identical schedules, buoy batches them: jobs arriving while a stack backup is running wait in a per-stack queue and run immediately after the current batch finishes. One coordinated stop/start cycle per batch, backing up one container per service.
+**Every container needs its own schedule.** When multiple containers in the same stack have close or identical schedules, buoy batches them into one coordinated stop/start cycle. Jobs arriving while a stack backup is running wait in a per-stack queue and run immediately after.
 
-**Stop set:** buoy stops containers with `buoy.stop-before-backup=true` plus any container that transitively depends on a stopped container. Only containers being backed up in the current batch contribute to the stop decision. This ensures clean shutdowns: if the database stops, the API also stops rather than crashing on a lost connection.
+**Stop set:** buoy stops containers with `buoy.stop-before-backup=true` plus any container that transitively depends on a stopped container. If the database stops, the API also stops rather than crashing on a lost connection.
 
 **Start order:** buoy restarts containers in dependency order (database before API) and waits for health checks before starting dependents — same behavior as `docker compose up`.
 
-**Example:** A stack with DB (depends on nothing), Cache (depends on nothing), and API (depends on DB + Cache).
-
-```yaml
-db:
-  labels:
-    buoy.enabled: "true"
-    buoy.schedule: "0 3 * * *"
-    buoy.stop-before-backup: "true"
-
-api:
-  labels:
-    buoy.enabled: "true"
-    buoy.schedule: "0 3 * * *" # same schedule → batched
-    buoy.stop-before-backup: "false"
-
-cache:
-  labels:
-    buoy.enabled: "true"
-    buoy.schedule: "0 3 * * *" # same schedule → batched
-    buoy.stop-before-backup: "false"
-```
-
-At 3 AM: DB, Cache, and API all fire. They batch together. DB has `stop=true` → API depends on DB → {DB, API} stop. Cache stays running. Back up each service. Restart DB, wait healthy, restart API.
+See [Examples](#examples) for a full compose stack setup.
 
 **Repo paths** follow `<base>/<project>/<service>`:
 
@@ -168,6 +150,79 @@ At 3 AM: DB, Cache, and API all fire. They batch together. DB has `stop=true` �
 /backup/myapp/api
 /backup/myapp/cache
 ```
+
+## Examples
+
+### PostgreSQL with dump hooks
+
+Run `pg_dumpall` before backup to create a consistent SQL dump, then back up only
+the dump file. Clean up after.
+
+```yaml
+services:
+  postgres:
+    image: postgres:16
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    labels:
+      buoy.enabled: "true"
+      buoy.schedule: "0 3 * * *"
+      buoy.retention: "keep-daily:7,keep-weekly:4,keep-monthly:6"
+      buoy.tags: "database,production"
+      buoy.files: "dump.sql"
+      buoy.pre-backup-exec: "pg_dumpall -U postgres -f /var/lib/postgresql/data/dump.sql"
+      buoy.post-backup-exec: "rm /var/lib/postgresql/data/dump.sql"
+
+volumes:
+  postgres_data:
+```
+
+### Compose stack with dependencies
+
+Three services: DB (stop before backup), Cache, and API (depends on both).
+All share the same schedule, so buoy batches them into one coordinated cycle.
+
+```yaml
+services:
+  db:
+    image: postgres:16
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    labels:
+      buoy.enabled: "true"
+      buoy.schedule: "0 3 * * *"
+      buoy.stop-before-backup: "true"
+
+  cache:
+    image: redis:7
+    volumes:
+      - cache_data:/data
+    labels:
+      buoy.enabled: "true"
+      buoy.schedule: "0 3 * * *"
+
+  api:
+    image: myapi:latest
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_started
+    volumes:
+      - api_data:/app/data
+    labels:
+      buoy.enabled: "true"
+      buoy.schedule: "0 3 * * *"
+
+volumes:
+  db_data:
+  cache_data:
+  api_data:
+```
+
+At 3 AM: all three fire. DB has `stop-before-backup=true`, API depends on DB
+→ {DB, API} stop transitively. Cache stays running. Each service backed up.
+Restart DB, wait healthy, restart API.
 
 ## Configuration
 
@@ -202,10 +257,10 @@ restic:
     - /backup
 
 api:
-  enabled: true              # enable the HTTP API server
-  host: "0.0.0.0"            # API listen host
-  port: 8080                 # API listen port
-  token: ""                  # bearer token (empty = no auth)
+  enabled: true # enable the HTTP API server
+  host: "0.0.0.0" # API listen host
+  port: 8080 # API listen port
+  token: "" # bearer token (empty = no auth)
 
 notify:
   urls: # shoutrrr notification URLs
@@ -309,6 +364,7 @@ every repository buoy has ever managed: when it was created, when it was last
 backed up, and whether the associated container still exists.
 
 This enables:
+
 - **Orphaned repo detection**: repos belonging to removed containers are tracked
   rather than forgotten, so you can still run retention, integrity checks, or
   manually clean them up
@@ -324,15 +380,15 @@ buoy exposes a read/write HTTP API on `api.host:api.port` (default
 via a Bearer token (`api.token`); when the token is empty, no authentication is
 required.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/v1/health` | Health check (no auth) |
-| `GET` | `/api/v1/repos` | List all known repos. `?orphaned=true` to show only orphaned |
-| `POST` | `/api/v1/repos/check` | Run `restic check` on all repos. `?read-data=true` for full check |
-| `POST` | `/api/v1/repos/stats` | Aggregate `restic stats` across all repos |
-| `POST` | `/api/v1/repos/unlock` | Unlock all repos |
-| `POST` | `/api/v1/repos/forget` | Run `restic forget` with `?retention=keep-daily:7,...` |
-| `POST` | `/api/v1/repos/prune` | Run `restic prune` on all repos |
+| Method | Path                   | Description                                                       |
+| ------ | ---------------------- | ----------------------------------------------------------------- |
+| `GET`  | `/api/v1/health`       | Health check (no auth)                                            |
+| `GET`  | `/api/v1/repos`        | List all known repos. `?orphaned=true` to show only orphaned      |
+| `POST` | `/api/v1/repos/check`  | Run `restic check` on all repos. `?read-data=true` for full check |
+| `POST` | `/api/v1/repos/stats`  | Aggregate `restic stats` across all repos                         |
+| `POST` | `/api/v1/repos/unlock` | Unlock all repos                                                  |
+| `POST` | `/api/v1/repos/forget` | Run `restic forget` with `?retention=keep-daily:7,...`            |
+| `POST` | `/api/v1/repos/prune`  | Run `restic prune` on all repos                                   |
 
 Connect to the API from a local or remote buoy CLI, or use it as the backend
 for a dashboard/aggregator.
@@ -386,7 +442,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/lib/docker/volumes:/var/lib/docker/volumes:ro
       - /srv/app-data:/srv/app-data:ro # each bind mount explicitly
-      - buoy_data:/data             # state persistence
+      - buoy_data:/data # state persistence
     environment:
       - BUOY_RESTIC_PASSWORD=${RESTIC_PASSWORD:?required}
       - BUOY_RESTIC_REPOS=/backup
