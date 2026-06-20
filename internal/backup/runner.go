@@ -222,7 +222,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 			r.ignore(ctr.ID)
 			ignoredInBatch[ctr.ID] = true
 			sl.Debug("stopping container")
-			cfg := docker.ParseBackupConfig(ctr.Labels, "", "")
+			cfg := r.parseConfig(ctr.Labels)
 			if err := r.docker.StopContainer(ctx, ctr.ID, cfg.StopTimeout); err != nil {
 				sl.Warn("failed to stop container", "error", err)
 				stopFailed[ctr.ID] = true
