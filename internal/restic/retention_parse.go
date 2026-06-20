@@ -10,7 +10,7 @@ func ParseRetentionPolicy(s string) RetentionPolicy {
 	if s == "" {
 		return rp
 	}
-	for _, part := range splitTrim(s) {
+	for _, part := range SplitTrim(s) {
 		kv := strings.SplitN(part, ":", 2)
 		if len(kv) != 2 {
 			continue
@@ -49,7 +49,7 @@ func ParseRetentionPolicy(s string) RetentionPolicy {
 	return rp
 }
 
-func splitTrim(s string) []string {
+func SplitTrim(s string) []string {
 	parts := strings.Split(s, ",")
 	result := make([]string, 0, len(parts))
 	for _, p := range parts {

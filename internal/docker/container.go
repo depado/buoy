@@ -94,7 +94,7 @@ func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetenti
 		cfg.Schedule = defaultSchedule
 	}
 	if v, ok := labels["buoy.repos"]; ok {
-		cfg.ReposOverride = splitAndTrim(v)
+		cfg.ReposOverride = restic.SplitTrim(v)
 	}
 	if v, ok := labels["buoy.stop-before-backup"]; ok {
 		stop, err := strconv.ParseBool(v)
@@ -112,25 +112,25 @@ func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetenti
 		}
 	}
 	if v, ok := labels["buoy.include-volumes"]; ok {
-		cfg.IncludeVolumes = splitAndTrim(v)
+		cfg.IncludeVolumes = restic.SplitTrim(v)
 	}
 	if v, ok := labels["buoy.include-mounts"]; ok {
-		cfg.IncludeMounts = splitAndTrim(v)
+		cfg.IncludeMounts = restic.SplitTrim(v)
 	}
 	if v, ok := labels["buoy.exclude-volumes"]; ok {
-		cfg.ExcludeVolumes = splitAndTrim(v)
+		cfg.ExcludeVolumes = restic.SplitTrim(v)
 	}
 	if v, ok := labels["buoy.exclude-mounts"]; ok {
-		cfg.ExcludeMounts = splitAndTrim(v)
+		cfg.ExcludeMounts = restic.SplitTrim(v)
 	}
 	if v, ok := labels["buoy.exclude-patterns"]; ok {
-		cfg.ExcludePatterns = splitAndTrim(v)
+		cfg.ExcludePatterns = restic.SplitTrim(v)
 	}
 	if v, ok := labels["buoy.files"]; ok {
-		cfg.Files = splitAndTrim(v)
+		cfg.Files = restic.SplitTrim(v)
 	}
 	if v, ok := labels["buoy.tags"]; ok {
-		cfg.Tags = splitAndTrim(v)
+		cfg.Tags = restic.SplitTrim(v)
 	}
 	if v, ok := labels["buoy.pre-backup-cmd"]; ok {
 		cfg.PreBackupCmd = v
@@ -159,18 +159,6 @@ func parseRetention(labels map[string]string, defaultRetention string, rc *resti
 		return
 	}
 	*rc = restic.ParseRetentionPolicy(v)
-}
-
-func splitAndTrim(s string) []string {
-	parts := strings.Split(s, ",")
-	result := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			result = append(result, p)
-		}
-	}
-	return result
 }
 
 // LogAttrs returns slog attributes for structured logging.
