@@ -168,6 +168,17 @@ func (c *Client) Events(ctx context.Context, filters client.Filters) (<-chan eve
 	return result.Messages, result.Err
 }
 
+// WatchContainer subscribes to Docker events for a specific container.
+func (c *Client) WatchContainer(ctx context.Context, containerID string, eventTypes ...string) (<-chan events.Message, <-chan error) {
+	f := client.Filters{}
+	f.Add("type", "container")
+	f.Add("container", containerID)
+	for _, et := range eventTypes {
+		f.Add("event", et)
+	}
+	return c.Events(ctx, f)
+}
+
 func containerFromSummary(s container.Summary) Container {
 	ctr := Container{
 		ID:             s.ID,

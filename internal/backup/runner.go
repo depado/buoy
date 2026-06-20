@@ -539,31 +539,90 @@ func (r *Runner) waitForDeps(ctx context.Context, deps map[string][]depInfo, ctr
 	return nil
 }
 
+func (r *Runner) waitForEvent(
+	ctx context.Context,
+	ctr *docker.Container,
+	eventTypes []string,
+	check func(*docker.Container) (bool, error),
+) error {
+	fresh, err := r.docker.InspectContainer(ctx, ctr.ID)
+	if err != nil {
+		return err
+	}
+	if done, err := check(fresh); done || err != nil {
+		return err
+	}
+
+	eventCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	msgs, errs := r.docker.WatchContainer(eventCtx, ctr.ID, eventTypes...)
+
+	for {
+		select {
+		case _, ok := <-msgs:
+			if !ok {
+				return fmt.Errorf("event stream closed for %s", ctr.Name)
+			}
+		case err, ok := <-errs:
+			if !ok {
+				return fmt.Errorf("event error stream closed for %s", ctr.Name)
+			}
+			if err != nil {
+				return fmt.Errorf("event stream error for %s: %w", ctr.Name, err)
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+
+		fresh, err := r.docker.InspectContainer(ctx, ctr.ID)
+		if err != nil {
+			return err
+		}
+		if done, err := check(fresh); done || err != nil {
+			return err
+		}
+	}
+}
+
+func eventsForCondition(c DepCondition) []string {
+	switch c {
+	case ServiceStarted, ServiceRunningOrHealthy:
+		return []string{"start", "die"}
+	case ServiceHealthy:
+		return []string{"health_status", "die"}
+	case ServiceCompletedSuccessfully:
+		return []string{"die"}
+	default:
+		return nil
+	}
+}
+
 func (r *Runner) waitForCondition(ctx context.Context, ctr *docker.Container, condition DepCondition) error {
 	ctx, cancel := context.WithTimeout(ctx, r.healthWaitTimeout)
 	defer cancel()
 
-	check := func() (bool, error) {
-		fresh, err := r.docker.InspectContainer(ctx, ctr.ID)
-		if err != nil {
-			return false, err
-		}
+	eventTypes := eventsForCondition(condition)
+	if eventTypes == nil {
+		return fmt.Errorf("unknown dependency condition: %s", condition)
+	}
 
+	return r.waitForEvent(ctx, ctr, eventTypes, func(c *docker.Container) (bool, error) {
 		switch condition {
 		case ServiceHealthy:
-			if fresh.Health == nil {
+			if c.Health == nil {
 				return false, fmt.Errorf("%s has no healthcheck configured", ctr.Name)
 			}
-			if fresh.Health.Status == "unhealthy" {
+			if c.Health.Status == "unhealthy" {
 				return false, fmt.Errorf("%s is unhealthy", ctr.Name)
 			}
-			return fresh.Health.Status == "healthy", nil
+			return c.Health.Status == "healthy", nil
 		case ServiceStarted, ServiceRunningOrHealthy:
-			return fresh.State == "running", nil
+			return c.State == "running", nil
 		case ServiceCompletedSuccessfully:
-			if fresh.State == "exited" {
-				if fresh.ExitCode != 0 {
-					return false, fmt.Errorf("%s exited with code %d", ctr.Name, fresh.ExitCode)
+			if c.State == "exited" {
+				if c.ExitCode != 0 {
+					return false, fmt.Errorf("%s exited with code %d", ctr.Name, c.ExitCode)
 				}
 				return true, nil
 			}
@@ -571,46 +630,18 @@ func (r *Runner) waitForCondition(ctx context.Context, ctr *docker.Container, co
 		default:
 			return false, fmt.Errorf("unknown dependency condition: %s", condition)
 		}
-	}
-
-	if done, err := check(); done || err != nil {
-		return err
-	}
-
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-
-		if done, err := check(); done || err != nil {
-			return err
-		}
-	}
+	})
 }
 
 func (r *Runner) waitRunning(ctx context.Context, ctr *docker.Container) {
 	ctx, cancel := context.WithTimeout(ctx, r.healthWaitTimeout)
 	defer cancel()
 
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			fresh, err := r.docker.InspectContainer(ctx, ctr.ID)
-			if err != nil || fresh.State == "running" || fresh.State == "exited" {
-				return
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
+	_ = r.waitForEvent(ctx, ctr,
+		[]string{"start", "die"},
+		func(c *docker.Container) (bool, error) {
+			return c.State == "running" || c.State == "exited", nil
+		})
 }
 
 func (r *Runner) ignore(id string)  { r.ignoredIDs.Store(id, true) }
