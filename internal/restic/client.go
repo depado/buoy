@@ -288,7 +288,7 @@ func (c *Client) command(ctx context.Context, args ...string) (*exec.Cmd, func()
 	args = append([]string{"--password-file", f.Name()}, args...)
 	cmd := exec.CommandContext(ctx, c.binPath, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Env = append(resticEnv(),
+	cmd.Env = append(os.Environ(),
 		"RESTIC_COMPRESSION="+c.compression,
 		"RESTIC_PROGRESS_FPS=1",
 	)
@@ -297,27 +297,4 @@ func (c *Client) command(ctx context.Context, args ...string) (*exec.Cmd, func()
 		os.Remove(f.Name()) //nolint:errcheck
 	}
 	return cmd, cleanup, nil
-}
-
-func resticEnv() []string {
-	var env []string
-	for _, kv := range os.Environ() {
-		key, _, _ := strings.Cut(kv, "=")
-		if strings.HasPrefix(key, "AWS_") ||
-			strings.HasPrefix(key, "B2_") ||
-			strings.HasPrefix(key, "AZURE_") ||
-			strings.HasPrefix(key, "GOOGLE_") ||
-			strings.HasPrefix(key, "RCLONE_") ||
-			strings.HasPrefix(key, "REST_") ||
-			strings.HasPrefix(key, "OS_") ||
-			key == "HOME" ||
-			key == "USER" ||
-			key == "PATH" ||
-			key == "TMPDIR" ||
-			key == "TMP" ||
-			key == "TEMP" {
-			env = append(env, kv)
-		}
-	}
-	return env
 }
