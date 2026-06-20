@@ -135,7 +135,7 @@ type checkResult struct {
 }
 
 func (s *Server) handleReposStats(w http.ResponseWriter, r *http.Request) {
-	entries, err := s.reg.ListRepos()
+	entries, err := s.reg.ListRepos(listRepoOpts(r)...)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

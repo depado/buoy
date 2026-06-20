@@ -105,6 +105,7 @@ var repoStatsCmd = &cobra.Command{
 	Use:   "stats",
 	Short: "Show aggregate storage statistics across all repositories",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		orphaned, _ := cmd.Flags().GetBool("orphaned")
 		client := api.DefaultClient()
 		if url, _ := cmd.Flags().GetString("api.url"); url != "" {
 			client.BaseURL = url
@@ -113,7 +114,7 @@ var repoStatsCmd = &cobra.Command{
 			client.Token = token
 		}
 
-		stats, err := client.StatsRepos()
+		stats, err := client.StatsRepos(orphaned)
 		if err != nil {
 			return fmt.Errorf("stats repos: %w", err)
 		}
@@ -273,6 +274,7 @@ func setupRepoCommands() {
 	repoUnlockCmd.Flags().Bool("orphaned", false, "unlock orphaned repositories")
 	repoForgetCmd.Flags().Bool("orphaned", false, "forget only orphaned repositories")
 	repoForgetCmd.Flags().String("retention", "", "retention policy (e.g. keep-daily:7,keep-weekly:4)")
+	repoStatsCmd.Flags().Bool("orphaned", false, "show stats for orphaned repositories only")
 	repoPruneCmd.Flags().Bool("orphaned", false, "prune only orphaned repositories")
 
 	for _, c := range []*cobra.Command{repoListCmd, repoCheckCmd, repoStatsCmd, repoUnlockCmd, repoForgetCmd, repoPruneCmd} {

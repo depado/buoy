@@ -88,8 +88,9 @@ type CheckResult struct {
 	Error string `json:"error,omitempty"`
 }
 
-func (c *Client) StatsRepos() (*StatsResponse, error) {
-	resp, err := c.doRequest("POST", "/api/v1/repos/stats")
+func (c *Client) StatsRepos(orphaned bool) (*StatsResponse, error) {
+	path := "/api/v1/repos/stats" + nonOrphanedParam(orphaned)
+	resp, err := c.doRequest("POST", path)
 	if err != nil {
 		return nil, err
 	}
