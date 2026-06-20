@@ -245,17 +245,6 @@ func (r *Registry) ListRepos(opts ...ListOption) ([]RepoEntry, error) {
 	return entries, err
 }
 
-func (r *Registry) HasRepos() bool {
-	found := false
-	_ = r.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket(reposBucket)
-		k, _ := b.Cursor().First()
-		found = k != nil
-		return nil
-	})
-	return found
-}
-
 func (r *Registry) resolveRepos(ctr *docker.Container, cfg docker.BackupConfig) ([]string, error) {
 	bases := r.repos
 	if len(cfg.ReposOverride) > 0 {
