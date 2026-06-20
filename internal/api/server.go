@@ -44,6 +44,8 @@ func New(reg *registry.Registry, rc *restic.Client, token, host string, port int
 		Addr:              fmt.Sprintf("%s:%d", host, port),
 		Handler:           withAuth(token)(mux),
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	return s
