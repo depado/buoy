@@ -158,7 +158,28 @@ func parseRetention(labels map[string]string, defaultRetention string, rc *resti
 	if v == "" {
 		return
 	}
-	*rc = restic.ParseRetentionPolicy(v)
+	parsed := restic.ParseRetentionPolicy(v)
+	if parsed.KeepLast > 0 {
+		rc.KeepLast = parsed.KeepLast
+	}
+	if parsed.KeepHourly > 0 {
+		rc.KeepHourly = parsed.KeepHourly
+	}
+	if parsed.KeepDaily > 0 {
+		rc.KeepDaily = parsed.KeepDaily
+	}
+	if parsed.KeepWeekly > 0 {
+		rc.KeepWeekly = parsed.KeepWeekly
+	}
+	if parsed.KeepMonthly > 0 {
+		rc.KeepMonthly = parsed.KeepMonthly
+	}
+	if parsed.KeepYearly > 0 {
+		rc.KeepYearly = parsed.KeepYearly
+	}
+	if parsed.KeepWithin != "" {
+		rc.KeepWithin = parsed.KeepWithin
+	}
 }
 
 // LogAttrs returns slog attributes for structured logging.
