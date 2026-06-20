@@ -110,7 +110,7 @@ func (s *Server) handleReposCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := make([]checkResult, 0, len(entries))
+	results := make([]CheckResult, 0, len(entries))
 	for _, entry := range entries {
 		var checkErr error
 		if readData {
@@ -118,7 +118,7 @@ func (s *Server) handleReposCheck(w http.ResponseWriter, r *http.Request) {
 		} else {
 			checkErr = s.restic.Check(r.Context(), entry.URL)
 		}
-		result := checkResult{Repo: entry.URL, OK: checkErr == nil}
+		result := CheckResult{Repo: entry.URL, OK: checkErr == nil}
 		if checkErr != nil {
 			result.Error = checkErr.Error()
 		}
@@ -126,12 +126,6 @@ func (s *Server) handleReposCheck(w http.ResponseWriter, r *http.Request) {
 		_ = s.reg.MarkCheckComplete(entry.URL, checkErr == nil)
 	}
 	writeJSON(w, http.StatusOK, results)
-}
-
-type checkResult struct {
-	Repo  string `json:"repo"`
-	OK    bool   `json:"ok"`
-	Error string `json:"error,omitempty"`
 }
 
 func (s *Server) handleReposStats(w http.ResponseWriter, r *http.Request) {
@@ -182,10 +176,10 @@ func (s *Server) handleReposUnlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := make([]opResult, 0, len(entries))
+	results := make([]OpResult, 0, len(entries))
 	for _, entry := range entries {
 		err := s.restic.Unlock(r.Context(), entry.URL)
-		result := opResult{Repo: entry.URL, OK: err == nil}
+		result := OpResult{Repo: entry.URL, OK: err == nil}
 		if err != nil {
 			result.Error = err.Error()
 		}
@@ -212,10 +206,10 @@ func (s *Server) handleReposForget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := make([]opResult, 0, len(entries))
+	results := make([]OpResult, 0, len(entries))
 	for _, entry := range entries {
 		err := s.restic.Forget(r.Context(), entry.URL, policy, entry.ContainerName)
-		result := opResult{Repo: entry.URL, OK: err == nil}
+		result := OpResult{Repo: entry.URL, OK: err == nil}
 		if err != nil {
 			result.Error = err.Error()
 		}
@@ -235,22 +229,16 @@ func (s *Server) handleReposPrune(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := make([]opResult, 0, len(entries))
+	results := make([]OpResult, 0, len(entries))
 	for _, entry := range entries {
 		err := s.restic.Prune(r.Context(), entry.URL)
-		result := opResult{Repo: entry.URL, OK: err == nil}
+		result := OpResult{Repo: entry.URL, OK: err == nil}
 		if err != nil {
 			result.Error = err.Error()
 		}
 		results = append(results, result)
 	}
 	writeJSON(w, http.StatusOK, results)
-}
-
-type opResult struct {
-	Repo  string `json:"repo"`
-	OK    bool   `json:"ok"`
-	Error string `json:"error,omitempty"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
