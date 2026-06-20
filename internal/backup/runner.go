@@ -92,7 +92,7 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
 		return fmt.Errorf("no repos resolved for container %s", ctr.Name)
 	}
 
-	r.runPreHooks(ctx, fresh, cfg)
+	r.runPreHooks(ctx, fresh, cfg, l)
 
 	l.Info("starting backup", "stop", cfg.StopBefore)
 	wasRunning := false
@@ -125,7 +125,7 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
 		r.waitRunning(ctx, fresh)
 	}
 
-	r.runPostHooks(ctx, fresh, cfg)
+	r.runPostHooks(ctx, fresh, cfg, l)
 	if backupErr == nil {
 		r.applyRetention(ctx, fresh, cfg, repos, l)
 	}
@@ -197,7 +197,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 		go func(c *docker.Container) {
 			defer wg.Done()
 			cfg := containerCfg[c.ID]
-			r.runPreHooks(ctx, c, cfg)
+			r.runPreHooks(ctx, c, cfg, l.With(c.LogAttrs()...))
 		}(ctr)
 	}
 	wg.Wait()
@@ -281,7 +281,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 
 	for _, ctr := range fresh {
 		cfg := containerCfg[ctr.ID]
-		r.runPostHooks(ctx, ctr, cfg)
+		r.runPostHooks(ctx, ctr, cfg, l)
 		if _, failed := backupErrors[ctr.ComposeService]; !failed {
 			r.applyRetention(ctx, ctr, cfg, containerRepos[ctr.ID], l)
 		}
@@ -303,32 +303,32 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 	return nil
 }
 
-func (r *Runner) runPreHooks(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig) {
+func (r *Runner) runPreHooks(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) {
 	if cfg.PreBackupCmd != "" {
 		if err := r.hook.ExecOnHost(ctx, cfg.PreBackupCmd); err != nil {
-			slog.Warn("pre-backup host command failed", "error", err)
+			l.Warn("pre-backup host command failed", "error", err)
 		}
 	}
 	if cfg.PreBackupExec != "" {
 		execCtx, cancel := context.WithTimeout(ctx, r.execTimeout)
 		defer cancel()
 		if err := r.hook.ExecInContainer(execCtx, ctr.ID, cfg.PreBackupExec); err != nil {
-			slog.Warn("pre-backup exec failed", "error", err)
+			l.Warn("pre-backup exec failed", "error", err)
 		}
 	}
 }
 
-func (r *Runner) runPostHooks(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig) {
+func (r *Runner) runPostHooks(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) {
 	if cfg.PostBackupExec != "" {
 		execCtx, cancel := context.WithTimeout(ctx, r.execTimeout)
 		defer cancel()
 		if err := r.hook.ExecInContainer(execCtx, ctr.ID, cfg.PostBackupExec); err != nil {
-			slog.Warn("post-backup exec failed", "error", err)
+			l.Warn("post-backup exec failed", "error", err)
 		}
 	}
 	if cfg.PostBackupCmd != "" {
 		if err := r.hook.ExecOnHost(ctx, cfg.PostBackupCmd); err != nil {
-			slog.Warn("post-backup host command failed", "error", err)
+			l.Warn("post-backup host command failed", "error", err)
 		}
 	}
 }
@@ -474,6 +474,10 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, cfg do
 			)
 		}
 		_ = r.repoReg.MarkBackupComplete(repo, repoOK)
+	}
+
+	if mountCount == 0 {
+		logger.Warn("container has no backup-eligible mounts")
 	}
 
 	if mountCount > 0 && len(failures) == mountCount*len(repos) {
