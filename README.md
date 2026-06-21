@@ -307,7 +307,7 @@ restic:
     - /backup
 
 api:
-  enabled: true # enable the HTTP API server
+  enabled: true # enable the HTTP API server (required for CLI commands like `buoy repo`)
   host: "0.0.0.0" # API listen host
   port: 8080 # API listen port
   token: "" # bearer token (empty = no auth)
@@ -476,6 +476,9 @@ export BUOY_URL=https://buoy.internal.example.com
 export BUOY_TOKEN=secret123
 buoy repo stats
 ```
+
+> [!WARNING]
+> Destructive operations (`unlock`, `forget`, `prune`) return an error if any backup is currently in progress, preventing accidental lock conflicts or corruption. Read-only commands (`check`, `stats`) are not gated and may run alongside backups.
 
 ## Repository Layout
 

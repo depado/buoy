@@ -15,21 +15,23 @@ import (
 )
 
 type Server struct {
-	reg     *registry.Registry
-	restic  *restic.Client
-	token   string
-	version string
-	srv     *http.Server
-	logger  *slog.Logger
+	reg          *registry.Registry
+	restic       *restic.Client
+	token        string
+	version      string
+	srv          *http.Server
+	logger       *slog.Logger
+	backupActive func() bool
 }
 
-func New(reg *registry.Registry, rc *restic.Client, token, host string, port int, version string, logger *slog.Logger) *Server {
+func New(reg *registry.Registry, rc *restic.Client, token, host string, port int, version string, logger *slog.Logger, backupActive func() bool) *Server {
 	s := &Server{
-		reg:     reg,
-		restic:  rc,
-		token:   token,
-		version: version,
-		logger:  logger,
+		reg:          reg,
+		restic:       rc,
+		token:        token,
+		version:      version,
+		logger:       logger,
+		backupActive: backupActive,
 	}
 
 	mux := http.NewServeMux()
@@ -59,6 +61,14 @@ func (s *Server) Start() error {
 
 func (s *Server) Shutdown(ctx context.Context) error {
 	return s.srv.Shutdown(ctx)
+}
+
+func (s *Server) rejectIfBusy(w http.ResponseWriter) bool {
+	if s.backupActive != nil && s.backupActive() {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "cannot run destructive operation while a backup is in progress"})
+		return true
+	}
+	return false
 }
 
 func withAuth(token string) func(http.Handler) http.Handler {
@@ -168,6 +178,9 @@ type repoStats struct {
 }
 
 func (s *Server) handleReposUnlock(w http.ResponseWriter, r *http.Request) {
+	if s.rejectIfBusy(w) {
+		return
+	}
 	entries, err := s.reg.ListRepos(listRepoOpts(r)...)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -191,6 +204,9 @@ func (s *Server) handleReposUnlock(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReposForget(w http.ResponseWriter, r *http.Request) {
+	if s.rejectIfBusy(w) {
+		return
+	}
 	retentionStr := r.URL.Query().Get("retention")
 	if retentionStr == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "retention query parameter is required"})
@@ -221,6 +237,9 @@ func (s *Server) handleReposForget(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReposPrune(w http.ResponseWriter, r *http.Request) {
+	if s.rejectIfBusy(w) {
+		return
+	}
 	entries, err := s.reg.ListRepos(listRepoOpts(r)...)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
