@@ -20,9 +20,6 @@
   <a href="https://github.com/depado/buoy"><img src="https://shieldcn.dev/github/stars/depado/buoy.svg?variant=branded" alt="Stars" /></a>
   <a href="https://github.com/depado/buoy/graphs/contributors"><img src="https://shieldcn.dev/github/contributors/depado/buoy.svg?variant=branded" alt="Contributors" /></a>
   <a href="https://github.com/depado/buoy/issues"><img src="https://shieldcn.dev/github/issues/depado/buoy.svg?variant=branded" alt="Issues" /></a>
-</p>
-
-<p align="center">
   <a href="https://github.com/depado/buoy/pkgs/container/buoy"><img src="https://shieldcn.dev/badge/container-ghcr.io%2Fdepado%2Fbuoy-2496ED.svg?logo=docker&variant=branded" alt="container image" /></a>
 </p>
 
