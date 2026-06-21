@@ -493,14 +493,14 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, cfg do
 	}
 
 	if mountCount > 0 && len(failures) == mountCount*len(repos) {
-		var parts []string
+		parts := make([]string, 0, len(failures))
 		for _, f := range failures {
 			parts = append(parts, fmt.Sprintf("\n- %s on %s: %v", f.mount, f.repo, f.err))
 		}
 		return fmt.Errorf("all %d mounts failed across %d repos:%s", mountCount, len(repos), strings.Join(parts, ""))
 	}
 	if len(failures) > 0 {
-		var parts []string
+		parts := make([]string, 0, len(failures))
 		for _, f := range failures {
 			parts = append(parts, fmt.Sprintf("\n- %s on %s: %v", f.mount, f.repo, f.err))
 		}

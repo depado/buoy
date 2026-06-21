@@ -3,8 +3,7 @@
 </p>
 
 <p align="center">
-  Restic-powered Docker volume backups.<br />
-  A label-driven, compose-aware backup daemon with hooks, notifications, and automatic retention — powered by <a href="https://restic.net">restic</a>, on your schedule.
+  A label-driven, compose-aware backup daemon with hooks, notifications, and automatic retention - powered by <a href="https://restic.net">restic</a>, on your schedule.
 </p>
 
 <p align="center">
@@ -24,9 +23,8 @@
 </p>
 
 > [!WARNING]
-> **Work in progress.** buoy is experimental and under active development.
-> APIs, labels, and behavior may change without notice. Not yet recommended
-> for production use.
+> **Work in progress.** buoy is experimental, under active development and testing.
+> APIs, labels, and behavior may change without notice. Use at your own risk.
 
 - [Features](#features)
 - [How It Works](#how-it-works)
@@ -42,17 +40,17 @@
 
 ## Features
 
-- **Label-driven** — Configure every aspect via Docker labels. No config files, no CLI per container.
-- **Compose-aware** — Detects compose stacks, respects `depends_on` ordering for stop/start sequences, and batches containers sharing the same schedule into a single coordinated backup cycle.
-- **Multi-repo** — Back up to multiple restic repositories at once. Store copies locally, on S3, SFTP, Backblaze B2, or any [rclone](https://rclone.org) backend — ready for 3-2-1.
-- **Repo registry** — Maintains a persistent registry of all known restic repositories, so you can list, check, and run retention on repos even when their containers are down.
-- **Hooks** — Run shell commands on the host or inside the container before and after each backup.
-- **Stop-first** — Optionally stop containers before backup for data consistency, then restart them automatically. One label to opt in.
-- **Notifications** — Success and failure alerts via [shoutrrr](https://github.com/nicholas-fedor/shoutrrr): Slack, Discord, Telegram, Pushover, email, Gotify, and more.
-- **Retention** — Automatic `restic forget` and `restic prune` with per-container policies (`keep-daily`, `keep-weekly`, `keep-monthly`, `keep-yearly`, `keep-within`).
-- **Real-time discovery** — Watches Docker events. New containers are picked up immediately; removed containers are cleaned up.
-- **Selective backup** — Include or exclude volumes and mounts by name or path. Use restic file patterns to back up only what matters.
-- **Stack lifecycle** — When a container opts into `stop-before-backup`, buoy cascades the stop to its dependents, backs up, then restarts everything in dependency order — waiting for each to be healthy before starting the next.
+- **Label-driven** - Configure every aspect via Docker labels. No config files, no CLI per container.
+- **Compose-aware** - Detects compose stacks, respects `depends_on` ordering for stop/start sequences, and batches containers sharing the same schedule into a single coordinated backup cycle.
+- **Multi-repo** - Back up to multiple restic repositories at once. Store copies locally, on S3, SFTP, Backblaze B2, or any [rclone](https://rclone.org) backend - ready for 3-2-1.
+- **Repo registry** - Maintains a persistent registry of all known restic repositories, so you can list, check, and run retention on repos even when their containers are down.
+- **Hooks** - Run shell commands on the host or inside the container before and after each backup.
+- **Stop-first** - Optionally stop containers before backup for data consistency, then restart them automatically. One label to opt in.
+- **Notifications** - Success and failure alerts via [shoutrrr](https://github.com/nicholas-fedor/shoutrrr): Slack, Discord, Telegram, Pushover, email, Gotify, and more.
+- **Retention** - Automatic `restic forget` and `restic prune` with per-container policies (`keep-daily`, `keep-weekly`, `keep-monthly`, `keep-yearly`, `keep-within`).
+- **Real-time discovery** - Watches Docker events. New containers are picked up immediately; removed containers are cleaned up.
+- **Selective backup** - Include or exclude volumes and mounts by name or path. Use restic file patterns to back up only what matters.
+- **Stack lifecycle** - When a container opts into `stop-before-backup`, buoy cascades the stop to its dependents, backs up, then restarts everything in dependency order - waiting for each to be healthy before starting the next.
 
 ## How It Works
 
@@ -131,23 +129,23 @@ Containers in a compose stack follow the same scheduling rules as standalone con
 
 | Label                     | Default                    | Description                                                                                                                                                                  |
 | ------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `buoy.enabled`            | —                          | Set to `"true"` to enable backup (required)                                                                                                                                  |
+| `buoy.enabled`            | -                          | Set to `"true"` to enable backup (required)                                                                                                                                  |
 | `buoy.schedule`           | Global `default_schedule`  | Cron expression. Falls back to global default. Containers sharing the same schedule in a compose stack are batched together.                                                 |
 | `buoy.repos`              | Global `repos`             | Comma-separated repo URLs, overrides the global list                                                                                                                         |
-| `buoy.retention`          | Global `default_retention` | Retention rules (see below). Falls back to global default.                                                                                                            |
-| `buoy.stop-before-backup` | `"false"`                  | Stop the container before backing up. Defaults to `false` — opt-in to container stops.                                                                                       |
+| `buoy.retention`          | Global `default_retention` | Retention rules (see below). Falls back to global default.                                                                                                                   |
+| `buoy.stop-before-backup` | `"false"`                  | Stop the container before backing up. Defaults to `false` - opt-in to container stops.                                                                                       |
 | `buoy.stop-timeout`       | `"30s"`                    | Timeout for container stop                                                                                                                                                   |
-| `buoy.include-volumes`    | —                          | Comma-separated volume names to back up (overrides exclude)                                                                                                                  |
-| `buoy.include-mounts`     | —                          | Comma-separated source or destination paths to back up (overrides exclude)                                                                                                   |
-| `buoy.exclude-volumes`    | —                          | Comma-separated volume names to skip                                                                                                                                         |
-| `buoy.exclude-mounts`     | —                          | Comma-separated source or destination paths to skip                                                                                                                          |
-| `buoy.exclude-patterns`   | —                          | Comma-separated restic exclude patterns (e.g., `"*.log,*.tmp"`)                                                                                                              |
-| `buoy.files`              | —                          | Comma-separated file patterns to back up (uses `--files-from`). When set, only matching files are backed up, not the whole mount. Supports globs (`*.sql`) and `!` negation. |
-| `buoy.tags`               | —                          | Comma-separated restic snapshot tags                                                                                                                                         |
-| `buoy.pre-backup-cmd`     | —                          | Shell command to run on the host before backup                                                                                                                               |
-| `buoy.post-backup-cmd`    | —                          | Shell command to run on the host after backup                                                                                                                                |
-| `buoy.pre-backup-exec`    | —                          | Command to run inside the container before backup (docker exec)                                                                                                              |
-| `buoy.post-backup-exec`   | —                          | Command to run inside the container after backup (docker exec)                                                                                                               |
+| `buoy.include-volumes`    | -                          | Comma-separated volume names to back up (overrides exclude)                                                                                                                  |
+| `buoy.include-mounts`     | -                          | Comma-separated source or destination paths to back up (overrides exclude)                                                                                                   |
+| `buoy.exclude-volumes`    | -                          | Comma-separated volume names to skip                                                                                                                                         |
+| `buoy.exclude-mounts`     | -                          | Comma-separated source or destination paths to skip                                                                                                                          |
+| `buoy.exclude-patterns`   | -                          | Comma-separated restic exclude patterns (e.g., `"*.log,*.tmp"`)                                                                                                              |
+| `buoy.files`              | -                          | Comma-separated file patterns to back up (uses `--files-from`). When set, only matching files are backed up, not the whole mount. Supports globs (`*.sql`) and `!` negation. |
+| `buoy.tags`               | -                          | Comma-separated restic snapshot tags                                                                                                                                         |
+| `buoy.pre-backup-cmd`     | -                          | Shell command to run on the host before backup                                                                                                                               |
+| `buoy.post-backup-cmd`    | -                          | Shell command to run on the host after backup                                                                                                                                |
+| `buoy.pre-backup-exec`    | -                          | Command to run inside the container before backup (docker exec)                                                                                                              |
+| `buoy.post-backup-exec`   | -                          | Command to run inside the container after backup (docker exec)                                                                                                               |
 
 ### Schedule Format
 
@@ -155,12 +153,12 @@ Standard 5-field cron: `"minute hour day-of-month month day-of-week"`
 
 Shorthands:
 
-- `@yearly` / `@annually` — midnight, January 1st
-- `@monthly` — midnight, first day of the month
-- `@weekly` — midnight between Saturday and Sunday
-- `@daily` / `@midnight` — midnight every day
-- `@hourly` — start of every hour
-- `@every 1h30m` — fixed interval (any duration accepted by Go's `time.ParseDuration`)
+- `@yearly` / `@annually` - midnight, January 1st
+- `@monthly` - midnight, first day of the month
+- `@weekly` - midnight between Saturday and Sunday
+- `@daily` / `@midnight` - midnight every day
+- `@hourly` - start of every hour
+- `@every 1h30m` - fixed interval (any duration accepted by Go's `time.ParseDuration`)
 
 See the [`robfig/cron` v3 docs](https://pkg.go.dev/github.com/robfig/cron/v3) for full syntax.
 
@@ -182,11 +180,11 @@ All keys are optional. Omitted keys are not passed to restic.
 
 buoy reads `com.docker.compose.project`, `com.docker.compose.service`, and `com.docker.compose.depends_on` labels that Docker Compose sets automatically.
 
-Scheduling works the same as standalone containers — a container is backed up if it has a schedule, from either `buoy.schedule` or the global `default_schedule`. When multiple containers in the same stack share the same schedule, buoy batches them into one coordinated stop/start cycle. Jobs arriving while a stack backup is running wait in a per-stack queue and run immediately after.
+Scheduling works the same as standalone containers - a container is backed up if it has a schedule, from either `buoy.schedule` or the global `default_schedule`. When multiple containers in the same stack share the same schedule, buoy batches them into one coordinated stop/start cycle. Jobs arriving while a stack backup is running wait in a per-stack queue and run immediately after.
 
 **Stop set:** buoy stops containers with `buoy.stop-before-backup=true` plus any container that transitively depends on a stopped container. If the database stops, the API also stops rather than crashing on a lost connection.
 
-**Start order:** buoy restarts containers in dependency order (database before API) and waits for health checks before starting dependents — same behavior as `docker compose up`.
+**Start order:** buoy restarts containers in dependency order (database before API) and waits for health checks before starting dependents - same behavior as `docker compose up`.
 
 See [Examples](#examples) for a full compose stack setup.
 
@@ -277,17 +275,17 @@ buoy is configured via a YAML file, environment variables (prefix `BUOY_`), or C
 
 ### Config file (`conf.yaml`)
 
-The values shown below are the defaults — you only need a config file to override them.
+The values shown below are the defaults - you only need a config file to override them.
 
 ```yaml
 log:
-  level: info       # debug, info, warn, error
-  format: json      # json, text
-  source: false     # include source file/line in logs
-  color: auto       # auto, always, never
+  level: info # debug, info, warn, error
+  format: json # json, text
+  source: false # include source file/line in logs
+  color: auto # auto, always, never
 
 daemon:
-  concurrency: 2       # max simultaneous backups (each container or stack batch uses one slot)
+  concurrency: 2 # max simultaneous backups (each container or stack batch uses one slot)
   default_schedule: "" # global fallback for buoy.schedule
   default_retention: "keep-within:7d,keep-daily:7,keep-weekly:4,keep-monthly:6,keep-yearly:3"
 
@@ -369,7 +367,7 @@ buoy requires a password to start. Set it via config, env var, or CLI flag.
 2. `BUOY_RESTIC_PASSWORD` environment variable
 3. `--restic.password` CLI flag
 
-The password is global — all per-container repos use the same one. Buoy passes
+The password is global - all per-container repos use the same one. Buoy passes
 it to restic via a temporary `--password-file` rather than the `RESTIC_PASSWORD`
 environment variable.
 
@@ -379,9 +377,9 @@ buoy can send failure notifications via [shoutrrr](https://github.com/nicholas-f
 supporting 50+ services including Slack, Discord, Telegram, email, and Gotify.
 Configure one or more shoutrrr URLs and set the notification level:
 
-- `error` — notify on backup failures only (default)
-- `all` — notify on all backup events
-- `none` — disable notifications (or omit config)
+- `error` - notify on backup failures only (default)
+- `all` - notify on all backup events
+- `none` - disable notifications (or omit config)
 
 Each URL encodes both the service and its credentials. Examples:
 
@@ -396,7 +394,7 @@ Each URL encodes both the service and its credentials. Examples:
 See [shoutrrr's documentation](https://containrrr.dev/shoutrrr/latest/services/overview/)
 for the full list of services and URL formats.
 
-Notifications are best-effort — a notification failure logs a warning but
+Notifications are best-effort - a notification failure logs a warning but
 never blocks or fails a backup.
 
 ### Periodic Repository Check
@@ -415,7 +413,7 @@ daemon:
 
 When the check runs, buoy reads known repositories from its persistent state
 database (`buoy.db`). Failures are logged and optionally trigger notifications.
-This is a structural check only — it does not read pack file data (use the CLI
+This is a structural check only - it does not read pack file data (use the CLI
 or API for `restic check --read-data` if needed).
 
 ### State Persistence
