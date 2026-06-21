@@ -6,6 +6,11 @@
       "matchManagers": ["github-actions"],
       "matchPackageNames": ["depado/github-actions"],
       "pinDigests": false
+    },
+    {
+      "matchManagers": ["docker"],
+      "matchPackageNames": ["ghcr.io/depado/buoy"],
+      "enabled": false
     }
   ],
   "customManagers": [
