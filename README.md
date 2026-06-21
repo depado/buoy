@@ -1,20 +1,61 @@
-<div align="center">
+<p align="center">
+  <img alt="buoy" src="https://shieldcn.dev/header/grid.svg?title=buoy&subtitle=Restic-powered+Docker+volume+and+mounts+backups.&logo=lu%3ALifeBuoy&mode=dark&align=left&border=false">
+</p>
 
-<h1>buoy</h1>
+<p align="center">
+  Restic-powered Docker volume backups.<br />
+  A label-driven, compose-aware backup daemon with hooks, notifications, and automatic retention — powered by <a href="https://restic.net">restic</a>, on your schedule.
+</p>
 
-Backup Docker container volumes and bind mounts with [restic](https://restic.net/).
+<p align="center">
+  <a href="https://github.com/depado/buoy">GitHub</a> ·
+  <a href="https://github.com/depado/buoy/releases">Releases</a>
+</p>
 
-buoy is a daemon that discovers Docker containers via labels, stops them, backs up their mounted volumes using restic, restarts them, and applies retention policies — all on cron schedules.
+<p align="center">
+  <a href="https://github.com/depado/buoy/actions"><img src="https://shieldcn.dev/github/ci/depado/buoy.svg?variant=branded" alt="CI" /></a>
+  <a href="https://github.com/depado/buoy/releases"><img src="https://shieldcn.dev/github/release/depado/buoy.svg?variant=branded" alt="Release" /></a>
+  <a href="https://github.com/depado/buoy/blob/main/LICENSE"><img src="https://shieldcn.dev/github/license/depado/buoy.svg?variant=branded" alt="License" /></a>
+  <a href="https://github.com/depado/buoy"><img src="https://shieldcn.dev/github/last-commit/depado/buoy.svg?variant=branded" alt="Last Commit" /></a>
+  <a href="https://github.com/depado/buoy"><img src="https://shieldcn.dev/github/stars/depado/buoy.svg?variant=branded" alt="Stars" /></a>
+  <a href="https://github.com/depado/buoy/graphs/contributors"><img src="https://shieldcn.dev/github/contributors/depado/buoy.svg?variant=branded" alt="Contributors" /></a>
+  <a href="https://github.com/depado/buoy/issues"><img src="https://shieldcn.dev/github/issues/depado/buoy.svg?variant=branded" alt="Issues" /></a>
+</p>
 
-[![shieldcn](https://shieldcn.dev/group/github/ci/depado/buoy+github/release/depado/buoy+github/license/depado/buoy+github/last-commit/depado/buoy.svg?variant=branded)](https://shieldcn.dev)
-[![shieldcn](https://shieldcn.dev/group/github/stars/depado/buoy+github/contributors/depado/buoy+github/issues/depado/buoy.svg?variant=branded)](https://shieldcn.dev)
-
-</div>
+<p align="center">
+  <a href="https://github.com/depado/buoy/pkgs/container/buoy"><img src="https://shieldcn.dev/badge/container-ghcr.io%2Fdepado%2Fbuoy-2496ED.svg?logo=docker&variant=branded" alt="container image" /></a>
+</p>
 
 > [!WARNING]
 > **Work in progress.** buoy is experimental and under active development.
 > APIs, labels, and behavior may change without notice. Not yet recommended
 > for production use.
+
+- [Features](#features)
+- [How It Works](#how-it-works)
+- [Quick Start](#quick-start)
+- [Label Reference](#label-reference)
+- [Examples](#examples)
+- [Configuration](#configuration)
+- [Repository Layout](#repository-layout)
+- [Deployment](#deployment)
+- [Restoring](#restoring)
+- [Backends](#backends)
+- [Development](#development)
+
+## Features
+
+- **Label-driven** — Configure every aspect via Docker labels. No config files, no CLI per container.
+- **Compose-aware** — Detects compose stacks, respects `depends_on` ordering for stop/start sequences, and batches containers sharing the same schedule into a single coordinated backup cycle.
+- **Multi-repo** — Back up to multiple restic repositories at once. Store copies locally, on S3, SFTP, Backblaze B2, or any [rclone](https://rclone.org) backend — ready for 3-2-1.
+- **Repo registry** — Maintains a persistent registry of all known restic repositories, so you can list, check, and run retention on repos even when their containers are down.
+- **Hooks** — Run shell commands on the host or inside the container before and after each backup.
+- **Stop-first** — Optionally stop containers before backup for data consistency, then restart them automatically. One label to opt in.
+- **Notifications** — Success and failure alerts via [shoutrrr](https://github.com/nicholas-fedor/shoutrrr): Slack, Discord, Telegram, Pushover, email, Gotify, and more.
+- **Retention** — Automatic `restic forget` and `restic prune` with per-container policies (`keep-daily`, `keep-weekly`, `keep-monthly`, `keep-yearly`, `keep-within`).
+- **Real-time discovery** — Watches Docker events. New containers are picked up immediately; removed containers are cleaned up.
+- **Selective backup** — Include or exclude volumes and mounts by name or path. Use restic file patterns to back up only what matters.
+- **Stack lifecycle** — When a container opts into `stop-before-backup`, buoy cascades the stop to its dependents, backs up, then restarts everything in dependency order — waiting for each to be healthy before starting the next.
 
 ## How It Works
 
@@ -87,16 +128,16 @@ See [Examples](#examples) for more advanced setups with hooks, file patterns, an
 
 ### Compose stacks
 
-Every container in a compose stack must have its own `buoy.schedule`. When schedules fire close together, buoy batches them: one coordinated stop/start cycle backs up each service in the stack. When schedules are far apart, each runs independently, backing up only its own service.
+Containers in a compose stack follow the same scheduling rules as standalone containers. When they share the same schedule, buoy batches them into one coordinated stop/start cycle that backs up each service in the stack. Different schedules run independently.
 
 ## Label Reference
 
 | Label                     | Default                    | Description                                                                                                                                                                  |
 | ------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `buoy.enabled`            | —                          | Set to `"true"` to enable backup (required)                                                                                                                                  |
-| `buoy.schedule`           | Global `default_schedule`  | Cron expression. Every container in a compose stack needs one. Falls back to global default.                                                                                 |
+| `buoy.schedule`           | Global `default_schedule`  | Cron expression. Falls back to global default. Containers sharing the same schedule in a compose stack are batched together.                                                 |
 | `buoy.repos`              | Global `repos`             | Comma-separated repo URLs, overrides the global list                                                                                                                         |
-| `buoy.retention`          | Global `default_retention` | Retention rules. Falls back to global default. Final fallback: `keep-daily:7`.                                                                                               |
+| `buoy.retention`          | Global `default_retention` | Retention rules (see below). Falls back to global default.                                                                                                            |
 | `buoy.stop-before-backup` | `"false"`                  | Stop the container before backing up. Defaults to `false` — opt-in to container stops.                                                                                       |
 | `buoy.stop-timeout`       | `"30s"`                    | Timeout for container stop                                                                                                                                                   |
 | `buoy.include-volumes`    | —                          | Comma-separated volume names to back up (overrides exclude)                                                                                                                  |
@@ -115,7 +156,16 @@ Every container in a compose stack must have its own `buoy.schedule`. When sched
 
 Standard 5-field cron: `"minute hour day-of-month month day-of-week"`
 
-Shorthands: `@yearly`, `@monthly`, `@weekly`, `@daily`, `@hourly`, `@every 1h30m`
+Shorthands:
+
+- `@yearly` / `@annually` — midnight, January 1st
+- `@monthly` — midnight, first day of the month
+- `@weekly` — midnight between Saturday and Sunday
+- `@daily` / `@midnight` — midnight every day
+- `@hourly` — start of every hour
+- `@every 1h30m` — fixed interval (any duration accepted by Go's `time.ParseDuration`)
+
+See the [`robfig/cron` v3 docs](https://pkg.go.dev/github.com/robfig/cron/v3) for full syntax.
 
 ### Retention Format
 
@@ -135,7 +185,7 @@ All keys are optional. Omitted keys are not passed to restic.
 
 buoy reads `com.docker.compose.project`, `com.docker.compose.service`, and `com.docker.compose.depends_on` labels that Docker Compose sets automatically.
 
-**Every container needs its own schedule.** When multiple containers in the same stack have close or identical schedules, buoy batches them into one coordinated stop/start cycle. Jobs arriving while a stack backup is running wait in a per-stack queue and run immediately after.
+Scheduling works the same as standalone containers — a container is backed up if it has a schedule, from either `buoy.schedule` or the global `default_schedule`. When multiple containers in the same stack share the same schedule, buoy batches them into one coordinated stop/start cycle. Jobs arriving while a stack backup is running wait in a per-stack queue and run immediately after.
 
 **Stop set:** buoy stops containers with `buoy.stop-before-backup=true` plus any container that transitively depends on a stopped container. If the database stops, the API also stops rather than crashing on a lost connection.
 
@@ -230,15 +280,20 @@ buoy is configured via a YAML file, environment variables (prefix `BUOY_`), or C
 
 ### Config file (`conf.yaml`)
 
+The values shown below are the defaults — you only need a config file to override them.
+
 ```yaml
 log:
-  level: info
-  format: json
+  level: info       # debug, info, warn, error
+  format: json      # json, text
+  source: false     # include source file/line in logs
+  color: auto       # auto, always, never
 
 daemon:
-  concurrency: 2
+  concurrency: 2       # max simultaneous backups (each container or stack batch uses one slot)
   default_schedule: "" # global fallback for buoy.schedule
-  default_retention: "keep-daily:7" # global fallback for buoy.retention
+  default_retention: "keep-within:7d,keep-daily:7,keep-weekly:4,keep-monthly:6,keep-yearly:3"
+
   resync_interval: "5m" # interval for label resync (0 to disable)
   exec_timeout: "5m" # max time for docker exec hooks
   health_wait_timeout: "5m" # max time to wait for container health
@@ -269,26 +324,36 @@ notify:
   level: error # none, error, all
 ```
 
+> [!NOTE]
+> **Concurrency is I/O-bound.** Each backup spawns a restic process that reads from disk and writes to storage. Setting `concurrency` higher than your I/O capacity can degrade performance across all running backups. Start low (1–2) and increase only if your storage backend and disk I/O can handle it.
+
 ### Environment variables
 
 All config keys can be set as `BUOY_<SECTION>_<KEY>`:
 
 ```bash
-BUOY_RESTIC_PASSWORD=my-password
-BUOY_RESTIC_COMPRESSION=auto
-BUOY_RESTIC_REPOS=/backup,s3:s3.amazonaws.com/my-bucket
+BUOY_LOG_LEVEL=debug
+BUOY_LOG_FORMAT=json
+BUOY_LOG_SOURCE=false
+BUOY_LOG_COLOR=auto
 BUOY_DAEMON_CONCURRENCY=2
+BUOY_DAEMON_DEFAULT_SCHEDULE="0 3 * * *"
+BUOY_DAEMON_DEFAULT_RETENTION="keep-within:7d,keep-daily:7,keep-weekly:4,keep-monthly:6,keep-yearly:3"
 BUOY_DAEMON_RESYNC_INTERVAL=5m
 BUOY_DAEMON_EXEC_TIMEOUT=5m
 BUOY_DAEMON_HEALTH_WAIT_TIMEOUT=5m
 BUOY_DAEMON_BACKUP_TIMEOUT=1h
 BUOY_DAEMON_CHECK_SCHEDULE=@weekly
 BUOY_DAEMON_DB_PATH=./buoy.db
+BUOY_DOCKER_HOST=unix:///var/run/docker.sock
+BUOY_RESTIC_BINARY_PATH=restic
+BUOY_RESTIC_PASSWORD=my-password
+BUOY_RESTIC_COMPRESSION=auto
+BUOY_RESTIC_REPOS=/backup,s3:s3.amazonaws.com/my-bucket
 BUOY_API_ENABLED=true
 BUOY_API_HOST=0.0.0.0
 BUOY_API_PORT=8080
 BUOY_API_TOKEN=my-secret-token
-BUOY_LOG_LEVEL=debug
 BUOY_NOTIFY_URLS=slack://tokenA/tokenB/tokenC
 BUOY_NOTIFY_LEVEL=error
 ```
@@ -501,7 +566,7 @@ restic -r s3:s3.amazonaws.com/my-bucket/myapp/postgres restore latest --target /
 
 ## Backends
 
-buoy supports all restic backends:
+buoy supports all [restic backends](https://restic.readthedocs.io/en/stable/030_preparing_a_new_repo.html):
 
 - Local filesystem: `/backup`
 - Amazon S3: `s3:s3.amazonaws.com/bucket`
