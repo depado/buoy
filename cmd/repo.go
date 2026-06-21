@@ -20,7 +20,11 @@ var repoListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all known repositories",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireTarget(cmd); err != nil {
+			return err
+		}
 		orphaned, _ := cmd.Flags().GetBool("orphaned")
+		repo := getRepoFlag(cmd)
 		client := api.DefaultClient()
 		if url, _ := cmd.Flags().GetString("api.url"); url != "" {
 			client.BaseURL = url
@@ -29,7 +33,7 @@ var repoListCmd = &cobra.Command{
 			client.Token = token
 		}
 
-		entries, err := client.ListRepos(orphaned)
+		entries, err := client.ListRepos(repo, orphaned)
 		if err != nil {
 			return fmt.Errorf("list repos: %w", err)
 		}
@@ -66,7 +70,11 @@ var repoCheckCmd = &cobra.Command{
 	Short: "Run restic check on all known repositories",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		readData, _ := cmd.Flags().GetBool("read-data")
+		if err := requireTarget(cmd); err != nil {
+			return err
+		}
 		orphaned, _ := cmd.Flags().GetBool("orphaned")
+		repo := getRepoFlag(cmd)
 		client := api.DefaultClient()
 		if url, _ := cmd.Flags().GetString("api.url"); url != "" {
 			client.BaseURL = url
@@ -75,7 +83,7 @@ var repoCheckCmd = &cobra.Command{
 			client.Token = token
 		}
 
-		results, err := client.CheckRepos(readData, orphaned)
+		results, err := client.CheckRepos(repo, readData, orphaned)
 		if err != nil {
 			return fmt.Errorf("check repos: %w", err)
 		}
@@ -105,7 +113,11 @@ var repoStatsCmd = &cobra.Command{
 	Use:   "stats",
 	Short: "Show aggregate storage statistics across all repositories",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireTarget(cmd); err != nil {
+			return err
+		}
 		orphaned, _ := cmd.Flags().GetBool("orphaned")
+		repo := getRepoFlag(cmd)
 		client := api.DefaultClient()
 		if url, _ := cmd.Flags().GetString("api.url"); url != "" {
 			client.BaseURL = url
@@ -114,7 +126,7 @@ var repoStatsCmd = &cobra.Command{
 			client.Token = token
 		}
 
-		stats, err := client.StatsRepos(orphaned)
+		stats, err := client.StatsRepos(repo, orphaned)
 		if err != nil {
 			return fmt.Errorf("stats repos: %w", err)
 		}
@@ -150,7 +162,11 @@ var repoUnlockCmd = &cobra.Command{
 	Use:   "unlock",
 	Short: "Unlock all known repositories",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireTarget(cmd); err != nil {
+			return err
+		}
 		orphaned, _ := cmd.Flags().GetBool("orphaned")
+		repo := getRepoFlag(cmd)
 		client := api.DefaultClient()
 		if url, _ := cmd.Flags().GetString("api.url"); url != "" {
 			client.BaseURL = url
@@ -159,7 +175,7 @@ var repoUnlockCmd = &cobra.Command{
 			client.Token = token
 		}
 
-		results, err := client.UnlockRepos(orphaned)
+		results, err := client.UnlockRepos(repo, orphaned)
 		if err != nil {
 			return fmt.Errorf("unlock repos: %w", err)
 		}
@@ -193,7 +209,11 @@ var repoForgetCmd = &cobra.Command{
 		if retention == "" {
 			return fmt.Errorf("--retention is required (e.g. keep-daily:7,keep-weekly:4)")
 		}
+		if err := requireTarget(cmd); err != nil {
+			return err
+		}
 		orphaned, _ := cmd.Flags().GetBool("orphaned")
+		repo := getRepoFlag(cmd)
 		client := api.DefaultClient()
 		if url, _ := cmd.Flags().GetString("api.url"); url != "" {
 			client.BaseURL = url
@@ -202,7 +222,7 @@ var repoForgetCmd = &cobra.Command{
 			client.Token = token
 		}
 
-		results, err := client.ForgetRepos(retention, orphaned)
+		results, err := client.ForgetRepos(repo, retention, orphaned)
 		if err != nil {
 			return fmt.Errorf("forget repos: %w", err)
 		}
@@ -232,7 +252,11 @@ var repoPruneCmd = &cobra.Command{
 	Use:   "prune",
 	Short: "Prune all known repositories",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireTarget(cmd); err != nil {
+			return err
+		}
 		orphaned, _ := cmd.Flags().GetBool("orphaned")
+		repo := getRepoFlag(cmd)
 		client := api.DefaultClient()
 		if url, _ := cmd.Flags().GetString("api.url"); url != "" {
 			client.BaseURL = url
@@ -241,7 +265,7 @@ var repoPruneCmd = &cobra.Command{
 			client.Token = token
 		}
 
-		results, err := client.PruneRepos(orphaned)
+		results, err := client.PruneRepos(repo, orphaned)
 		if err != nil {
 			return fmt.Errorf("prune repos: %w", err)
 		}
@@ -269,19 +293,46 @@ var repoPruneCmd = &cobra.Command{
 
 func setupRepoCommands() {
 	repoListCmd.Flags().Bool("orphaned", false, "show only orphaned repositories")
+	repoListCmd.Flags().Bool("all", false, "show all non-orphaned repositories")
+	repoListCmd.Flags().String("repo", "", "show a specific repository")
 	repoCheckCmd.Flags().Bool("orphaned", false, "check only orphaned repositories")
+	repoCheckCmd.Flags().Bool("all", false, "check all non-orphaned repositories")
 	repoCheckCmd.Flags().Bool("read-data", false, "read all pack files for full data integrity check")
+	repoCheckCmd.Flags().String("repo", "", "check a specific repository")
 	repoUnlockCmd.Flags().Bool("orphaned", false, "unlock orphaned repositories")
+	repoUnlockCmd.Flags().Bool("all", false, "unlock all non-orphaned repositories")
+	repoUnlockCmd.Flags().String("repo", "", "unlock a specific repository")
 	repoForgetCmd.Flags().Bool("orphaned", false, "forget only orphaned repositories")
+	repoForgetCmd.Flags().Bool("all", false, "forget all non-orphaned repositories")
 	repoForgetCmd.Flags().String("retention", "", "retention policy (e.g. keep-daily:7,keep-weekly:4)")
+	repoForgetCmd.Flags().String("repo", "", "forget a specific repository")
 	repoStatsCmd.Flags().Bool("orphaned", false, "show stats for orphaned repositories only")
+	repoStatsCmd.Flags().Bool("all", false, "show stats for all non-orphaned repositories")
+	repoStatsCmd.Flags().String("repo", "", "show stats for a specific repository")
 	repoPruneCmd.Flags().Bool("orphaned", false, "prune only orphaned repositories")
+	repoPruneCmd.Flags().Bool("all", false, "prune all non-orphaned repositories")
+	repoPruneCmd.Flags().String("repo", "", "prune a specific repository")
 
 	for _, c := range []*cobra.Command{repoListCmd, repoCheckCmd, repoStatsCmd, repoUnlockCmd, repoForgetCmd, repoPruneCmd} {
 		c.Flags().String("api.url", "", "buoy API URL (defaults to BUOY_URL env or http://127.0.0.1:8080)")
 		c.Flags().String("api.token", "", "buoy API bearer token (defaults to BUOY_TOKEN env)")
 		repoCmd.AddCommand(c)
 	}
+}
+
+func getRepoFlag(cmd *cobra.Command) string {
+	repo, _ := cmd.Flags().GetString("repo")
+	return repo
+}
+
+func requireTarget(cmd *cobra.Command) error {
+	repo, _ := cmd.Flags().GetString("repo")
+	orphaned, _ := cmd.Flags().GetBool("orphaned")
+	all, _ := cmd.Flags().GetBool("all")
+	if repo == "" && !orphaned && !all {
+		return fmt.Errorf("must specify --repo, --orphaned, or --all")
+	}
+	return nil
 }
 
 func formatBytes(bytes uint64) string {

@@ -269,12 +269,15 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func listRepoOpts(r *http.Request) []registry.ListOption {
+	var opts []registry.ListOption
 	switch r.URL.Query().Get("orphaned") {
 	case "true":
-		return []registry.ListOption{registry.OnlyOrphaned()}
+		opts = append(opts, registry.OnlyOrphaned())
 	case "false":
-		return []registry.ListOption{registry.ExcludeOrphaned()}
-	default:
-		return nil
+		opts = append(opts, registry.ExcludeOrphaned())
 	}
+	if repo := r.URL.Query().Get("repo"); repo != "" {
+		opts = append(opts, registry.FilterByRepo(repo))
+	}
+	return opts
 }

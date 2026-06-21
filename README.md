@@ -462,19 +462,20 @@ Set `--api.url` and `--api.token` per command, or use the `BUOY_URL` /
 `BUOY_TOKEN` environment variables. Defaults to `http://127.0.0.1:8080`.
 
 ```bash
-buoy repo list                    # list all repos
-buoy repo list --orphaned         # show only orphaned repos
-buoy repo check                   # structural integrity check
-buoy repo check --read-data       # full data integrity check
-buoy repo stats                   # storage usage across all repos
-buoy repo unlock                  # unlock all repos
-buoy repo forget --retention keep-daily:7,keep-weekly:4
-buoy repo prune                   # prune all repos
+buoy repo list --all                 # list all non-orphaned repos
+buoy repo list --orphaned            # show only orphaned repos
+buoy repo list --repo /backup/myapp  # show a specific repo
+buoy repo check --all                # structural integrity check
+buoy repo check --read-data --all    # full data integrity check
+buoy repo stats --all                # storage usage across all repos
+buoy repo unlock --repo /backup/myapp
+buoy repo forget --retention keep-daily:7,keep-weekly:4 --all
+buoy repo prune --orphaned
 
 # Remote daemon with auth
 export BUOY_URL=https://buoy.internal.example.com
 export BUOY_TOKEN=secret123
-buoy repo stats
+buoy repo stats --all
 ```
 
 > [!WARNING]

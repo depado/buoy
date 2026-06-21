@@ -207,6 +207,7 @@ type ListOption func(*listConfig)
 type listConfig struct {
 	orphanedOnly    bool
 	nonOrphanedOnly bool
+	repoURL         string
 }
 
 func OnlyOrphaned() ListOption {
@@ -215,6 +216,10 @@ func OnlyOrphaned() ListOption {
 
 func ExcludeOrphaned() ListOption {
 	return func(c *listConfig) { c.nonOrphanedOnly = true }
+}
+
+func FilterByRepo(url string) ListOption {
+	return func(c *listConfig) { c.repoURL = url }
 }
 
 func (r *Registry) ListRepos(opts ...ListOption) ([]RepoEntry, error) {
@@ -236,6 +241,9 @@ func (r *Registry) ListRepos(opts ...ListOption) ([]RepoEntry, error) {
 				continue
 			}
 			if cfg.nonOrphanedOnly && entry.Orphaned {
+				continue
+			}
+			if cfg.repoURL != "" && entry.URL != cfg.repoURL {
 				continue
 			}
 			entries = append(entries, entry)

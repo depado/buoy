@@ -52,8 +52,8 @@ func (c *Client) doRequest(method, path string) (*http.Response, error) {
 	return resp, nil
 }
 
-func (c *Client) ListRepos(orphaned bool) ([]registry.RepoEntry, error) {
-	path := "/api/v1/repos" + orphanParam(orphaned)
+func (c *Client) ListRepos(repo string, orphaned bool) ([]registry.RepoEntry, error) {
+	path := "/api/v1/repos" + listQuery(repo, orphaned)
 	resp, err := c.doRequest("GET", path)
 	if err != nil {
 		return nil, err
@@ -62,8 +62,9 @@ func (c *Client) ListRepos(orphaned bool) ([]registry.RepoEntry, error) {
 	return decodeJSON[[]registry.RepoEntry](resp)
 }
 
-func (c *Client) CheckRepos(readData bool, orphaned bool) ([]CheckResult, error) {
+func (c *Client) CheckRepos(repo string, readData bool, orphaned bool) ([]CheckResult, error) {
 	params := make(url.Values)
+	appendRepoParam(params, repo)
 	if readData {
 		params.Set("read-data", "true")
 	}
@@ -88,8 +89,8 @@ type CheckResult struct {
 	Error string `json:"error,omitempty"`
 }
 
-func (c *Client) StatsRepos(orphaned bool) (*StatsResponse, error) {
-	path := "/api/v1/repos/stats" + nonOrphanedParam(orphaned)
+func (c *Client) StatsRepos(repo string, orphaned bool) (*StatsResponse, error) {
+	path := "/api/v1/repos/stats" + listQuery(repo, orphaned)
 	resp, err := c.doRequest("POST", path)
 	if err != nil {
 		return nil, err
@@ -113,8 +114,8 @@ type RepoStats struct {
 	Error string        `json:"error,omitempty"`
 }
 
-func (c *Client) UnlockRepos(orphaned bool) ([]OpResult, error) {
-	path := "/api/v1/repos/unlock" + nonOrphanedParam(orphaned)
+func (c *Client) UnlockRepos(repo string, orphaned bool) ([]OpResult, error) {
+	path := "/api/v1/repos/unlock" + listQuery(repo, orphaned)
 	resp, err := c.doRequest("POST", path)
 	if err != nil {
 		return nil, err
@@ -129,11 +130,14 @@ type OpResult struct {
 	Error string `json:"error,omitempty"`
 }
 
-func (c *Client) ForgetRepos(retention string, orphaned bool) ([]OpResult, error) {
-	path := "/api/v1/repos/forget?retention=" + url.QueryEscape(retention)
+func (c *Client) ForgetRepos(repo string, retention string, orphaned bool) ([]OpResult, error) {
+	params := url.Values{}
+	params.Set("retention", retention)
+	appendRepoParam(params, repo)
 	if orphaned {
-		path += "&orphaned=true"
+		params.Set("orphaned", "true")
 	}
+	path := "/api/v1/repos/forget?" + params.Encode()
 	resp, err := c.doRequest("POST", path)
 	if err != nil {
 		return nil, err
@@ -142,8 +146,8 @@ func (c *Client) ForgetRepos(retention string, orphaned bool) ([]OpResult, error
 	return decodeJSON[[]OpResult](resp)
 }
 
-func (c *Client) PruneRepos(orphaned bool) ([]OpResult, error) {
-	path := "/api/v1/repos/prune" + nonOrphanedParam(orphaned)
+func (c *Client) PruneRepos(repo string, orphaned bool) ([]OpResult, error) {
+	path := "/api/v1/repos/prune" + listQuery(repo, orphaned)
 	resp, err := c.doRequest("POST", path)
 	if err != nil {
 		return nil, err
@@ -167,16 +171,22 @@ func envOrDefault(key, def string) string {
 	return def
 }
 
-func orphanParam(v bool) string {
-	if v {
-		return "?orphaned=true"
+func listQuery(repo string, orphaned bool) string {
+	params := make(url.Values)
+	appendRepoParam(params, repo)
+	if orphaned {
+		params.Set("orphaned", "true")
+	} else {
+		params.Set("orphaned", "false")
+	}
+	if q := params.Encode(); q != "" {
+		return "?" + q
 	}
 	return ""
 }
 
-func nonOrphanedParam(orphaned bool) string {
-	if orphaned {
-		return "?orphaned=true"
+func appendRepoParam(params url.Values, repo string) {
+	if repo != "" {
+		params.Set("repo", repo)
 	}
-	return "?orphaned=false"
 }
