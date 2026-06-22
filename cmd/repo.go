@@ -67,7 +67,7 @@ var repoListCmd = &cobra.Command{
 		tbl := table.NewTableWithOptions(
 			[]string{"URL", "Container", "Project", "Service", "Last Backup", "OK", "Orphaned"},
 			table.WithBox(box.SIMPLE),
-			table.WithHeaderStyle(stylePtr("bold")),
+			table.WithHeaderStyle(boldStyle),
 		)
 		for _, e := range entries {
 			backupAt := "-"
@@ -192,7 +192,7 @@ var repoStatsCmd = &cobra.Command{
 		if stats.Total != nil {
 			summary := table.NewTableWithOptions(nil,
 				table.WithBox(box.SIMPLE),
-				table.WithHeaderStyle(stylePtr("bold")),
+				table.WithHeaderStyle(boldStyle),
 			)
 			summary.AddColumn("Metric")
 			summary.AddColumn("Value")
@@ -210,7 +210,7 @@ var repoStatsCmd = &cobra.Command{
 		tbl := table.NewTableWithOptions(
 			[]string{"Repo", "Size", "Uncompressed", "Ratio", "Files", "Blobs", "Snapshots"},
 			table.WithBox(box.SIMPLE),
-			table.WithHeaderStyle(stylePtr("bold")),
+			table.WithHeaderStyle(boldStyle),
 		)
 		for _, r := range stats.Repos {
 			if r.Error != "" {

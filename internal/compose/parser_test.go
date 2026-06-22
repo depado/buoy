@@ -234,7 +234,6 @@ func TestParseLongSyntax(t *testing.T) {
 	}
 }
 
-
 func TestParseCompose(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "compose.yaml")
@@ -264,7 +263,7 @@ volumes:
   cache_data:
 `)
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -302,12 +301,12 @@ volumes:
 	}
 
 	want := map[string]check{
-		"web:/var/run/docker.sock":     {"web", "bind", "/var/run/docker.sock", "/var/run/docker.sock", "ro"},
-		"web:./html":                    {"web", "bind", "./html", "/usr/share/nginx/html", "rw"},
-		"web:/etc/nginx/conf.d":         {"web", "bind", "/etc/nginx/conf.d", "/etc/nginx/conf.d", "ro"},
-		"db:db_data":                            {"db", "volume", "db_data", "/var/lib/postgresql/data", "rw"},
-		"api:/home/user/uploads":                {"api", "bind", "/home/user/uploads", "/app/uploads", "rw"},
-		"api:cache_data":                        {"api", "volume", "cache_data", "/app/cache", "rw"},
+		"web:/var/run/docker.sock": {"web", "bind", "/var/run/docker.sock", "/var/run/docker.sock", "ro"},
+		"web:./html":               {"web", "bind", "./html", "/usr/share/nginx/html", "rw"},
+		"web:/etc/nginx/conf.d":    {"web", "bind", "/etc/nginx/conf.d", "/etc/nginx/conf.d", "ro"},
+		"db:db_data":               {"db", "volume", "db_data", "/var/lib/postgresql/data", "rw"},
+		"api:/home/user/uploads":   {"api", "bind", "/home/user/uploads", "/app/uploads", "rw"},
+		"api:cache_data":           {"api", "volume", "cache_data", "/app/cache", "rw"},
 	}
 
 	for _, s := range stack.Services {
@@ -363,7 +362,7 @@ volumes:
   db_data:
 `)
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -420,7 +419,7 @@ services:
     image: nginx:latest
 `)
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -449,7 +448,7 @@ func TestDiscoverNoComposeFile(t *testing.T) {
 func TestDiscoverNotADirectory(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "file.txt")
-	if err := os.WriteFile(path, []byte("hello"), 0644); err != nil {
+	if err := os.WriteFile(path, []byte("hello"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	_, err := Discover(path, 0, DefaultPatterns)
@@ -469,7 +468,7 @@ services:
       - app_data:/data
 `)
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -493,10 +492,10 @@ func TestDiscoverRecursive(t *testing.T) {
 
 	writeCompose := func(subdir, content string) {
 		dir := filepath.Join(root, subdir)
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(content), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(content), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -584,8 +583,12 @@ services:
 
 func TestDiscoverRecursiveEmpty(t *testing.T) {
 	root := t.TempDir()
-	os.MkdirAll(filepath.Join(root, "empty-dir"), 0755)
-	os.MkdirAll(filepath.Join(root, "nested", "deep"), 0755)
+	if err := os.MkdirAll(filepath.Join(root, "empty-dir"), 0750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "nested", "deep"), 0750); err != nil {
+		t.Fatal(err)
+	}
 
 	_, err := Discover(root, 1, DefaultPatterns)
 	if err == nil {
@@ -596,21 +599,27 @@ func TestDiscoverRecursiveEmpty(t *testing.T) {
 func TestDiscoverCustomPatterns(t *testing.T) {
 	root := t.TempDir()
 
-	os.WriteFile(filepath.Join(root, "compose.yaml"), []byte(`
+	if err := os.WriteFile(filepath.Join(root, "compose.yaml"), []byte(`
 services:
   app:
     volumes:
       - data:/data
-`), 0644)
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
 
-	os.WriteFile(filepath.Join(root, "stack.prod.yml"), []byte(`
+	if err := os.WriteFile(filepath.Join(root, "stack.prod.yml"), []byte(`
 services:
   worker:
     volumes:
       - jobs:/jobs
-`), 0644)
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
 
-	os.WriteFile(filepath.Join(root, "not-a-compose.txt"), []byte(`not yaml`), 0644)
+	if err := os.WriteFile(filepath.Join(root, "not-a-compose.txt"), []byte(`not yaml`), 0600); err != nil {
+		t.Fatal(err)
+	}
 
 	stacks, err := Discover(root, 0, []string{"stack.*.yml"})
 	if err != nil {
@@ -649,7 +658,7 @@ volumes:
   db_data:
 `)
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -695,7 +704,7 @@ services:
       - data:/cache
 `)
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}
 

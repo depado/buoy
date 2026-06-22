@@ -245,9 +245,9 @@ func (c *Client) Stats(ctx context.Context, repo string) (*Stats, error) {
 	if err != nil {
 		return nil, err
 	}
-	rawStats, err := c.statsMode(ctx, repo, "--mode", "raw-data")
-	if err != nil {
-		return restoreStats, nil
+	rawStats, rawErr := c.statsMode(ctx, repo, "--mode", "raw-data")
+	if rawErr != nil {
+		return restoreStats, nil //nolint:nilerr
 	}
 	restoreStats.TotalSize = rawStats.TotalSize
 	restoreStats.TotalBlobCount = rawStats.TotalBlobCount
@@ -259,7 +259,8 @@ func (c *Client) Stats(ctx context.Context, repo string) (*Stats, error) {
 }
 
 func (c *Client) statsMode(ctx context.Context, repo string, extraArgs ...string) (*Stats, error) {
-	args := []string{"stats", "-r", repo, "--json"}
+	args := make([]string, 0, 4+len(extraArgs))
+	args = append(args, "stats", "-r", repo, "--json")
 	args = append(args, extraArgs...)
 	var buf bytes.Buffer
 	var stderr bytes.Buffer

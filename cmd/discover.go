@@ -60,7 +60,7 @@ host paths and YAML sections.`,
 		for _, stack := range stacks {
 			tbl := table.NewTableWithOptions(nil,
 				table.WithBox(box.SIMPLE),
-				table.WithHeaderStyle(stylePtr("bold")),
+				table.WithHeaderStyle(boldStyle),
 				table.WithTitle("[green]"+stack.Path+"[/]"),
 			)
 			tbl.AddColumn("Service")
@@ -166,10 +166,7 @@ func splitTrim(s string) []string {
 	return result
 }
 
-func stylePtr(s string) *style.Style {
-	st := style.Parse(s)
-	return &st
-}
+var boldStyle *style.Style
 
 func isBuiltinMount(source string) bool {
 	switch source {
@@ -179,7 +176,10 @@ func isBuiltinMount(source string) bool {
 	return false
 }
 
-func init() {
+func setupDiscoverCommand() {
+	st := style.Parse("bold")
+	boldStyle = &st
+
 	discoverCmd.Flags().Int("depth", -1, "maximum directory depth to search for compose files (-1 for unlimited)")
 	discoverCmd.Flags().String("pattern", "", "comma-separated glob patterns for compose files (default: compose.y*ml,docker-compose.y*ml)")
 	discoverCmd.Flags().Bool("json", false, "output as JSON")

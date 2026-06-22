@@ -25,9 +25,9 @@ type VolumeEntry struct {
 }
 
 type ServiceInfo struct {
-	Name    string        `json:"name"`
+	Name    string            `json:"name"`
 	Labels  map[string]string `json:"labels"`
-	Volumes []VolumeEntry `json:"volumes"`
+	Volumes []VolumeEntry     `json:"volumes"`
 }
 
 type StackInfo struct {
@@ -40,7 +40,7 @@ type composeFile struct {
 }
 
 type composeService struct {
-	Labels  any  `yaml:"labels"`
+	Labels  any   `yaml:"labels"`
 	Volumes []any `yaml:"volumes"`
 }
 
@@ -62,7 +62,7 @@ func Discover(dir string, maxDepth int, patterns []string) ([]StackInfo, error) 
 
 	err = filepath.WalkDir(abs, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return nil //nolint:nilerr
 		}
 		if !d.IsDir() {
 			return nil
@@ -78,9 +78,10 @@ func Discover(dir string, maxDepth int, patterns []string) ([]StackInfo, error) 
 
 		composePath, ferr := findComposeFile(path, patterns)
 		if ferr != nil {
-			return nil
+			return nil //nolint:nilerr
 		}
 
+		//nolint:gosec
 		data, rerr := os.ReadFile(composePath)
 		if rerr != nil {
 			fmt.Fprintf(os.Stderr, "warning: %s: %v\n", composePath, rerr)
@@ -256,9 +257,10 @@ func splitVolumeSpec(spec string) []string {
 		}
 		if inVar {
 			current.WriteByte(ch)
-			if ch == '{' {
+			switch ch {
+			case '{':
 				depth++
-			} else if ch == '}' {
+			case '}':
 				depth--
 				if depth == 0 {
 					inVar = false

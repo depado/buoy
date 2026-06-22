@@ -22,6 +22,7 @@ func Setup(root *cobra.Command) {
 	}
 
 	setupRepoCommands()
+	setupDiscoverCommand()
 	root.AddCommand(repoCmd)
 	root.AddCommand(discoverCmd)
 	root.AddCommand(versionCmd)
