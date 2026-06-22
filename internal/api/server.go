@@ -164,6 +164,7 @@ func (s *Server) handleReposStats(w http.ResponseWriter, r *http.Request) {
 		total.TotalFileCount += st.TotalFileCount
 		total.TotalBlobCount += st.TotalBlobCount
 		total.SnapshotsCount += st.SnapshotsCount
+		total.TotalUncompressedSize += st.TotalUncompressedSize
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"total": &total,

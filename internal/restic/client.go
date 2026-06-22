@@ -237,10 +237,33 @@ func (c *Client) Snapshots(ctx context.Context, repo string) ([]Snapshot, error)
 }
 
 // Stats returns statistics for the repository.
+// Runs both restore-size and raw-data modes to collect all available fields.
+// TotalSize and compression fields come from raw-data mode (actual repo data).
+// TotalFileCount and SnapshotsCount come from restore-size mode.
 func (c *Client) Stats(ctx context.Context, repo string) (*Stats, error) {
+	restoreStats, err := c.statsMode(ctx, repo)
+	if err != nil {
+		return nil, err
+	}
+	rawStats, err := c.statsMode(ctx, repo, "--mode", "raw-data")
+	if err != nil {
+		return restoreStats, nil
+	}
+	restoreStats.TotalSize = rawStats.TotalSize
+	restoreStats.TotalBlobCount = rawStats.TotalBlobCount
+	restoreStats.TotalUncompressedSize = rawStats.TotalUncompressedSize
+	restoreStats.CompressionRatio = rawStats.CompressionRatio
+	restoreStats.CompressionProgress = rawStats.CompressionProgress
+	restoreStats.CompressionSpaceSaving = rawStats.CompressionSpaceSaving
+	return restoreStats, nil
+}
+
+func (c *Client) statsMode(ctx context.Context, repo string, extraArgs ...string) (*Stats, error) {
+	args := []string{"stats", "-r", repo, "--json"}
+	args = append(args, extraArgs...)
 	var buf bytes.Buffer
 	var stderr bytes.Buffer
-	cmd, cleanup, err := c.command(ctx, "stats", "-r", repo, "--json")
+	cmd, cleanup, err := c.command(ctx, args...)
 	if err != nil {
 		return nil, err
 	}

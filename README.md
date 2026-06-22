@@ -32,6 +32,8 @@
 - [Label Reference](#label-reference)
 - [Examples](#examples)
 - [Configuration](#configuration)
+- [CLI: `buoy repo`](#cli-buoy-repo)
+- [CLI: `buoy discover`](#cli-buoy-discover)
 - [Repository Layout](#repository-layout)
 - [Deployment](#deployment)
 - [Restoring](#restoring)
@@ -480,6 +482,95 @@ buoy repo stats --all
 
 > [!WARNING]
 > Destructive operations (`unlock`, `forget`, `prune`) return an error if any backup is currently in progress, preventing accidental lock conflicts or corruption. Read-only commands (`check`, `stats`) are not gated and may run alongside backups.
+
+### CLI: `buoy discover`
+
+Scans a directory recursively for Docker Compose files and lists the volumes
+and bind mounts buoy would need access to — so you can configure your buoy
+container with the right host mounts before deploying.
+
+Uses gorich tables with styled output. Bind mounts from enabled services are
+highlighted green in the table. Built-in mounts (`/var/run/docker.sock`,
+`/var/lib/docker/volumes`) are shown in plain text since buoy already needs them.
+
+```bash
+# Scan current directory (unlimited depth)
+buoy discover .
+
+# Scan a specific directory, two levels deep
+buoy discover /opt/stacks --depth 2
+
+# Unlimited depth
+buoy discover /opt/stacks --depth -1
+
+# Custom glob pattern for compose files
+buoy discover /opt/stacks --pattern "stack.*.yml"
+```
+
+**Flags:**
+
+| Flag        | Default                            | Description                                               |
+| ----------- | ---------------------------------- | --------------------------------------------------------- |
+| `--depth`   | `-1`                               | Maximum directory depth (`-1` for unlimited)              |
+| `--pattern` | `compose.y*ml,docker-compose.y*ml` | Comma-separated glob patterns for compose file names      |
+
+**Respects buoy labels.** The `buoy.enabled`, `buoy.include-*/buoy.exclude-*`
+labels defined in compose files are honored, including both map and list
+syntax:
+
+```yaml
+labels:
+  buoy.enabled: "true"         # map syntax
+  buoy.tags: "production"
+
+labels:
+  - "buoy.enabled=true"        # list syntax
+  - "traefik.enable=true"
+```
+
+- Services with `buoy.enabled: "true"` show `[green]yes[/green]` in the table;
+  disabled or unlabeled services show `[red]no[/red]`.
+- `buoy.include-volumes` / `buoy.exclude-volumes` filter named volumes.
+- `buoy.include-mounts` / `buoy.exclude-mounts` filter bind mounts by source
+  or destination path.
+- Bind mounts from enabled services are highlighted `[bold green]` — these are
+  the ones that need to be added to buoy's compose service. Built-in mounts
+  (`/var/run/docker.sock`, `/var/lib/docker/volumes`) are never highlighted.
+
+**Output sections:**
+
+1. **Per-file table** — each compose file gets a green title and a table with
+   service, enabled state, type, source (original compose path), destination,
+   and read/write mode. Variable substitution (`${VAR:-default}`) is resolved.
+2. **YAML snippet** — ready-to-paste `volumes:` block for buoy's compose
+   service, using resolved absolute paths and `:ro` mode.
+
+**Example output:**
+
+```
+       /opt/stacks/webapp/compose.yaml                                   
+                                                                         
+  Service  Enabled  Type    Source            Destination     Mode       
+ ─────────────────────────────────────────────────────────────────────── 
+  db       yes      volume  db_data           /var/lib/mysql   rw        
+  db       yes      bind    /srv/backups      /backups         rw        
+  api      yes      bind    /var/run/docker…  /var/run/docker… ro        
+  web      no       bind    ./html            /usr/share/nginx ro        
+                                                                         
+       /opt/stacks/worker/compose.yaml                                   
+                                                                         
+  Service  Enabled  Type    Source     Destination  Mode                 
+ ─────────────────────────────────────────────────────────────────────── 
+  worker   yes      bind    ./jobs     /jobs        rw                   
+                                                                         
+
+Add to buoy's compose service volumes:
+volumes:
+  - /opt/stacks/webapp/backups:/opt/stacks/webapp/backups:ro
+  - /opt/stacks/worker/jobs:/opt/stacks/worker/jobs:ro
+  - /var/run/docker.sock:/var/run/docker.sock:ro
+  - /var/lib/docker/volumes:/var/lib/docker/volumes:ro
+```
 
 ## Repository Layout
 

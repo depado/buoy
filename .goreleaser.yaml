@@ -1,8 +1,13 @@
 version: 2
 
+project_name: buoy
+
 before:
   hooks:
     - go mod tidy
+    - go mod verify
+    - go build ./...
+    - go vet ./...
 
 builds:
   - env:
@@ -27,6 +32,10 @@ archives:
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
 
+source:
+  enabled: true
+  name_template: "{{ .ProjectName }}-{{ .Version }}-source"
+
 checksum:
   name_template: 'checksums.txt'
 
@@ -34,8 +43,67 @@ snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
 changelog:
+  use: github
   sort: asc
+  abbrev: 0
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Performance
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Refactors
+      regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+$'
+      order: 3
+    - title: Documentation
+      regexp: '^.*?docs(\([[:word:]]+\))??!?:.+$'
+      order: 4
+    - title: Others
+      order: 999
   filters:
     exclude:
-      - '^docs:'
-      - '^test:'
+      - "^test:"
+      - "^chore:"
+      - merge conflict
+      - Merge pull request
+
+release:
+  github:
+    owner: depado
+    name: buoy
+  draft: false
+  prerelease: auto
+  mode: replace
+  name_template: "v{{ .Version }}"
+  header: |
+    ## buoy {{ .Version }}
+
+    Backup Docker container volumes and bind mounts using restic as the backend.
+
+    ### Quick Install
+
+    ```bash
+    # Download binary
+    curl -sSL "https://github.com/depado/buoy/releases/download/v{{ .Version }}/buoy_Linux_x86_64.tar.gz" | tar xz
+
+    # Or via Go
+    go install github.com/depado/buoy@v{{ .Version }}
+    ```
+
+    ### Docker
+
+    ```bash
+    docker pull ghcr.io/depado/buoy:{{ .Version }}
+    ```
+
+git:
+  ignore_tags:
+    - nightly
+  tag_sort: -version:refname
+
+metadata:
+  mod_timestamp: "{{ .CommitTimestamp }}"

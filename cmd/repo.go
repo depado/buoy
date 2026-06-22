@@ -1,14 +1,20 @@
 package cmd
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"os"
-	"text/tabwriter"
 	"time"
 
+	"github.com/depado/gorich"
+	"github.com/depado/gorich/progress"
+	"github.com/depado/gorich/table"
+	"github.com/depado/gorich/table/box"
 	"github.com/spf13/cobra"
 
 	"github.com/depado/buoy/internal/api"
+	"github.com/depado/buoy/internal/registry"
 )
 
 var repoCmd = &cobra.Command{
@@ -33,7 +39,19 @@ var repoListCmd = &cobra.Command{
 			client.Token = token
 		}
 
-		entries, err := client.ListRepos(repo, orphaned)
+		asJSON, _ := cmd.Flags().GetBool("json")
+
+		var entries []registry.RepoEntry
+		var err error
+		if !asJSON {
+			p := newSpinner()
+			p.Start(context.Background())
+			p.AddTask("[bold]Fetching repos...[/]", nil)
+			entries, err = client.ListRepos(repo, orphaned)
+			p.Stop()
+		} else {
+			entries, err = client.ListRepos(repo, orphaned)
+		}
 		if err != nil {
 			return fmt.Errorf("list repos: %w", err)
 		}
@@ -42,8 +60,15 @@ var repoListCmd = &cobra.Command{
 			return nil
 		}
 
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "URL\tCONTAINER\tPROJECT\tSERVICE\tLAST BACKUP\tOK\tORPHANED")
+		if asJSON {
+			return printJSON(entries)
+		}
+
+		tbl := table.NewTableWithOptions(
+			[]string{"URL", "Container", "Project", "Service", "Last Backup", "OK", "Orphaned"},
+			table.WithBox(box.SIMPLE),
+			table.WithHeaderStyle(stylePtr("bold")),
+		)
 		for _, e := range entries {
 			backupAt := "-"
 			if !e.LastBackupAt.IsZero() {
@@ -57,10 +82,9 @@ var repoListCmd = &cobra.Command{
 			if e.Orphaned {
 				orphaned = "yes"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-				e.URL, e.ContainerName, e.ComposeProject, e.ComposeService, backupAt, ok, orphaned)
+			tbl.AddRow(e.URL, e.ContainerName, e.ComposeProject, e.ComposeService, backupAt, ok, orphaned)
 		}
-		w.Flush()
+		gorich.Console().Render(tbl)
 		return nil
 	},
 }
@@ -83,13 +107,29 @@ var repoCheckCmd = &cobra.Command{
 			client.Token = token
 		}
 
-		results, err := client.CheckRepos(repo, readData, orphaned)
+		asJSON, _ := cmd.Flags().GetBool("json")
+
+		var results []api.CheckResult
+		var err error
+		if !asJSON {
+			p := newSpinner()
+			p.Start(context.Background())
+			p.AddTask("[bold]Running check...[/]", nil)
+			results, err = client.CheckRepos(repo, readData, orphaned)
+			p.Stop()
+		} else {
+			results, err = client.CheckRepos(repo, readData, orphaned)
+		}
 		if err != nil {
 			return fmt.Errorf("check repos: %w", err)
 		}
 		if len(results) == 0 {
 			fmt.Println("No repositories to check.")
 			return nil
+		}
+
+		if asJSON {
+			return printJSON(results)
 		}
 
 		failures := 0
@@ -126,34 +166,76 @@ var repoStatsCmd = &cobra.Command{
 			client.Token = token
 		}
 
-		stats, err := client.StatsRepos(repo, orphaned)
+		asJSON, _ := cmd.Flags().GetBool("json")
+
+		var stats *api.StatsResponse
+		var err error
+		if !asJSON {
+			p := newSpinner()
+			p.Start(context.Background())
+			p.AddTask("[bold]Fetching stats...[/]", nil)
+			stats, err = client.StatsRepos(repo, orphaned)
+			p.Stop()
+		} else {
+			stats, err = client.StatsRepos(repo, orphaned)
+		}
 		if err != nil {
 			return fmt.Errorf("stats repos: %w", err)
 		}
 
-		if stats.Total != nil {
-			fmt.Printf("Total repos: %d\n", stats.Total.SnapshotsCount)
-			fmt.Printf("Total size:  %s\n", formatBytes(stats.Total.TotalSize))
-			fmt.Printf("Total files: %d\n", stats.Total.TotalFileCount)
-			fmt.Printf("Total blobs: %d\n", stats.Total.TotalBlobCount)
+		if asJSON {
+			return printJSON(stats)
 		}
 
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "\nREPO\tSIZE\tFILES\tBLOBS\tSNAPSHOTS")
+		c := gorich.Console()
+
+		if stats.Total != nil {
+			summary := table.NewTableWithOptions(nil,
+				table.WithBox(box.SIMPLE),
+				table.WithHeaderStyle(stylePtr("bold")),
+			)
+			summary.AddColumn("Metric")
+			summary.AddColumn("Value")
+			summary.AddRow("[bold]Total repos[/]", len(stats.Repos))
+			summary.AddRow("[bold]Total snapshots[/]", stats.Total.SnapshotsCount)
+			summary.AddRow("[bold]Total size[/]", formatBytes(stats.Total.TotalSize))
+			summary.AddRow("[bold]Total files[/]", stats.Total.TotalFileCount)
+			summary.AddRow("[bold]Total blobs[/]", stats.Total.TotalBlobCount)
+			if stats.Total.TotalUncompressedSize > 0 {
+				summary.AddRow("[bold]Uncompressed[/]", formatBytes(stats.Total.TotalUncompressedSize))
+			}
+			c.Render(summary)
+		}
+
+		tbl := table.NewTableWithOptions(
+			[]string{"Repo", "Size", "Uncompressed", "Ratio", "Files", "Blobs", "Snapshots"},
+			table.WithBox(box.SIMPLE),
+			table.WithHeaderStyle(stylePtr("bold")),
+		)
 		for _, r := range stats.Repos {
 			if r.Error != "" {
-				fmt.Fprintf(w, "%s\tERROR: %s\n", r.Repo, r.Error)
+				tbl.AddRow(r.Repo, fmt.Sprintf("ERROR: %s", r.Error))
 				continue
 			}
-			fmt.Fprintf(w, "%s\t%s\t%d\t%d\t%d\n",
+			uc := "-"
+			ratio := ""
+			if r.Stats.TotalUncompressedSize > 0 {
+				uc = formatBytes(r.Stats.TotalUncompressedSize)
+				if r.Stats.CompressionRatio > 0 {
+					ratio = fmt.Sprintf("%.1fx", r.Stats.CompressionRatio)
+				}
+			}
+			tbl.AddRow(
 				r.Repo,
 				formatBytes(r.Stats.TotalSize),
+				uc,
+				ratio,
 				r.Stats.TotalFileCount,
 				r.Stats.TotalBlobCount,
 				r.Stats.SnapshotsCount,
 			)
 		}
-		w.Flush()
+		c.Render(tbl)
 		return nil
 	},
 }
@@ -175,13 +257,29 @@ var repoUnlockCmd = &cobra.Command{
 			client.Token = token
 		}
 
-		results, err := client.UnlockRepos(repo, orphaned)
+		asJSON, _ := cmd.Flags().GetBool("json")
+
+		var results []api.OpResult
+		var err error
+		if !asJSON {
+			p := newSpinner()
+			p.Start(context.Background())
+			p.AddTask("[bold]Unlocking repos...[/]", nil)
+			results, err = client.UnlockRepos(repo, orphaned)
+			p.Stop()
+		} else {
+			results, err = client.UnlockRepos(repo, orphaned)
+		}
 		if err != nil {
 			return fmt.Errorf("unlock repos: %w", err)
 		}
 		if len(results) == 0 {
 			fmt.Println("No repositories to unlock.")
 			return nil
+		}
+
+		if asJSON {
+			return printJSON(results)
 		}
 
 		failures := 0
@@ -222,13 +320,29 @@ var repoForgetCmd = &cobra.Command{
 			client.Token = token
 		}
 
-		results, err := client.ForgetRepos(repo, retention, orphaned)
+		asJSON, _ := cmd.Flags().GetBool("json")
+
+		var results []api.OpResult
+		var err error
+		if !asJSON {
+			p := newSpinner()
+			p.Start(context.Background())
+			p.AddTask("[bold]Forgetting snapshots...[/]", nil)
+			results, err = client.ForgetRepos(repo, retention, orphaned)
+			p.Stop()
+		} else {
+			results, err = client.ForgetRepos(repo, retention, orphaned)
+		}
 		if err != nil {
 			return fmt.Errorf("forget repos: %w", err)
 		}
 		if len(results) == 0 {
 			fmt.Println("No repositories to forget.")
 			return nil
+		}
+
+		if asJSON {
+			return printJSON(results)
 		}
 
 		failures := 0
@@ -265,13 +379,29 @@ var repoPruneCmd = &cobra.Command{
 			client.Token = token
 		}
 
-		results, err := client.PruneRepos(repo, orphaned)
+		asJSON, _ := cmd.Flags().GetBool("json")
+
+		var results []api.OpResult
+		var err error
+		if !asJSON {
+			p := newSpinner()
+			p.Start(context.Background())
+			p.AddTask("[bold]Pruning repos...[/]", nil)
+			results, err = client.PruneRepos(repo, orphaned)
+			p.Stop()
+		} else {
+			results, err = client.PruneRepos(repo, orphaned)
+		}
 		if err != nil {
 			return fmt.Errorf("prune repos: %w", err)
 		}
 		if len(results) == 0 {
 			fmt.Println("No repositories to prune.")
 			return nil
+		}
+
+		if asJSON {
+			return printJSON(results)
 		}
 
 		failures := 0
@@ -316,6 +446,7 @@ func setupRepoCommands() {
 	for _, c := range []*cobra.Command{repoListCmd, repoCheckCmd, repoStatsCmd, repoUnlockCmd, repoForgetCmd, repoPruneCmd} {
 		c.Flags().String("api.url", "", "buoy API URL (defaults to BUOY_URL env or http://127.0.0.1:8080)")
 		c.Flags().String("api.token", "", "buoy API bearer token (defaults to BUOY_TOKEN env)")
+		c.Flags().Bool("json", false, "output as JSON")
 		repoCmd.AddCommand(c)
 	}
 }
@@ -346,4 +477,20 @@ func formatBytes(bytes uint64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+func printJSON(v any) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}
+
+func newSpinner() *progress.Progress {
+	return progress.New(
+		progress.WithColumns(
+			progress.NewSpinnerColumn(),
+			progress.DescriptionColumn(),
+		),
+		progress.WithTransient(true),
+	)
 }
