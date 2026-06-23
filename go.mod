@@ -3,7 +3,7 @@ module github.com/depado/buoy
 go 1.26.1
 
 require (
-	github.com/depado/gorich v1.0.2
+	github.com/depado/gorich v1.0.4
 	github.com/lmittmann/tint v1.1.3
 	github.com/mattn/go-isatty v0.0.22
 	github.com/moby/moby/api v1.55.0

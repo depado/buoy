@@ -116,6 +116,7 @@ host paths and YAML sections.`,
 			}
 
 			c.Render(tbl)
+			c.Print()
 		}
 
 		if len(volumeless) > 0 {
