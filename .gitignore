@@ -1,8 +1,9 @@
 buoy
+buoyctl
+buoy.db
 *conf.y*ml
 docs/
 test/
 repos/
 dist/
 coverage.txt
-buoy.db

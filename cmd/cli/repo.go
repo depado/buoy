@@ -1,4 +1,4 @@
-package cmd
+package cli
 
 import (
 	"context"
@@ -13,8 +13,7 @@ import (
 	"github.com/depado/gorich/table/box"
 	"github.com/spf13/cobra"
 
-	"github.com/depado/buoy/internal/api"
-	"github.com/depado/buoy/internal/registry"
+	"github.com/depado/buoy/client"
 )
 
 var repoCmd = &cobra.Command{
@@ -31,26 +30,26 @@ var repoListCmd = &cobra.Command{
 		}
 		orphaned, _ := cmd.Flags().GetBool("orphaned")
 		repo := getRepoFlag(cmd)
-		client := api.DefaultClient()
+		apiClient := client.DefaultClient()
 		if url, _ := cmd.Flags().GetString("api.url"); url != "" {
-			client.BaseURL = url
+			apiClient.BaseURL = url
 		}
 		if token, _ := cmd.Flags().GetString("api.token"); token != "" {
-			client.Token = token
+			apiClient.Token = token
 		}
 
 		asJSON, _ := cmd.Flags().GetBool("json")
 
-		var entries []registry.RepoEntry
+		var entries []client.RepoEntry
 		var err error
 		if !asJSON {
 			p := newSpinner()
 			p.Start(context.Background())
 			p.AddTask("[bold]Fetching repos...[/]", nil)
-			entries, err = client.ListRepos(repo, orphaned)
+			entries, err = apiClient.ListRepos(repo, orphaned)
 			p.Stop()
 		} else {
-			entries, err = client.ListRepos(repo, orphaned)
+			entries, err = apiClient.ListRepos(repo, orphaned)
 		}
 		if err != nil {
 			return fmt.Errorf("list repos: %w", err)
@@ -99,26 +98,26 @@ var repoCheckCmd = &cobra.Command{
 		}
 		orphaned, _ := cmd.Flags().GetBool("orphaned")
 		repo := getRepoFlag(cmd)
-		client := api.DefaultClient()
+		apiClient := client.DefaultClient()
 		if url, _ := cmd.Flags().GetString("api.url"); url != "" {
-			client.BaseURL = url
+			apiClient.BaseURL = url
 		}
 		if token, _ := cmd.Flags().GetString("api.token"); token != "" {
-			client.Token = token
+			apiClient.Token = token
 		}
 
 		asJSON, _ := cmd.Flags().GetBool("json")
 
-		var results []api.CheckResult
+		var results []client.CheckResult
 		var err error
 		if !asJSON {
 			p := newSpinner()
 			p.Start(context.Background())
 			p.AddTask("[bold]Running check...[/]", nil)
-			results, err = client.CheckRepos(repo, readData, orphaned)
+			results, err = apiClient.CheckRepos(repo, readData, orphaned)
 			p.Stop()
 		} else {
-			results, err = client.CheckRepos(repo, readData, orphaned)
+			results, err = apiClient.CheckRepos(repo, readData, orphaned)
 		}
 		if err != nil {
 			return fmt.Errorf("check repos: %w", err)
@@ -158,26 +157,26 @@ var repoStatsCmd = &cobra.Command{
 		}
 		orphaned, _ := cmd.Flags().GetBool("orphaned")
 		repo := getRepoFlag(cmd)
-		client := api.DefaultClient()
+		apiClient := client.DefaultClient()
 		if url, _ := cmd.Flags().GetString("api.url"); url != "" {
-			client.BaseURL = url
+			apiClient.BaseURL = url
 		}
 		if token, _ := cmd.Flags().GetString("api.token"); token != "" {
-			client.Token = token
+			apiClient.Token = token
 		}
 
 		asJSON, _ := cmd.Flags().GetBool("json")
 
-		var stats *api.StatsResponse
+		var stats *client.StatsResponse
 		var err error
 		if !asJSON {
 			p := newSpinner()
 			p.Start(context.Background())
 			p.AddTask("[bold]Fetching stats...[/]", nil)
-			stats, err = client.StatsRepos(repo, orphaned)
+			stats, err = apiClient.StatsRepos(repo, orphaned)
 			p.Stop()
 		} else {
-			stats, err = client.StatsRepos(repo, orphaned)
+			stats, err = apiClient.StatsRepos(repo, orphaned)
 		}
 		if err != nil {
 			return fmt.Errorf("stats repos: %w", err)
@@ -249,26 +248,26 @@ var repoUnlockCmd = &cobra.Command{
 		}
 		orphaned, _ := cmd.Flags().GetBool("orphaned")
 		repo := getRepoFlag(cmd)
-		client := api.DefaultClient()
+		apiClient := client.DefaultClient()
 		if url, _ := cmd.Flags().GetString("api.url"); url != "" {
-			client.BaseURL = url
+			apiClient.BaseURL = url
 		}
 		if token, _ := cmd.Flags().GetString("api.token"); token != "" {
-			client.Token = token
+			apiClient.Token = token
 		}
 
 		asJSON, _ := cmd.Flags().GetBool("json")
 
-		var results []api.OpResult
+		var results []client.OpResult
 		var err error
 		if !asJSON {
 			p := newSpinner()
 			p.Start(context.Background())
 			p.AddTask("[bold]Unlocking repos...[/]", nil)
-			results, err = client.UnlockRepos(repo, orphaned)
+			results, err = apiClient.UnlockRepos(repo, orphaned)
 			p.Stop()
 		} else {
-			results, err = client.UnlockRepos(repo, orphaned)
+			results, err = apiClient.UnlockRepos(repo, orphaned)
 		}
 		if err != nil {
 			return fmt.Errorf("unlock repos: %w", err)
@@ -312,26 +311,26 @@ var repoForgetCmd = &cobra.Command{
 		}
 		orphaned, _ := cmd.Flags().GetBool("orphaned")
 		repo := getRepoFlag(cmd)
-		client := api.DefaultClient()
+		apiClient := client.DefaultClient()
 		if url, _ := cmd.Flags().GetString("api.url"); url != "" {
-			client.BaseURL = url
+			apiClient.BaseURL = url
 		}
 		if token, _ := cmd.Flags().GetString("api.token"); token != "" {
-			client.Token = token
+			apiClient.Token = token
 		}
 
 		asJSON, _ := cmd.Flags().GetBool("json")
 
-		var results []api.OpResult
+		var results []client.OpResult
 		var err error
 		if !asJSON {
 			p := newSpinner()
 			p.Start(context.Background())
 			p.AddTask("[bold]Forgetting snapshots...[/]", nil)
-			results, err = client.ForgetRepos(repo, retention, orphaned)
+			results, err = apiClient.ForgetRepos(repo, retention, orphaned)
 			p.Stop()
 		} else {
-			results, err = client.ForgetRepos(repo, retention, orphaned)
+			results, err = apiClient.ForgetRepos(repo, retention, orphaned)
 		}
 		if err != nil {
 			return fmt.Errorf("forget repos: %w", err)
@@ -371,26 +370,26 @@ var repoPruneCmd = &cobra.Command{
 		}
 		orphaned, _ := cmd.Flags().GetBool("orphaned")
 		repo := getRepoFlag(cmd)
-		client := api.DefaultClient()
+		apiClient := client.DefaultClient()
 		if url, _ := cmd.Flags().GetString("api.url"); url != "" {
-			client.BaseURL = url
+			apiClient.BaseURL = url
 		}
 		if token, _ := cmd.Flags().GetString("api.token"); token != "" {
-			client.Token = token
+			apiClient.Token = token
 		}
 
 		asJSON, _ := cmd.Flags().GetBool("json")
 
-		var results []api.OpResult
+		var results []client.OpResult
 		var err error
 		if !asJSON {
 			p := newSpinner()
 			p.Start(context.Background())
 			p.AddTask("[bold]Pruning repos...[/]", nil)
-			results, err = client.PruneRepos(repo, orphaned)
+			results, err = apiClient.PruneRepos(repo, orphaned)
 			p.Stop()
 		} else {
-			results, err = client.PruneRepos(repo, orphaned)
+			results, err = apiClient.PruneRepos(repo, orphaned)
 		}
 		if err != nil {
 			return fmt.Errorf("prune repos: %w", err)

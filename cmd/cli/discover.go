@@ -1,4 +1,4 @@
-package cmd
+package cli
 
 import (
 	"encoding/json"
@@ -17,6 +17,8 @@ import (
 	"github.com/depado/buoy/internal/compose"
 	"github.com/depado/buoy/internal/docker"
 )
+
+var boldStyle *style.Style
 
 var discoverCmd = &cobra.Command{
 	Use:   "discover [directory]",
@@ -165,8 +167,6 @@ func splitTrim(s string) []string {
 	}
 	return result
 }
-
-var boldStyle *style.Style
 
 func isBuiltinMount(source string) bool {
 	switch source {

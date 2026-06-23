@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/depado/buoy/client"
 	"github.com/depado/buoy/internal/registry"
 	"github.com/depado/buoy/internal/restic"
 )
@@ -122,7 +123,7 @@ func (s *Server) handleReposCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := make([]CheckResult, 0, len(entries))
+	results := make([]client.CheckResult, 0, len(entries))
 	for _, entry := range entries {
 		var checkErr error
 		if readData {
@@ -130,7 +131,7 @@ func (s *Server) handleReposCheck(w http.ResponseWriter, r *http.Request) {
 		} else {
 			checkErr = s.restic.Check(r.Context(), entry.URL)
 		}
-		result := CheckResult{Repo: entry.URL, OK: checkErr == nil}
+		result := client.CheckResult{Repo: entry.URL, OK: checkErr == nil}
 		if checkErr != nil {
 			result.Error = checkErr.Error()
 		}
@@ -152,14 +153,23 @@ func (s *Server) handleReposStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var total restic.Stats
-	perRepo := make([]repoStats, 0, len(entries))
+	perRepo := make([]client.RepoStats, 0, len(entries))
 	for _, entry := range entries {
 		st, err := s.restic.Stats(r.Context(), entry.URL)
 		if err != nil {
-			perRepo = append(perRepo, repoStats{Repo: entry.URL, Error: err.Error()})
+			perRepo = append(perRepo, client.RepoStats{Repo: entry.URL, Error: err.Error()})
 			continue
 		}
-		perRepo = append(perRepo, repoStats{Repo: entry.URL, Stats: st})
+		perRepo = append(perRepo, client.RepoStats{Repo: entry.URL, Stats: &client.Stats{
+			TotalSize:              st.TotalSize,
+			TotalFileCount:         st.TotalFileCount,
+			TotalBlobCount:         st.TotalBlobCount,
+			SnapshotsCount:         st.SnapshotsCount,
+			TotalUncompressedSize:  st.TotalUncompressedSize,
+			CompressionRatio:       st.CompressionRatio,
+			CompressionProgress:    st.CompressionProgress,
+			CompressionSpaceSaving: st.CompressionSpaceSaving,
+		}})
 		total.TotalSize += st.TotalSize
 		total.TotalFileCount += st.TotalFileCount
 		total.TotalBlobCount += st.TotalBlobCount
@@ -167,15 +177,18 @@ func (s *Server) handleReposStats(w http.ResponseWriter, r *http.Request) {
 		total.TotalUncompressedSize += st.TotalUncompressedSize
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"total": &total,
+		"total": &client.Stats{
+			TotalSize:              total.TotalSize,
+			TotalFileCount:         total.TotalFileCount,
+			TotalBlobCount:         total.TotalBlobCount,
+			SnapshotsCount:         total.SnapshotsCount,
+			TotalUncompressedSize:  total.TotalUncompressedSize,
+			CompressionRatio:       total.CompressionRatio,
+			CompressionProgress:    total.CompressionProgress,
+			CompressionSpaceSaving: total.CompressionSpaceSaving,
+		},
 		"repos": perRepo,
 	})
-}
-
-type repoStats struct {
-	Repo  string        `json:"repo"`
-	Stats *restic.Stats `json:"stats,omitempty"`
-	Error string        `json:"error,omitempty"`
 }
 
 func (s *Server) handleReposUnlock(w http.ResponseWriter, r *http.Request) {
@@ -192,10 +205,10 @@ func (s *Server) handleReposUnlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := make([]OpResult, 0, len(entries))
+	results := make([]client.OpResult, 0, len(entries))
 	for _, entry := range entries {
 		err := s.restic.Unlock(r.Context(), entry.URL)
-		result := OpResult{Repo: entry.URL, OK: err == nil}
+		result := client.OpResult{Repo: entry.URL, OK: err == nil}
 		if err != nil {
 			result.Error = err.Error()
 		}
@@ -225,10 +238,10 @@ func (s *Server) handleReposForget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := make([]OpResult, 0, len(entries))
+	results := make([]client.OpResult, 0, len(entries))
 	for _, entry := range entries {
 		err := s.restic.Forget(r.Context(), entry.URL, policy, entry.ContainerName)
-		result := OpResult{Repo: entry.URL, OK: err == nil}
+		result := client.OpResult{Repo: entry.URL, OK: err == nil}
 		if err != nil {
 			result.Error = err.Error()
 		}
@@ -251,10 +264,10 @@ func (s *Server) handleReposPrune(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := make([]OpResult, 0, len(entries))
+	results := make([]client.OpResult, 0, len(entries))
 	for _, entry := range entries {
 		err := s.restic.Prune(r.Context(), entry.URL)
-		result := OpResult{Repo: entry.URL, OK: err == nil}
+		result := client.OpResult{Repo: entry.URL, OK: err == nil}
 		if err != nil {
 			result.Error = err.Error()
 		}

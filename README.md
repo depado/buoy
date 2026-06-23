@@ -32,8 +32,8 @@
 - [Label Reference](#label-reference)
 - [Examples](#examples)
 - [Configuration](#configuration)
-- [CLI: `buoy repo`](#cli-buoy-repo)
-- [CLI: `buoy discover`](#cli-buoy-discover)
+- [CLI: `buoyctl repo`](#cli-buoyctl-repo)
+- [CLI: `buoyctl discover`](#cli-buoyctl-discover)
 - [Repository Layout](#repository-layout)
 - [Deployment](#deployment)
 - [Restoring](#restoring)
@@ -309,7 +309,7 @@ restic:
     - /backup
 
 api:
-  enabled: true # enable the HTTP API server (required for CLI commands like `buoy repo`)
+  enabled: true # enable the HTTP API server (required for CLI commands like `buoyctl repo`)
   host: "0.0.0.0" # API listen host
   port: 8080 # API listen port
   token: "" # bearer token (empty = no auth)
@@ -455,35 +455,52 @@ required.
 Connect to the API from a local or remote buoy CLI, or use it as the backend
 for a dashboard/aggregator.
 
-### CLI: `buoy repo`
+### CLI: `buoyctl repo`
 
-buoy provides a `repo` subcommand for querying and operating on managed
+buoyctl provides a `repo` subcommand for querying and operating on managed
 repositories. The CLI communicates with a running buoy daemon via its HTTP API.
 
 Set `--api.url` and `--api.token` per command, or use the `BUOY_URL` /
 `BUOY_TOKEN` environment variables. Defaults to `http://127.0.0.1:8080`.
 
 ```bash
-buoy repo list --all                 # list all non-orphaned repos
-buoy repo list --orphaned            # show only orphaned repos
-buoy repo list --repo /backup/myapp  # show a specific repo
-buoy repo check --all                # structural integrity check
-buoy repo check --read-data --all    # full data integrity check
-buoy repo stats --all                # storage usage across all repos
-buoy repo unlock --repo /backup/myapp
-buoy repo forget --retention keep-daily:7,keep-weekly:4 --all
-buoy repo prune --orphaned
+buoyctl repo list --all                 # list all non-orphaned repos
+buoyctl repo list --orphaned            # show only orphaned repos
+buoyctl repo list --repo /backup/myapp  # show a specific repo
+buoyctl repo check --all                # structural integrity check
+buoyctl repo check --read-data --all    # full data integrity check
+buoyctl repo stats --all                # storage usage across all repos
+buoyctl repo unlock --repo /backup/myapp
+buoyctl repo forget --retention keep-daily:7,keep-weekly:4 --all
+buoyctl repo prune --orphaned
+
+# JSON output
+buoyctl repo list --all --json
+buoyctl repo stats --all --json
 
 # Remote daemon with auth
 export BUOY_URL=https://buoy.internal.example.com
 export BUOY_TOKEN=secret123
-buoy repo stats --all
+buoyctl repo stats --all
 ```
+
+**Flags:**
+
+| Flag          | Availability | Description                                      |
+| ------------- | ------------ | ------------------------------------------------ |
+| `--json`      | all          | Output as JSON                                   |
+| `--api.url`   | all          | Daemon API URL (defaults to `BUOY_URL` env)      |
+| `--api.token` | all          | API bearer token (defaults to `BUOY_TOKEN` env)  |
+| `--orphaned`  | all          | Operate on orphaned repos only                   |
+| `--all`       | all          | Operate on all non-orphaned repos                |
+| `--repo`      | all          | Operate on a specific repository URL             |
+| `--read-data` | `check`      | Read all pack files for full integrity check     |
+| `--retention` | `forget`     | Retention policy (e.g. `keep-daily:7`)           |
 
 > [!WARNING]
 > Destructive operations (`unlock`, `forget`, `prune`) return an error if any backup is currently in progress, preventing accidental lock conflicts or corruption. Read-only commands (`check`, `stats`) are not gated and may run alongside backups.
 
-### CLI: `buoy discover`
+### CLI: `buoyctl discover`
 
 Scans a directory recursively for Docker Compose files and lists the volumes
 and bind mounts buoy would need access to — so you can configure your buoy
@@ -495,22 +512,26 @@ highlighted green in the table. Built-in mounts (`/var/run/docker.sock`,
 
 ```bash
 # Scan current directory (unlimited depth)
-buoy discover .
+buoyctl discover .
 
 # Scan a specific directory, two levels deep
-buoy discover /opt/stacks --depth 2
+buoyctl discover /opt/stacks --depth 2
 
 # Unlimited depth
-buoy discover /opt/stacks --depth -1
+buoyctl discover /opt/stacks --depth -1
 
 # Custom glob pattern for compose files
-buoy discover /opt/stacks --pattern "stack.*.yml"
+buoyctl discover /opt/stacks --pattern "stack.*.yml"
+
+# JSON output
+buoyctl discover . --json
 ```
 
 **Flags:**
 
 | Flag        | Default                            | Description                                               |
 | ----------- | ---------------------------------- | --------------------------------------------------------- |
+| `--json`    | `false`                            | Output as JSON                                            |
 | `--depth`   | `-1`                               | Maximum directory depth (`-1` for unlimited)              |
 | `--pattern` | `compose.y*ml,docker-compose.y*ml` | Comma-separated glob patterns for compose file names      |
 
@@ -689,4 +710,7 @@ Run with debug logging:
 
 ```bash
 ./buoy run --log.level debug --log.format text --log.color always
+
+# Buoyctl commands talk to the running daemon
+./buoyctl repo list --all
 ```

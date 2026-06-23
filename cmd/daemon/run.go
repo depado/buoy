@@ -1,4 +1,4 @@
-package cmd
+package daemon
 
 import (
 	"context"
@@ -14,6 +14,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/depado/buoy/cmd/config"
+	"github.com/depado/buoy/cmd/version"
 	"github.com/depado/buoy/internal/api"
 	"github.com/depado/buoy/internal/backup"
 	"github.com/depado/buoy/internal/docker"
@@ -24,18 +26,18 @@ import (
 	"github.com/depado/buoy/internal/scheduler"
 )
 
-var runCmd = &cobra.Command{
+var RunCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Start the buoy daemon",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conf, err := NewConf()
+		conf, err := config.NewConf()
 		if err != nil {
 			return err
 		}
 
-		logger := NewLogger(conf)
+		logger := config.NewLogger(conf)
 		slog.SetDefault(logger)
-		logger.Info("starting buoy daemon", "version", Version)
+		logger.Info("starting buoy daemon", "version", version.Version)
 
 		if conf.Restic.Password == "" {
 			return fmt.Errorf("restic.password is required")
@@ -103,7 +105,7 @@ var runCmd = &cobra.Command{
 
 		var apiSrv *api.Server
 		if conf.API.Enabled {
-			apiSrv = api.New(reg, resticClient, conf.API.Token, conf.API.Host, conf.API.Port, Version, logger, sched.Running)
+			apiSrv = api.New(reg, resticClient, conf.API.Token, conf.API.Host, conf.API.Port, version.Version, logger, sched.Running)
 			go func() {
 				if err := apiSrv.Start(); err != nil && err != http.ErrServerClosed {
 					logger.Error("api server error", "error", err)
@@ -200,7 +202,7 @@ var runCmd = &cobra.Command{
 	},
 }
 
-func resticBinary(conf *Conf) string {
+func resticBinary(conf *config.Conf) string {
 	if conf.Restic.BinaryPath != "" {
 		return conf.Restic.BinaryPath
 	}

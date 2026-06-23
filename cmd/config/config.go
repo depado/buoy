@@ -1,4 +1,4 @@
-package cmd
+package config
 
 import (
 	"fmt"
@@ -12,7 +12,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-// LogConf configures structured logging.
 type LogConf struct {
 	Level  string `mapstructure:"level"`
 	Format string `mapstructure:"format"`
@@ -20,7 +19,6 @@ type LogConf struct {
 	Color  string `mapstructure:"color"`
 }
 
-// DaemonConf configures the buoy daemon.
 type DaemonConf struct {
 	Concurrency       int    `mapstructure:"concurrency"`
 	DefaultSchedule   string `mapstructure:"default_schedule"`
@@ -33,12 +31,10 @@ type DaemonConf struct {
 	DBPath            string `mapstructure:"db_path"`
 }
 
-// DockerConf configures the Docker Engine connection.
 type DockerConf struct {
 	Host string `mapstructure:"host"`
 }
 
-// ResticConf configures the restic backup engine.
 type ResticConf struct {
 	BinaryPath  string   `mapstructure:"binary_path"`
 	Password    string   `mapstructure:"password"`
@@ -46,13 +42,11 @@ type ResticConf struct {
 	Repos       []string `mapstructure:"repos"`
 }
 
-// NotifyConf configures failure notifications via shoutrrr.
 type NotifyConf struct {
 	Urls  []string `mapstructure:"urls"`
 	Level string   `mapstructure:"level"`
 }
 
-// APIConf configures the HTTP API server.
 type APIConf struct {
 	Enabled bool   `mapstructure:"enabled"`
 	Host    string `mapstructure:"host"`
@@ -60,7 +54,6 @@ type APIConf struct {
 	Token   string `mapstructure:"token"`
 }
 
-// Conf is the top-level configuration for buoy.
 type Conf struct {
 	Log    LogConf    `mapstructure:"log"`
 	Daemon DaemonConf `mapstructure:"daemon"`
@@ -70,7 +63,6 @@ type Conf struct {
 	API    APIConf    `mapstructure:"api"`
 }
 
-// NewLogger creates a structured logger from the given configuration.
 func NewLogger(c *Conf) *slog.Logger {
 	var level slog.Level
 	switch strings.ToLower(c.Log.Level) {
@@ -103,7 +95,7 @@ func NewLogger(c *Conf) *slog.Logger {
 			noColor = false
 		case "never":
 			noColor = true
-		default: // "auto" or empty
+		default:
 			noColor = !isatty.IsTerminal(os.Stderr.Fd())
 		}
 		handler = tint.NewHandler(os.Stderr, &tint.Options{
@@ -120,15 +112,11 @@ func NewLogger(c *Conf) *slog.Logger {
 	return slog.New(handler)
 }
 
-// NewConf loads configuration from environment variables (BUOY_ prefix),
-// config file (conf.yaml), and CLI flags.
 func NewConf() (*Conf, error) {
-	// Environment variables
 	viper.AutomaticEnv()
 	viper.SetEnvPrefix("buoy")
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
 
-	// Configuration file
 	if viper.GetString("conf") != "" {
 		viper.SetConfigFile(viper.GetString("conf"))
 	} else {

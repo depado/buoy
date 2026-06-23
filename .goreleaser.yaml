@@ -10,22 +10,58 @@ before:
     - go vet ./...
 
 builds:
-  - env:
+  - id: buoy
+    main: ./cmd/buoy
+    binary: buoy
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X "github.com/depado/buoy/cmd/version.Version={{ .Version }}"
+      - -X "github.com/depado/buoy/cmd/version.Build={{ .Commit }}"
+      - -X "github.com/depado/buoy/cmd/version.BuildDate={{ .Date }}"
+  - id: buoyctl
+    main: ./cmd/buoyctl
+    binary: buoyctl
+    env:
       - CGO_ENABLED=0
     goos:
       - linux
       - darwin
-    binary: buoy
+      - windows
+    goarch:
+      - amd64
+      - arm64
     ldflags:
       - -s -w
-      - -X "github.com/depado/buoy/cmd.Version={{ .Version }}"
-      - -X "github.com/depado/buoy/cmd.Build={{ .Commit }}"
-      - -X "github.com/depado/buoy/cmd.BuildDate={{ .Date }}"
+      - -X "github.com/depado/buoy/cmd/version.Version={{ .Version }}"
+      - -X "github.com/depado/buoy/cmd/version.Build={{ .Commit }}"
+      - -X "github.com/depado/buoy/cmd/version.BuildDate={{ .Date }}"
 
 archives:
-  - formats: ["tar.gz"]
+  - id: buoy
+    builds: [buoy]
+    formats: ["tar.gz"]
     name_template: >-
-      {{ .ProjectName }}_
+      buoy_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+  - id: buoyctl
+    builds: [buoyctl]
+    formats: ["tar.gz"]
+    format_overrides:
+      - goos: windows
+        formats: ["zip"]
+    name_template: >-
+      buoyctl_
       {{- title .Os }}_
       {{- if eq .Arch "amd64" }}x86_64
       {{- else if eq .Arch "386" }}i386
@@ -87,11 +123,15 @@ release:
     ### Quick Install
 
     ```bash
-    # Download binary
+    # Download daemon binary
     curl -sSL "https://github.com/depado/buoy/releases/download/v{{ .Version }}/buoy_Linux_x86_64.tar.gz" | tar xz
 
+    # Download CLI
+    curl -sSL "https://github.com/depado/buoy/releases/download/v{{ .Version }}/buoyctl_$(go env GOOS)_x86_64.tar.gz" | tar xz
+
     # Or via Go
-    go install github.com/depado/buoy@v{{ .Version }}
+    go install github.com/depado/buoy/cmd/buoy@v{{ .Version }}
+    go install github.com/depado/buoy/cmd/buoyctl@v{{ .Version }}
     ```
 
     ### Docker
