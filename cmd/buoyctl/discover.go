@@ -1,4 +1,4 @@
-package cli
+package main
 
 import (
 	"encoding/json"
@@ -17,8 +17,6 @@ import (
 	"github.com/depado/buoy/internal/compose"
 	"github.com/depado/buoy/internal/docker"
 )
-
-var boldStyle *style.Style
 
 var discoverCmd = &cobra.Command{
 	Use:   "discover [directory]",
@@ -57,12 +55,13 @@ host paths and YAML sections.`,
 
 		bindMounts := make(map[string]bool)
 		hasVolumes := false
+		var volumeless []string
 		c := gorich.Console()
 
 		for _, stack := range stacks {
 			tbl := table.NewTableWithOptions(nil,
 				table.WithBox(box.SIMPLE),
-				table.WithHeaderStyle(boldStyle),
+				table.WithHeaderStyle(&style.Bold),
 				table.WithTitle("[green]"+stack.Path+"[/]"),
 			)
 			tbl.AddColumn("Service")
@@ -72,13 +71,17 @@ host paths and YAML sections.`,
 			tbl.AddColumn("Destination")
 			tbl.AddColumn("Mode")
 
+			var stackEmpty []string
+
 			for _, s := range stack.Services {
 				cfg := docker.ParseBackupConfig(s.Labels, "", "")
 
+				volumeCount := 0
 				for _, e := range s.Volumes {
 					if isExcluded(e, cfg) {
 						continue
 					}
+					volumeCount++
 
 					enabled := "[red]no[/]"
 					if cfg.Enabled {
@@ -101,9 +104,34 @@ host paths and YAML sections.`,
 						}
 					}
 				}
+
+				if cfg.Enabled && volumeCount == 0 {
+					stackEmpty = append(stackEmpty, s.Name)
+				}
+			}
+
+			for _, svc := range stackEmpty {
+				tbl.AddRow(svc, "[green]yes[/]", "[yellow](none)[/]", "-", "-", "-")
+				volumeless = append(volumeless, stack.Path+" / "+svc)
 			}
 
 			c.Render(tbl)
+		}
+
+		if len(volumeless) > 0 {
+			fmt.Println()
+			tbl := table.NewTableWithOptions(nil,
+				table.WithBox(box.SIMPLE),
+				table.WithHeaderStyle(&style.Bold),
+				table.WithTitle("[bold yellow]Enabled services with no volumes[/]"),
+			)
+			tbl.AddColumn("Stack")
+			tbl.AddColumn("Service")
+			for _, s := range volumeless {
+				parts := strings.SplitN(s, " / ", 2)
+				tbl.AddRow(parts[0], parts[1])
+			}
+			gorich.Console().Render(tbl)
 		}
 
 		needsDockerVolumes := hasVolumes && !bindMounts["/var/lib/docker/volumes"]
@@ -177,9 +205,6 @@ func isBuiltinMount(source string) bool {
 }
 
 func setupDiscoverCommand() {
-	st := style.Parse("bold")
-	boldStyle = &st
-
 	discoverCmd.Flags().Int("depth", -1, "maximum directory depth to search for compose files (-1 for unlimited)")
 	discoverCmd.Flags().String("pattern", "", "comma-separated glob patterns for compose files (default: compose.y*ml,docker-compose.y*ml)")
 	discoverCmd.Flags().Bool("json", false, "output as JSON")

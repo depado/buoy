@@ -31,30 +31,41 @@ type Scheduler struct {
 	backupTimeout    time.Duration
 }
 
-func New(d *docker.Client, r *backup.Runner, reg *registry.Registry, concurrency int, defaultSchedule, defaultRetention string, backupTimeout time.Duration, logger *slog.Logger) *Scheduler {
-	if concurrency < 1 {
-		concurrency = 1
+type Config struct {
+	Docker           *docker.Client
+	Runner           *backup.Runner
+	Registry         *registry.Registry
+	Concurrency      int
+	DefaultSchedule  string
+	DefaultRetention string
+	BackupTimeout    time.Duration
+	Logger           *slog.Logger
+}
+
+func New(cfg *Config) *Scheduler {
+	if cfg.Concurrency < 1 {
+		cfg.Concurrency = 1
 	}
 
 	c := cron.New(
 		cron.WithChain(
-			cron.Recover(cronLogger{logger}),
-			cron.SkipIfStillRunning(cronLogger{logger}),
+			cron.Recover(cronLogger{cfg.Logger}),
+			cron.SkipIfStillRunning(cronLogger{cfg.Logger}),
 		),
 	)
 
 	return &Scheduler{
 		cron:             c,
-		docker:           d,
-		backup:           r,
-		sem:              make(chan struct{}, concurrency),
-		containerReg:     newContainerRegistry(c, logger),
-		repoReg:          reg,
+		docker:           cfg.Docker,
+		backup:           cfg.Runner,
+		sem:              make(chan struct{}, cfg.Concurrency),
+		containerReg:     newContainerRegistry(c, cfg.Logger),
+		repoReg:          cfg.Registry,
 		stacks:           make(map[string]*stackQueue),
-		logger:           logger,
-		defaultSchedule:  defaultSchedule,
-		defaultRetention: defaultRetention,
-		backupTimeout:    backupTimeout,
+		logger:           cfg.Logger,
+		defaultSchedule:  cfg.DefaultSchedule,
+		defaultRetention: cfg.DefaultRetention,
+		backupTimeout:    cfg.BackupTimeout,
 	}
 }
 

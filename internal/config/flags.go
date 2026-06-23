@@ -22,13 +22,14 @@ func AddDaemonFlags(c *cobra.Command) {
 	c.PersistentFlags().String("daemon.check_schedule", "@weekly", "cron schedule for periodic restic check (empty = disabled)")
 	c.PersistentFlags().String("daemon.db_path", "./buoy.db", "path to the bbolt state database")
 	c.PersistentFlags().String("docker.host", "unix:///var/run/docker.sock", "Docker daemon socket path")
+	c.PersistentFlags().String("restic.binary_path", "restic", "path to the restic binary")
+	c.PersistentFlags().String("restic.compression", "auto", "restic compression mode (auto, off, max)")
 	c.PersistentFlags().String("restic.password", "", "restic repository password")
 	c.PersistentFlags().StringSlice("restic.repos", nil, "restic repository URLs (can be repeated)")
 	c.PersistentFlags().Bool("api.enabled", true, "enable the HTTP API server")
 	c.PersistentFlags().String("api.host", "0.0.0.0", "API listen host")
 	c.PersistentFlags().Int("api.port", 8080, "API listen port")
 	c.PersistentFlags().String("api.token", "", "API bearer token (empty = no auth)")
-	c.PersistentFlags().String("api.url", "http://127.0.0.1:8080", "buoy API URL for CLI commands (defaults to local)")
 }
 
 func AddNotifyFlags(c *cobra.Command) {

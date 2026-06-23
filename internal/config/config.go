@@ -76,7 +76,6 @@ func NewLogger(c *Conf) *slog.Logger {
 		level = slog.LevelError
 	default:
 		level = slog.LevelInfo
-		slog.Warn("unrecognized log level, fallback to info", "level", c.Log.Level)
 	}
 
 	opts := &slog.HandlerOptions{
@@ -106,34 +105,15 @@ func NewLogger(c *Conf) *slog.Logger {
 		})
 	default:
 		handler = slog.NewJSONHandler(os.Stderr, opts)
-		slog.Warn("unrecognized log format, fallback to json", "format", c.Log.Format)
 	}
 
 	return slog.New(handler)
 }
 
 func NewConf() (*Conf, error) {
-	viper.AutomaticEnv()
-	viper.SetEnvPrefix("buoy")
-	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
-
-	if viper.GetString("conf") != "" {
-		viper.SetConfigFile(viper.GetString("conf"))
-	} else {
-		viper.SetConfigName("conf")
-		viper.AddConfigPath(".")
-		viper.AddConfigPath("/config/")
-	}
-
-	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return nil, fmt.Errorf("unable to read config file: %w", err)
-		}
-	}
 	conf := &Conf{}
 	if err := viper.Unmarshal(conf); err != nil {
 		return conf, fmt.Errorf("unable to unmarshal conf: %w", err)
 	}
-
 	return conf, nil
 }

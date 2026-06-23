@@ -123,7 +123,7 @@ func (s *Server) handleReposCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := make([]client.CheckResult, 0, len(entries))
+	results := make([]client.Result, 0, len(entries))
 	for _, entry := range entries {
 		var checkErr error
 		if readData {
@@ -131,7 +131,7 @@ func (s *Server) handleReposCheck(w http.ResponseWriter, r *http.Request) {
 		} else {
 			checkErr = s.restic.Check(r.Context(), entry.URL)
 		}
-		result := client.CheckResult{Repo: entry.URL, OK: checkErr == nil}
+		result := client.Result{Repo: entry.URL, OK: checkErr == nil}
 		if checkErr != nil {
 			result.Error = checkErr.Error()
 		}
@@ -205,10 +205,10 @@ func (s *Server) handleReposUnlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := make([]client.OpResult, 0, len(entries))
+	results := make([]client.Result, 0, len(entries))
 	for _, entry := range entries {
 		err := s.restic.Unlock(r.Context(), entry.URL)
-		result := client.OpResult{Repo: entry.URL, OK: err == nil}
+		result := client.Result{Repo: entry.URL, OK: err == nil}
 		if err != nil {
 			result.Error = err.Error()
 		}
@@ -238,10 +238,10 @@ func (s *Server) handleReposForget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := make([]client.OpResult, 0, len(entries))
+	results := make([]client.Result, 0, len(entries))
 	for _, entry := range entries {
 		err := s.restic.Forget(r.Context(), entry.URL, policy, entry.ContainerName)
-		result := client.OpResult{Repo: entry.URL, OK: err == nil}
+		result := client.Result{Repo: entry.URL, OK: err == nil}
 		if err != nil {
 			result.Error = err.Error()
 		}
@@ -264,10 +264,10 @@ func (s *Server) handleReposPrune(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := make([]client.OpResult, 0, len(entries))
+	results := make([]client.Result, 0, len(entries))
 	for _, entry := range entries {
 		err := s.restic.Prune(r.Context(), entry.URL)
-		result := client.OpResult{Repo: entry.URL, OK: err == nil}
+		result := client.Result{Repo: entry.URL, OK: err == nil}
 		if err != nil {
 			result.Error = err.Error()
 		}

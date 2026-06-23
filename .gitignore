@@ -1,5 +1,7 @@
 buoy
 buoyctl
+!cmd/buoy
+!cmd/buoyctl
 buoy.db
 *conf.y*ml
 docs/

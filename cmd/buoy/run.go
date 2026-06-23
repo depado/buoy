@@ -1,4 +1,4 @@
-package daemon
+package main
 
 import (
 	"context"
@@ -14,16 +14,16 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/depado/buoy/cmd/config"
-	"github.com/depado/buoy/cmd/version"
 	"github.com/depado/buoy/internal/api"
 	"github.com/depado/buoy/internal/backup"
+	"github.com/depado/buoy/internal/config"
 	"github.com/depado/buoy/internal/docker"
 	"github.com/depado/buoy/internal/hook"
 	"github.com/depado/buoy/internal/notify"
 	"github.com/depado/buoy/internal/registry"
 	"github.com/depado/buoy/internal/restic"
 	"github.com/depado/buoy/internal/scheduler"
+	"github.com/depado/buoy/internal/version"
 )
 
 var RunCmd = &cobra.Command{
@@ -48,7 +48,7 @@ var RunCmd = &cobra.Command{
 
 		logger.Info("configuration",
 			"concurrency", conf.Daemon.Concurrency,
-			"binary", resticBinary(conf),
+			"binary", conf.Restic.BinaryPath,
 			"repos", conf.Restic.Repos,
 			"compression", conf.Restic.Compression,
 			"default_schedule", conf.Daemon.DefaultSchedule,
@@ -71,11 +71,11 @@ var RunCmd = &cobra.Command{
 		}
 		defer dockerClient.Close() //nolint:errcheck
 
-		if _, err := exec.LookPath(resticBinary(conf)); err != nil {
-			return fmt.Errorf("restic binary not found: %s", resticBinary(conf))
+		if _, err := exec.LookPath(conf.Restic.BinaryPath); err != nil {
+			return fmt.Errorf("restic binary not found: %s", conf.Restic.BinaryPath)
 		}
 
-		resticClient := restic.New(resticBinary(conf), conf.Restic.Password, conf.Restic.Compression)
+		resticClient := restic.New(conf.Restic.BinaryPath, conf.Restic.Password, conf.Restic.Compression)
 		hookExec := hook.New(dockerClient)
 		notifier, err := notify.New(conf.Notify.Urls, notify.ParseLevel(conf.Notify.Level), logger)
 		if err != nil {
@@ -100,8 +100,16 @@ var RunCmd = &cobra.Command{
 			HealthWaitTimeout: healthWaitTimeout,
 			BackupTimeout:     backupTimeout,
 		})
-		sched := scheduler.New(dockerClient, runner, reg, conf.Daemon.Concurrency, conf.Daemon.DefaultSchedule, conf.Daemon.DefaultRetention,
-			backupTimeout, logger)
+		sched := scheduler.New(&scheduler.Config{
+			Docker:           dockerClient,
+			Runner:           runner,
+			Registry:         reg,
+			Concurrency:      conf.Daemon.Concurrency,
+			DefaultSchedule:  conf.Daemon.DefaultSchedule,
+			DefaultRetention: conf.Daemon.DefaultRetention,
+			BackupTimeout:    backupTimeout,
+			Logger:           logger,
+		})
 
 		var apiSrv *api.Server
 		if conf.API.Enabled {
@@ -200,13 +208,6 @@ var RunCmd = &cobra.Command{
 			}
 		}
 	},
-}
-
-func resticBinary(conf *config.Conf) string {
-	if conf.Restic.BinaryPath != "" {
-		return conf.Restic.BinaryPath
-	}
-	return "restic"
 }
 
 func countStacks(containers []docker.Container) int {

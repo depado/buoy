@@ -1,4 +1,4 @@
-package cli
+package main
 
 import (
 	"context"
@@ -9,9 +9,11 @@ import (
 
 	"github.com/depado/gorich"
 	"github.com/depado/gorich/progress"
+	"github.com/depado/gorich/style"
 	"github.com/depado/gorich/table"
 	"github.com/depado/gorich/table/box"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/depado/buoy/client"
 )
@@ -30,27 +32,10 @@ var repoListCmd = &cobra.Command{
 		}
 		orphaned, _ := cmd.Flags().GetBool("orphaned")
 		repo := getRepoFlag(cmd)
-		apiClient := client.DefaultClient()
-		if url, _ := cmd.Flags().GetString("api.url"); url != "" {
-			apiClient.BaseURL = url
-		}
-		if token, _ := cmd.Flags().GetString("api.token"); token != "" {
-			apiClient.Token = token
-		}
 
-		asJSON, _ := cmd.Flags().GetBool("json")
-
-		var entries []client.RepoEntry
-		var err error
-		if !asJSON {
-			p := newSpinner()
-			p.Start(context.Background())
-			p.AddTask("[bold]Fetching repos...[/]", nil)
-			entries, err = apiClient.ListRepos(repo, orphaned)
-			p.Stop()
-		} else {
-			entries, err = apiClient.ListRepos(repo, orphaned)
-		}
+		entries, err := withSpinner(cmd, "Fetching repos...", func() ([]client.RepoEntry, error) {
+			return clientAPI().ListRepos(repo, orphaned)
+		})
 		if err != nil {
 			return fmt.Errorf("list repos: %w", err)
 		}
@@ -59,14 +44,14 @@ var repoListCmd = &cobra.Command{
 			return nil
 		}
 
-		if asJSON {
+		if asJSON(cmd) {
 			return printJSON(entries)
 		}
 
 		tbl := table.NewTableWithOptions(
 			[]string{"URL", "Container", "Project", "Service", "Last Backup", "OK", "Orphaned"},
 			table.WithBox(box.SIMPLE),
-			table.WithHeaderStyle(boldStyle),
+			table.WithHeaderStyle(&style.Bold),
 		)
 		for _, e := range entries {
 			backupAt := "-"
@@ -98,27 +83,10 @@ var repoCheckCmd = &cobra.Command{
 		}
 		orphaned, _ := cmd.Flags().GetBool("orphaned")
 		repo := getRepoFlag(cmd)
-		apiClient := client.DefaultClient()
-		if url, _ := cmd.Flags().GetString("api.url"); url != "" {
-			apiClient.BaseURL = url
-		}
-		if token, _ := cmd.Flags().GetString("api.token"); token != "" {
-			apiClient.Token = token
-		}
 
-		asJSON, _ := cmd.Flags().GetBool("json")
-
-		var results []client.CheckResult
-		var err error
-		if !asJSON {
-			p := newSpinner()
-			p.Start(context.Background())
-			p.AddTask("[bold]Running check...[/]", nil)
-			results, err = apiClient.CheckRepos(repo, readData, orphaned)
-			p.Stop()
-		} else {
-			results, err = apiClient.CheckRepos(repo, readData, orphaned)
-		}
+		results, err := withSpinner(cmd, "Running check...", func() ([]client.Result, error) {
+			return clientAPI().CheckRepos(repo, readData, orphaned)
+		})
 		if err != nil {
 			return fmt.Errorf("check repos: %w", err)
 		}
@@ -127,24 +95,10 @@ var repoCheckCmd = &cobra.Command{
 			return nil
 		}
 
-		if asJSON {
+		if asJSON(cmd) {
 			return printJSON(results)
 		}
-
-		failures := 0
-		for _, r := range results {
-			if r.OK {
-				fmt.Printf("OK    %s\n", r.Repo)
-			} else {
-				fmt.Printf("FAIL  %s: %s\n", r.Repo, r.Error)
-				failures++
-			}
-		}
-		fmt.Printf("\n%d/%d repos ok\n", len(results)-failures, len(results))
-		if failures > 0 {
-			return fmt.Errorf("%d repo(s) failed check", failures)
-		}
-		return nil
+		return printOpResults(results, "ok")
 	},
 }
 
@@ -157,32 +111,15 @@ var repoStatsCmd = &cobra.Command{
 		}
 		orphaned, _ := cmd.Flags().GetBool("orphaned")
 		repo := getRepoFlag(cmd)
-		apiClient := client.DefaultClient()
-		if url, _ := cmd.Flags().GetString("api.url"); url != "" {
-			apiClient.BaseURL = url
-		}
-		if token, _ := cmd.Flags().GetString("api.token"); token != "" {
-			apiClient.Token = token
-		}
 
-		asJSON, _ := cmd.Flags().GetBool("json")
-
-		var stats *client.StatsResponse
-		var err error
-		if !asJSON {
-			p := newSpinner()
-			p.Start(context.Background())
-			p.AddTask("[bold]Fetching stats...[/]", nil)
-			stats, err = apiClient.StatsRepos(repo, orphaned)
-			p.Stop()
-		} else {
-			stats, err = apiClient.StatsRepos(repo, orphaned)
-		}
+		stats, err := withSpinner(cmd, "Fetching stats...", func() (*client.StatsResponse, error) {
+			return clientAPI().StatsRepos(repo, orphaned)
+		})
 		if err != nil {
 			return fmt.Errorf("stats repos: %w", err)
 		}
 
-		if asJSON {
+		if asJSON(cmd) {
 			return printJSON(stats)
 		}
 
@@ -191,7 +128,7 @@ var repoStatsCmd = &cobra.Command{
 		if stats.Total != nil {
 			summary := table.NewTableWithOptions(nil,
 				table.WithBox(box.SIMPLE),
-				table.WithHeaderStyle(boldStyle),
+				table.WithHeaderStyle(&style.Bold),
 			)
 			summary.AddColumn("Metric")
 			summary.AddColumn("Value")
@@ -209,7 +146,7 @@ var repoStatsCmd = &cobra.Command{
 		tbl := table.NewTableWithOptions(
 			[]string{"Repo", "Size", "Uncompressed", "Ratio", "Files", "Blobs", "Snapshots"},
 			table.WithBox(box.SIMPLE),
-			table.WithHeaderStyle(boldStyle),
+			table.WithHeaderStyle(&style.Bold),
 		)
 		for _, r := range stats.Repos {
 			if r.Error != "" {
@@ -248,27 +185,10 @@ var repoUnlockCmd = &cobra.Command{
 		}
 		orphaned, _ := cmd.Flags().GetBool("orphaned")
 		repo := getRepoFlag(cmd)
-		apiClient := client.DefaultClient()
-		if url, _ := cmd.Flags().GetString("api.url"); url != "" {
-			apiClient.BaseURL = url
-		}
-		if token, _ := cmd.Flags().GetString("api.token"); token != "" {
-			apiClient.Token = token
-		}
 
-		asJSON, _ := cmd.Flags().GetBool("json")
-
-		var results []client.OpResult
-		var err error
-		if !asJSON {
-			p := newSpinner()
-			p.Start(context.Background())
-			p.AddTask("[bold]Unlocking repos...[/]", nil)
-			results, err = apiClient.UnlockRepos(repo, orphaned)
-			p.Stop()
-		} else {
-			results, err = apiClient.UnlockRepos(repo, orphaned)
-		}
+		results, err := withSpinner(cmd, "Unlocking repos...", func() ([]client.Result, error) {
+			return clientAPI().UnlockRepos(repo, orphaned)
+		})
 		if err != nil {
 			return fmt.Errorf("unlock repos: %w", err)
 		}
@@ -277,24 +197,10 @@ var repoUnlockCmd = &cobra.Command{
 			return nil
 		}
 
-		if asJSON {
+		if asJSON(cmd) {
 			return printJSON(results)
 		}
-
-		failures := 0
-		for _, r := range results {
-			if r.OK {
-				fmt.Printf("OK    %s\n", r.Repo)
-			} else {
-				fmt.Printf("FAIL  %s: %s\n", r.Repo, r.Error)
-				failures++
-			}
-		}
-		fmt.Printf("\n%d/%d repos unlocked\n", len(results)-failures, len(results))
-		if failures > 0 {
-			return fmt.Errorf("%d repo(s) failed unlock", failures)
-		}
-		return nil
+		return printOpResults(results, "unlocked")
 	},
 }
 
@@ -311,27 +217,10 @@ var repoForgetCmd = &cobra.Command{
 		}
 		orphaned, _ := cmd.Flags().GetBool("orphaned")
 		repo := getRepoFlag(cmd)
-		apiClient := client.DefaultClient()
-		if url, _ := cmd.Flags().GetString("api.url"); url != "" {
-			apiClient.BaseURL = url
-		}
-		if token, _ := cmd.Flags().GetString("api.token"); token != "" {
-			apiClient.Token = token
-		}
 
-		asJSON, _ := cmd.Flags().GetBool("json")
-
-		var results []client.OpResult
-		var err error
-		if !asJSON {
-			p := newSpinner()
-			p.Start(context.Background())
-			p.AddTask("[bold]Forgetting snapshots...[/]", nil)
-			results, err = apiClient.ForgetRepos(repo, retention, orphaned)
-			p.Stop()
-		} else {
-			results, err = apiClient.ForgetRepos(repo, retention, orphaned)
-		}
+		results, err := withSpinner(cmd, "Forgetting snapshots...", func() ([]client.Result, error) {
+			return clientAPI().ForgetRepos(repo, retention, orphaned)
+		})
 		if err != nil {
 			return fmt.Errorf("forget repos: %w", err)
 		}
@@ -340,24 +229,10 @@ var repoForgetCmd = &cobra.Command{
 			return nil
 		}
 
-		if asJSON {
+		if asJSON(cmd) {
 			return printJSON(results)
 		}
-
-		failures := 0
-		for _, r := range results {
-			if r.OK {
-				fmt.Printf("OK    %s\n", r.Repo)
-			} else {
-				fmt.Printf("FAIL  %s: %s\n", r.Repo, r.Error)
-				failures++
-			}
-		}
-		fmt.Printf("\n%d/%d repos forgot\n", len(results)-failures, len(results))
-		if failures > 0 {
-			return fmt.Errorf("%d repo(s) failed forget", failures)
-		}
-		return nil
+		return printOpResults(results, "forgot")
 	},
 }
 
@@ -370,27 +245,10 @@ var repoPruneCmd = &cobra.Command{
 		}
 		orphaned, _ := cmd.Flags().GetBool("orphaned")
 		repo := getRepoFlag(cmd)
-		apiClient := client.DefaultClient()
-		if url, _ := cmd.Flags().GetString("api.url"); url != "" {
-			apiClient.BaseURL = url
-		}
-		if token, _ := cmd.Flags().GetString("api.token"); token != "" {
-			apiClient.Token = token
-		}
 
-		asJSON, _ := cmd.Flags().GetBool("json")
-
-		var results []client.OpResult
-		var err error
-		if !asJSON {
-			p := newSpinner()
-			p.Start(context.Background())
-			p.AddTask("[bold]Pruning repos...[/]", nil)
-			results, err = apiClient.PruneRepos(repo, orphaned)
-			p.Stop()
-		} else {
-			results, err = apiClient.PruneRepos(repo, orphaned)
-		}
+		results, err := withSpinner(cmd, "Pruning repos...", func() ([]client.Result, error) {
+			return clientAPI().PruneRepos(repo, orphaned)
+		})
 		if err != nil {
 			return fmt.Errorf("prune repos: %w", err)
 		}
@@ -399,24 +257,10 @@ var repoPruneCmd = &cobra.Command{
 			return nil
 		}
 
-		if asJSON {
+		if asJSON(cmd) {
 			return printJSON(results)
 		}
-
-		failures := 0
-		for _, r := range results {
-			if r.OK {
-				fmt.Printf("OK    %s\n", r.Repo)
-			} else {
-				fmt.Printf("FAIL  %s: %s\n", r.Repo, r.Error)
-				failures++
-			}
-		}
-		fmt.Printf("\n%d/%d repos pruned\n", len(results)-failures, len(results))
-		if failures > 0 {
-			return fmt.Errorf("%d repo(s) failed prune", failures)
-		}
-		return nil
+		return printOpResults(results, "pruned")
 	},
 }
 
@@ -443,8 +287,6 @@ func setupRepoCommands() {
 	repoPruneCmd.Flags().String("repo", "", "prune a specific repository")
 
 	for _, c := range []*cobra.Command{repoListCmd, repoCheckCmd, repoStatsCmd, repoUnlockCmd, repoForgetCmd, repoPruneCmd} {
-		c.Flags().String("api.url", "", "buoy API URL (defaults to BUOY_URL env or http://127.0.0.1:8080)")
-		c.Flags().String("api.token", "", "buoy API bearer token (defaults to BUOY_TOKEN env)")
 		c.Flags().Bool("json", false, "output as JSON")
 		repoCmd.AddCommand(c)
 	}
@@ -461,6 +303,47 @@ func requireTarget(cmd *cobra.Command) error {
 	all, _ := cmd.Flags().GetBool("all")
 	if repo == "" && !orphaned && !all {
 		return fmt.Errorf("must specify --repo, --orphaned, or --all")
+	}
+	return nil
+}
+
+func clientAPI() *client.Client {
+	return client.NewClient(
+		viper.GetString("api.url"),
+		viper.GetString("api.token"),
+	)
+}
+
+func asJSON(cmd *cobra.Command) bool {
+	v, _ := cmd.Flags().GetBool("json")
+	return v
+}
+
+func withSpinner[T any](cmd *cobra.Command, text string, fn func() (T, error)) (T, error) {
+	if asJSON(cmd) {
+		return fn()
+	}
+	p := newSpinner()
+	p.Start(context.Background())
+	p.AddTask("[bold]"+text+"[/]", nil)
+	result, err := fn()
+	p.Stop()
+	return result, err
+}
+
+func printOpResults(results []client.Result, opName string) error {
+	failures := 0
+	for _, r := range results {
+		if r.OK {
+			fmt.Printf("OK    %s\n", r.Repo)
+		} else {
+			fmt.Printf("FAIL  %s: %s\n", r.Repo, r.Error)
+			failures++
+		}
+	}
+	fmt.Printf("\n%d/%d repos %s\n", len(results)-failures, len(results), opName)
+	if failures > 0 {
+		return fmt.Errorf("%d repo(s) failed %s", failures, opName)
 	}
 	return nil
 }
