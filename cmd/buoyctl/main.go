@@ -13,11 +13,11 @@ import (
 
 func main() {
 	root := &cobra.Command{
-		Use:              "buoyctl",
-		Short:            "Manage a running buoy daemon",
-		Version:          version.Version,
-		SilenceUsage:     true,
-		SilenceErrors:    true,
+		Use:               "buoyctl",
+		Short:             "Manage a running buoy daemon",
+		Version:           version.Version,
+		SilenceUsage:      true,
+		SilenceErrors:     true,
 		PersistentPreRunE: initBuoyctl,
 	}
 
@@ -25,8 +25,8 @@ func main() {
 	root.PersistentFlags().String("api.token", "", "buoy API bearer token (env: BUOY_TOKEN, BUOY_API_TOKEN)")
 	root.PersistentFlags().StringP("conf", "c", "", "configuration file to use")
 
-	viper.BindEnv("api.url", "BUOY_URL")
-	viper.BindEnv("api.token", "BUOY_TOKEN")
+	_ = viper.BindEnv("api.url", "BUOY_URL")
+	_ = viper.BindEnv("api.token", "BUOY_TOKEN")
 
 	setupRepoCommands()
 	root.AddCommand(repoCmd)

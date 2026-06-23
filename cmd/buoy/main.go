@@ -12,11 +12,11 @@ import (
 
 func main() {
 	root := &cobra.Command{
-		Use:              "buoy",
-		Short:            "Backup Docker container volumes with restic",
-		Version:          version.Version,
-		SilenceUsage:     true,
-		SilenceErrors:    true,
+		Use:           "buoy",
+		Short:         "Backup Docker container volumes with restic",
+		Version:       version.Version,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			return config.InitConfig(cmd)
 		},

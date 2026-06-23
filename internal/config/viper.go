@@ -43,7 +43,7 @@ func bindFlags(cmd *cobra.Command) {
 		}
 		if !f.Changed && viper.IsSet(f.Name) {
 			val := viper.Get(f.Name)
-			cmd.Flags().Set(f.Name, fmt.Sprintf("%v", val))
+			_ = cmd.Flags().Set(f.Name, fmt.Sprintf("%v", val))
 		}
 	})
 }
