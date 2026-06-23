@@ -8,7 +8,7 @@ import (
 
 	"github.com/moby/moby/api/types/container"
 
-	"github.com/depado/buoy/internal/restic"
+	"github.com/depado/buoy/internal/types"
 )
 
 // Container represents a Docker container with its backup-relevant metadata.
@@ -55,7 +55,7 @@ type BackupConfig struct {
 	Enabled         bool
 	Schedule        string
 	ReposOverride   []string
-	Retention       restic.RetentionPolicy
+	Retention       types.RetentionPolicy
 	StopBefore      bool
 	StopTimeout     time.Duration
 	IncludeVolumes  []string
@@ -76,7 +76,7 @@ type BackupConfig struct {
 func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetention string) BackupConfig {
 	cfg := BackupConfig{
 		StopTimeout: 30 * time.Second,
-		Retention: restic.RetentionPolicy{
+		Retention: types.RetentionPolicy{
 			KeepDaily: 7,
 		},
 	}
@@ -94,7 +94,7 @@ func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetenti
 		cfg.Schedule = defaultSchedule
 	}
 	if v, ok := labels["buoy.repos"]; ok {
-		cfg.ReposOverride = restic.SplitTrim(v)
+		cfg.ReposOverride = types.SplitTrim(v)
 	}
 	if v, ok := labels["buoy.stop-before-backup"]; ok {
 		stop, err := strconv.ParseBool(v)
@@ -112,25 +112,25 @@ func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetenti
 		}
 	}
 	if v, ok := labels["buoy.include-volumes"]; ok {
-		cfg.IncludeVolumes = restic.SplitTrim(v)
+		cfg.IncludeVolumes = types.SplitTrim(v)
 	}
 	if v, ok := labels["buoy.include-mounts"]; ok {
-		cfg.IncludeMounts = restic.SplitTrim(v)
+		cfg.IncludeMounts = types.SplitTrim(v)
 	}
 	if v, ok := labels["buoy.exclude-volumes"]; ok {
-		cfg.ExcludeVolumes = restic.SplitTrim(v)
+		cfg.ExcludeVolumes = types.SplitTrim(v)
 	}
 	if v, ok := labels["buoy.exclude-mounts"]; ok {
-		cfg.ExcludeMounts = restic.SplitTrim(v)
+		cfg.ExcludeMounts = types.SplitTrim(v)
 	}
 	if v, ok := labels["buoy.exclude-patterns"]; ok {
-		cfg.ExcludePatterns = restic.SplitTrim(v)
+		cfg.ExcludePatterns = types.SplitTrim(v)
 	}
 	if v, ok := labels["buoy.files"]; ok {
-		cfg.Files = restic.SplitTrim(v)
+		cfg.Files = types.SplitTrim(v)
 	}
 	if v, ok := labels["buoy.tags"]; ok {
-		cfg.Tags = restic.SplitTrim(v)
+		cfg.Tags = types.SplitTrim(v)
 	}
 	if v, ok := labels["buoy.pre-backup-cmd"]; ok {
 		cfg.PreBackupCmd = v
@@ -150,7 +150,7 @@ func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetenti
 	return cfg
 }
 
-func parseRetention(labels map[string]string, defaultRetention string, rc *restic.RetentionPolicy) {
+func parseRetention(labels map[string]string, defaultRetention string, rc *types.RetentionPolicy) {
 	v, ok := labels["buoy.retention"]
 	if !ok {
 		v = defaultRetention
@@ -158,7 +158,7 @@ func parseRetention(labels map[string]string, defaultRetention string, rc *resti
 	if v == "" {
 		return
 	}
-	parsed := restic.ParseRetentionPolicy(v)
+	parsed := types.ParseRetentionPolicy(v)
 	if parsed.KeepLast > 0 {
 		rc.KeepLast = parsed.KeepLast
 	}

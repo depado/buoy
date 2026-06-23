@@ -8,9 +8,9 @@ BUILD = $(shell git rev-parse HEAD 2> /dev/null || echo "undefined")
 BUILDDATE = $(shell LANG=en_us_88591 date)
 DAEMON = buoy
 CLIENT = buoyctl
-LDFLAGS = -ldflags "-X 'github.com/depado/buoy/cmd/version.Version=$(VERSION)$(SUFFIX)' \
-		-X 'github.com/depado/buoy/cmd/version.Build=$(BUILD)' \
-		-X 'github.com/depado/buoy/cmd/version.BuildDate=$(BUILDDATE)' -s -w"
+LDFLAGS = -ldflags "-X 'github.com/depado/buoy/internal/version.Version=$(VERSION)$(SUFFIX)' \
+		-X 'github.com/depado/buoy/internal/version.Build=$(BUILD)' \
+		-X 'github.com/depado/buoy/internal/version.BuildDate=$(BUILDDATE)' -s -w"
 
 .PHONY: help
 help:

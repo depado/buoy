@@ -9,7 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
+
+	"github.com/depado/buoy/internal/types"
 )
 
 // Client wraps the restic binary and provides methods for all backup operations.
@@ -167,11 +168,11 @@ func tryParseExitError(s string) *ExitError {
 
 // Forget applies a retention policy to remove old snapshots.
 // Uses --group-by host,tags to match the backup command's grouping.
-func (c *Client) Forget(ctx context.Context, repo string, policy RetentionPolicy, hostname string) error {
+func (c *Client) Forget(ctx context.Context, repo string, policy types.RetentionPolicy, hostname string) error {
 	return c.runSimple(ctx, "forget", forgetArgs(repo, policy, hostname)...)
 }
 
-func forgetArgs(repo string, policy RetentionPolicy, hostname string) []string {
+func forgetArgs(repo string, policy types.RetentionPolicy, hostname string) []string {
 	args := []string{"forget", "-r", repo, "--json", "--group-by", "host,tags"}
 	if hostname != "" {
 		args = append(args, "--host", hostname)
@@ -311,7 +312,7 @@ func (c *Client) command(ctx context.Context, args ...string) (*exec.Cmd, func()
 
 	args = append([]string{"--password-file", f.Name()}, args...)
 	cmd := exec.CommandContext(ctx, c.binPath, args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setSysProcAttr(cmd)
 	cmd.Env = append(os.Environ(),
 		"RESTIC_COMPRESSION="+c.compression,
 		"RESTIC_PROGRESS_FPS=1",

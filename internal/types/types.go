@@ -1,9 +1,19 @@
-package restic
+package types
 
 import (
 	"strconv"
 	"strings"
 )
+
+type RetentionPolicy struct {
+	KeepLast    int
+	KeepHourly  int
+	KeepDaily   int
+	KeepWeekly  int
+	KeepMonthly int
+	KeepYearly  int
+	KeepWithin  string
+}
 
 func ParseRetentionPolicy(s string) RetentionPolicy {
 	var rp RetentionPolicy

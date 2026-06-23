@@ -15,7 +15,16 @@ import (
 func InitConfig(cmd *cobra.Command) error {
 	viper.SetEnvPrefix("buoy")
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
-	viper.AutomaticEnv()
+
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		if f.Name == "conf" {
+			return
+		}
+		s := f.Value.String()
+		if s != "" && s != "0" && s != "false" && s != "[]" && s != "0s" {
+			viper.SetDefault(f.Name, s)
+		}
+	})
 
 	confFile, _ := cmd.Flags().GetString("conf")
 	if confFile != "" {
@@ -32,18 +41,13 @@ func InitConfig(cmd *cobra.Command) error {
 		}
 	}
 
-	bindFlags(cmd)
-	return nil
-}
+	viper.AutomaticEnv()
 
-func bindFlags(cmd *cobra.Command) {
 	cmd.Flags().VisitAll(func(f *pflag.Flag) {
-		if f.Name == "conf" {
-			return
-		}
-		if !f.Changed && viper.IsSet(f.Name) {
-			val := viper.Get(f.Name)
-			_ = cmd.Flags().Set(f.Name, fmt.Sprintf("%v", val))
+		if f.Name != "conf" && f.Changed {
+			viper.Set(f.Name, f.Value.String())
 		}
 	})
+
+	return nil
 }

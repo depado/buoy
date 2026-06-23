@@ -22,9 +22,9 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X "github.com/depado/buoy/cmd/version.Version={{ .Version }}"
-      - -X "github.com/depado/buoy/cmd/version.Build={{ .Commit }}"
-      - -X "github.com/depado/buoy/cmd/version.BuildDate={{ .Date }}"
+      - -X "github.com/depado/buoy/internal/version.Version={{ .Version }}"
+      - -X "github.com/depado/buoy/internal/version.Build={{ .Commit }}"
+      - -X "github.com/depado/buoy/internal/version.BuildDate={{ .Date }}"
   - id: buoyctl
     main: ./cmd/buoyctl
     binary: buoyctl
@@ -39,9 +39,9 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X "github.com/depado/buoy/cmd/version.Version={{ .Version }}"
-      - -X "github.com/depado/buoy/cmd/version.Build={{ .Commit }}"
-      - -X "github.com/depado/buoy/cmd/version.BuildDate={{ .Date }}"
+      - -X "github.com/depado/buoy/internal/version.Version={{ .Version }}"
+      - -X "github.com/depado/buoy/internal/version.Build={{ .Commit }}"
+      - -X "github.com/depado/buoy/internal/version.BuildDate={{ .Date }}"
 
 archives:
   - id: buoy

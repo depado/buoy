@@ -92,14 +92,3 @@ type BackupOptions struct {
 	Hostname string
 	WorkDir  string
 }
-
-// RetentionPolicy defines how many snapshots to keep for each time period.
-type RetentionPolicy struct {
-	KeepLast    int
-	KeepHourly  int
-	KeepDaily   int
-	KeepWeekly  int
-	KeepMonthly int
-	KeepYearly  int
-	KeepWithin  string
-}

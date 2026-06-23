@@ -13,6 +13,7 @@ import (
 	"github.com/depado/buoy/client"
 	"github.com/depado/buoy/internal/registry"
 	"github.com/depado/buoy/internal/restic"
+	"github.com/depado/buoy/internal/types"
 )
 
 type Server struct {
@@ -226,7 +227,7 @@ func (s *Server) handleReposForget(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "retention query parameter is required"})
 		return
 	}
-	policy := restic.ParseRetentionPolicy(retentionStr)
+	policy := types.ParseRetentionPolicy(retentionStr)
 
 	entries, err := s.reg.ListRepos(listRepoOpts(r)...)
 	if err != nil {

@@ -4,64 +4,66 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+
+	"github.com/depado/buoy/internal/types"
 )
 
 func TestForgetArgs(t *testing.T) {
 	tests := []struct {
 		name     string
 		repo     string
-		policy   RetentionPolicy
+		policy   types.RetentionPolicy
 		hostname string
 		want     []string
 	}{
 		{
 			name:   "empty policy",
 			repo:   "/backup/repo",
-			policy: RetentionPolicy{},
+			policy: types.RetentionPolicy{},
 			want:   []string{"forget", "-r", "/backup/repo", "--json", "--group-by", "host,tags"},
 		},
 		{
 			name:   "keep-last only",
 			repo:   "/backup/repo",
-			policy: RetentionPolicy{KeepLast: 10},
+			policy: types.RetentionPolicy{KeepLast: 10},
 			want:   []string{"forget", "-r", "/backup/repo", "--json", "--group-by", "host,tags", "--keep-last", "10"},
 		},
 		{
 			name:   "keep-hourly only",
 			repo:   "/backup/repo",
-			policy: RetentionPolicy{KeepHourly: 24},
+			policy: types.RetentionPolicy{KeepHourly: 24},
 			want:   []string{"forget", "-r", "/backup/repo", "--json", "--group-by", "host,tags", "--keep-hourly", "24"},
 		},
 		{
 			name:   "keep-daily only",
 			repo:   "/backup/repo",
-			policy: RetentionPolicy{KeepDaily: 7},
+			policy: types.RetentionPolicy{KeepDaily: 7},
 			want:   []string{"forget", "-r", "/backup/repo", "--json", "--group-by", "host,tags", "--keep-daily", "7"},
 		},
 		{
 			name:   "all keep flags",
 			repo:   "/backup/repo",
-			policy: RetentionPolicy{KeepLast: 10, KeepHourly: 24, KeepDaily: 30, KeepWeekly: 4, KeepMonthly: 12, KeepYearly: 2},
+			policy: types.RetentionPolicy{KeepLast: 10, KeepHourly: 24, KeepDaily: 30, KeepWeekly: 4, KeepMonthly: 12, KeepYearly: 2},
 			want: []string{"forget", "-r", "/backup/repo", "--json", "--group-by", "host,tags",
 				"--keep-last", "10", "--keep-hourly", "24", "--keep-daily", "30", "--keep-weekly", "4", "--keep-monthly", "12", "--keep-yearly", "2"},
 		},
 		{
 			name:   "keep-within only",
 			repo:   "/backup/repo",
-			policy: RetentionPolicy{KeepWithin: "30d"},
+			policy: types.RetentionPolicy{KeepWithin: "30d"},
 			want:   []string{"forget", "-r", "/backup/repo", "--json", "--group-by", "host,tags", "--keep-within", "30d"},
 		},
 		{
 			name:   "mixed keep-daily and keep-within",
 			repo:   "/backup/repo",
-			policy: RetentionPolicy{KeepDaily: 14, KeepWithin: "7d"},
+			policy: types.RetentionPolicy{KeepDaily: 14, KeepWithin: "7d"},
 			want: []string{"forget", "-r", "/backup/repo", "--json", "--group-by", "host,tags",
 				"--keep-daily", "14", "--keep-within", "7d"},
 		},
 		{
 			name:     "keep-daily with hostname",
 			repo:     "/backup/repo",
-			policy:   RetentionPolicy{KeepDaily: 7},
+			policy:   types.RetentionPolicy{KeepDaily: 7},
 			hostname: "myapp",
 			want:     []string{"forget", "-r", "/backup/repo", "--json", "--group-by", "host,tags", "--host", "myapp", "--keep-daily", "7"},
 		},
