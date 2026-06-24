@@ -6,6 +6,15 @@ import (
 	"github.com/depado/buoy/internal/docker"
 )
 
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
 func TestContains(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -113,7 +113,7 @@ var RunCmd = &cobra.Command{
 
 		var apiSrv *api.Server
 		if conf.API.Enabled {
-			apiSrv = api.New(reg, resticClient, conf.API.Token, conf.API.Host, conf.API.Port, version.Version, logger, sched.Running)
+			apiSrv = api.New(reg, resticClient, sched, conf.API.Token, conf.API.Host, conf.API.Port, version.Version, logger, sched.Running)
 			go func() {
 				if err := apiSrv.Start(); err != nil && err != http.ErrServerClosed {
 					logger.Error("api server error", "error", err)

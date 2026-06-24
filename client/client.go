@@ -59,6 +59,15 @@ func (c *Client) ListRepos(repo string, orphaned bool) ([]RepoEntry, error) {
 	return decodeJSON[[]RepoEntry](resp)
 }
 
+func (c *Client) ListScheduled() ([]ScheduledEntry, error) {
+	resp, err := c.doRequest("GET", "/api/v1/scheduled")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return decodeJSON[[]ScheduledEntry](resp)
+}
+
 func (c *Client) CheckRepos(repo string, readData bool, orphaned bool) ([]Result, error) {
 	params := make(url.Values)
 	appendRepoParam(params, repo)

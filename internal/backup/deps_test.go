@@ -337,7 +337,7 @@ func TestStopSet(t *testing.T) {
 				{
 					ComposeService: "web",
 					ComposeProject: "proj",
-					Labels:         map[string]string{"buoy.stop-before-backup": "true"},
+					Labels:         map[string]string{"buoy.stop-before": "true"},
 				},
 			},
 			all:  []*docker.Container{},
@@ -349,7 +349,7 @@ func TestStopSet(t *testing.T) {
 				{
 					ComposeService: "web",
 					ComposeProject: "proj",
-					Labels:         map[string]string{"buoy.stop-before-backup": "true"},
+					Labels:         map[string]string{"buoy.stop-before": "true"},
 				},
 			},
 			all: []*docker.Container{
@@ -364,7 +364,7 @@ func TestStopSet(t *testing.T) {
 				{
 					ComposeService: "db",
 					ComposeProject: "proj",
-					Labels:         map[string]string{"buoy.stop-before-backup": "true"},
+					Labels:         map[string]string{"buoy.stop-before": "true"},
 				},
 			},
 			all: []*docker.Container{
@@ -378,7 +378,7 @@ func TestStopSet(t *testing.T) {
 				{
 					ComposeService: "a",
 					ComposeProject: "proj",
-					Labels:         map[string]string{"buoy.stop-before-backup": "true"},
+					Labels:         map[string]string{"buoy.stop-before": "true"},
 				},
 			},
 			all: []*docker.Container{
@@ -393,11 +393,11 @@ func TestStopSet(t *testing.T) {
 				{
 					ComposeService: "db",
 					ComposeProject: "proj",
-					Labels:         map[string]string{"buoy.stop-before-backup": "true"},
+					Labels:         map[string]string{"buoy.stop-before": "true"},
 				},
 			},
 			all: []*docker.Container{
-				{ComposeService: "web", ComposeProject: "proj", Labels: map[string]string{"buoy.stop-before-backup": "true"}},
+				{ComposeService: "web", ComposeProject: "proj", Labels: map[string]string{"buoy.stop-before": "true"}},
 			},
 			want: map[string]bool{"db": true},
 		},

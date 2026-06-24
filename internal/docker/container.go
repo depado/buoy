@@ -2,7 +2,6 @@ package docker
 
 import (
 	"log/slog"
-	"strconv"
 	"strings"
 	"time"
 
@@ -50,25 +49,68 @@ func (c *Container) RepoPath(base string) string {
 	return base + "/" + strings.TrimPrefix(c.Name, "/")
 }
 
+// MountEntry is a single entry in buoy.include, optionally named for
+// per-mount backup option overrides.
+type MountEntry struct {
+	Name string
+	Key  string
+}
+
+// MountBackupOpts holds per-mount backup configuration for a named include entry.
+type MountBackupOpts struct {
+	Files   []string
+	Exclude []string
+	Tags    []string
+}
+
 // BackupConfig holds the parsed backup configuration from container labels.
 type BackupConfig struct {
-	Enabled         bool
-	Schedule        string
-	ReposOverride   []string
-	Retention       types.RetentionPolicy
-	StopBefore      bool
-	StopTimeout     time.Duration
-	IncludeVolumes  []string
-	ExcludeVolumes  []string
-	IncludeMounts   []string
-	ExcludeMounts   []string
-	ExcludePatterns []string
-	Files           []string
-	Tags            []string
-	PreBackupCmd    string
-	PostBackupCmd   string
-	PreBackupExec   string
-	PostBackupExec  string
+	Enabled       bool
+	Schedule      string
+	ReposOverride []string
+	Retention     types.RetentionPolicy
+
+	StopBefore  bool
+	StopTimeout time.Duration
+
+	Include []MountEntry
+	Exclude []string
+
+	BackupFiles   []string
+	BackupExclude []string
+	BackupTags    []string
+
+	MountOpts map[string]MountBackupOpts
+
+	HookPreCmd   string
+	HookPostCmd  string
+	HookPreExec  string
+	HookPostExec string
+}
+
+// ResolveMountBackup returns the effective files, exclude patterns, and tags
+// for a named mount entry. Per-mount values replace globals for files/exclude;
+// tags are appended.
+func (c BackupConfig) ResolveMountBackup(name string) (files, excludes, tags []string) {
+	files, excludes = c.BackupFiles, c.BackupExclude
+	tags = make([]string, 0, len(c.BackupTags)+len(c.MountOpts[name].Tags))
+	tags = append(tags, c.BackupTags...)
+
+	if name == "" {
+		return
+	}
+	opts, ok := c.MountOpts[name]
+	if !ok {
+		return
+	}
+	if len(opts.Files) > 0 {
+		files = opts.Files
+	}
+	if len(opts.Exclude) > 0 {
+		excludes = opts.Exclude
+	}
+	tags = append(tags, opts.Tags...)
+	return
 }
 
 // ParseBackupConfig extracts backup configuration from Docker labels.
@@ -76,78 +118,88 @@ type BackupConfig struct {
 func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetention string) BackupConfig {
 	cfg := BackupConfig{
 		StopTimeout: 30 * time.Second,
-		Retention: types.RetentionPolicy{
-			KeepDaily: 7,
-		},
+		MountOpts:   make(map[string]MountBackupOpts),
 	}
 
-	if v, ok := labels["buoy.enabled"]; ok {
-		enabled, err := strconv.ParseBool(v)
-		if err != nil {
-			slog.Warn("invalid buoy.enabled, defaulting to false", "value", v)
-		}
-		cfg.Enabled = enabled
-	}
-	if v, ok := labels["buoy.schedule"]; ok {
-		cfg.Schedule = v
-	} else {
-		cfg.Schedule = defaultSchedule
-	}
-	if v, ok := labels["buoy.repos"]; ok {
-		cfg.ReposOverride = types.SplitTrim(v)
-	}
-	if v, ok := labels["buoy.stop-before-backup"]; ok {
-		stop, err := strconv.ParseBool(v)
-		if err != nil {
-			slog.Warn("invalid buoy.stop-before-backup, defaulting to false", "value", v)
-		}
-		cfg.StopBefore = stop
-	}
-	if v, ok := labels["buoy.stop-timeout"]; ok {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			slog.Warn("invalid buoy.stop-timeout, using default 30s", "value", v)
-		} else {
-			cfg.StopTimeout = d
-		}
-	}
-	if v, ok := labels["buoy.include-volumes"]; ok {
-		cfg.IncludeVolumes = types.SplitTrim(v)
-	}
-	if v, ok := labels["buoy.include-mounts"]; ok {
-		cfg.IncludeMounts = types.SplitTrim(v)
-	}
-	if v, ok := labels["buoy.exclude-volumes"]; ok {
-		cfg.ExcludeVolumes = types.SplitTrim(v)
-	}
-	if v, ok := labels["buoy.exclude-mounts"]; ok {
-		cfg.ExcludeMounts = types.SplitTrim(v)
-	}
-	if v, ok := labels["buoy.exclude-patterns"]; ok {
-		cfg.ExcludePatterns = types.SplitTrim(v)
-	}
-	if v, ok := labels["buoy.files"]; ok {
-		cfg.Files = types.SplitTrim(v)
-	}
-	if v, ok := labels["buoy.tags"]; ok {
-		cfg.Tags = types.SplitTrim(v)
-	}
-	if v, ok := labels["buoy.pre-backup-cmd"]; ok {
-		cfg.PreBackupCmd = v
-	}
-	if v, ok := labels["buoy.post-backup-cmd"]; ok {
-		cfg.PostBackupCmd = v
-	}
-	if v, ok := labels["buoy.pre-backup-exec"]; ok {
-		cfg.PreBackupExec = v
-	}
-	if v, ok := labels["buoy.post-backup-exec"]; ok {
-		cfg.PostBackupExec = v
-	}
+	cfg.Enabled = getBool(labels, "buoy.enabled", false)
+	cfg.Schedule = getString(labels, "buoy.schedule", defaultSchedule)
+	cfg.ReposOverride = getSlice(labels, "buoy.repos")
+	cfg.StopBefore = getBool(labels, "buoy.stop-before", false)
+	cfg.StopTimeout = getDuration(labels, "buoy.stop-timeout", 30*time.Second)
 
+	if v, ok := labels["buoy.include"]; ok {
+		cfg.Include = parseIncludeEntries(v)
+	}
+	cfg.Exclude = getSlice(labels, "buoy.exclude")
+	cfg.BackupFiles = getSlice(labels, "buoy.backup.files")
+	cfg.BackupExclude = getSlice(labels, "buoy.backup.exclude")
+	cfg.BackupTags = getSlice(labels, "buoy.backup.tags")
+
+	cfg.HookPreCmd = getString(labels, "buoy.hook.pre.cmd", "")
+	cfg.HookPostCmd = getString(labels, "buoy.hook.post.cmd", "")
+	cfg.HookPreExec = getString(labels, "buoy.hook.pre.exec", "")
+	cfg.HookPostExec = getString(labels, "buoy.hook.post.exec", "")
+
+	parseBackupMountOpts(labels, cfg.MountOpts)
 	parseRetention(labels, defaultRetention, &cfg.Retention)
 
 	return cfg
+}
+
+func parseIncludeEntries(raw string) []MountEntry {
+	parts := types.SplitTrim(raw)
+	entries := make([]MountEntry, 0, len(parts))
+	seen := make(map[string]bool)
+
+	for _, p := range parts {
+		name, key := "", p
+		if idx := strings.IndexByte(p, '='); idx >= 0 {
+			name = strings.TrimSpace(p[:idx])
+			key = strings.TrimSpace(p[idx+1:])
+		}
+		if key == "" {
+			continue
+		}
+		if name != "" {
+			if seen[name] {
+				slog.Warn("duplicate include name, ignoring", "name", name)
+				continue
+			}
+			seen[name] = true
+		}
+		entries = append(entries, MountEntry{Name: name, Key: key})
+	}
+	return entries
+}
+
+func parseBackupMountOpts(labels map[string]string, opts map[string]MountBackupOpts) {
+	const prefix = "buoy.backup."
+	for k, v := range labels {
+		if !strings.HasPrefix(k, prefix) {
+			continue
+		}
+		rest := k[len(prefix):]
+		dot := strings.IndexByte(rest, '.')
+		if dot < 0 {
+			continue
+		}
+		name, option := rest[:dot], rest[dot+1:]
+		if name == "" || option == "" {
+			continue
+		}
+		entry := opts[name]
+		switch option {
+		case "files":
+			entry.Files = types.SplitTrim(v)
+		case "exclude":
+			entry.Exclude = types.SplitTrim(v)
+		case "tags":
+			entry.Tags = types.SplitTrim(v)
+		default:
+			continue
+		}
+		opts[name] = entry
+	}
 }
 
 func parseRetention(labels map[string]string, defaultRetention string, rc *types.RetentionPolicy) {
@@ -159,27 +211,42 @@ func parseRetention(labels map[string]string, defaultRetention string, rc *types
 		return
 	}
 	parsed := types.ParseRetentionPolicy(v)
-	if parsed.KeepLast > 0 {
-		rc.KeepLast = parsed.KeepLast
-	}
-	if parsed.KeepHourly > 0 {
-		rc.KeepHourly = parsed.KeepHourly
-	}
-	if parsed.KeepDaily > 0 {
-		rc.KeepDaily = parsed.KeepDaily
-	}
-	if parsed.KeepWeekly > 0 {
-		rc.KeepWeekly = parsed.KeepWeekly
-	}
-	if parsed.KeepMonthly > 0 {
-		rc.KeepMonthly = parsed.KeepMonthly
-	}
-	if parsed.KeepYearly > 0 {
-		rc.KeepYearly = parsed.KeepYearly
-	}
+	setNonZero(&rc.KeepLast, parsed.KeepLast)
+	setNonZero(&rc.KeepHourly, parsed.KeepHourly)
+	setNonZero(&rc.KeepDaily, parsed.KeepDaily)
+	setNonZero(&rc.KeepWeekly, parsed.KeepWeekly)
+	setNonZero(&rc.KeepMonthly, parsed.KeepMonthly)
+	setNonZero(&rc.KeepYearly, parsed.KeepYearly)
 	if parsed.KeepWithin != "" {
 		rc.KeepWithin = parsed.KeepWithin
 	}
+}
+
+// MountMatches checks whether a mount passes the include/exclude filter.
+// It returns the matched entry name (for per-mount backup overrides) and whether the mount is included.
+// When an unnamed include entry matches a volume by its Docker name, the volume name is
+// automatically used as the matched entry name.
+func MountMatches(m Mount, include []MountEntry, exclude []string) (matchedName string, ok bool) {
+	if len(include) > 0 {
+		for _, entry := range include {
+			if entry.Key == m.Name {
+				if entry.Name != "" {
+					return entry.Name, true
+				}
+				return m.Name, true
+			}
+			if entry.Key == m.Source || entry.Key == m.Destination {
+				return entry.Name, true
+			}
+		}
+		return "", false
+	}
+	for _, ex := range exclude {
+		if ex == m.Name || ex == m.Source || ex == m.Destination {
+			return "", false
+		}
+	}
+	return "", true
 }
 
 // LogAttrs returns slog attributes for structured logging.

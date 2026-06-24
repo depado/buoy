@@ -156,12 +156,14 @@ func tryParseExitError(s string) *ExitError {
 	if s == "" {
 		return nil
 	}
-	var e ExitError
-	if err := json.Unmarshal([]byte(s), &e); err != nil {
-		return nil
-	}
-	if e.MessageType == "exit_error" && e.Code > 0 {
-		return &e
+	for _, line := range strings.Split(strings.TrimSpace(s), "\n") {
+		var e ExitError
+		if err := json.Unmarshal([]byte(line), &e); err != nil {
+			continue
+		}
+		if e.MessageType == "exit_error" && e.Code > 0 {
+			return &e
+		}
 	}
 	return nil
 }

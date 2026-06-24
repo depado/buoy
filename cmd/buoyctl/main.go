@@ -32,6 +32,8 @@ func main() {
 	root.AddCommand(repoCmd)
 	setupDiscoverCommand()
 	root.AddCommand(discoverCmd)
+	setupListCommand()
+	root.AddCommand(listCmd)
 
 	root.AddCommand(version.NewCommand("buoyctl"))
 

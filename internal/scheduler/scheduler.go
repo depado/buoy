@@ -9,6 +9,7 @@ import (
 
 	"github.com/robfig/cron/v3"
 
+	"github.com/depado/buoy/client"
 	"github.com/depado/buoy/internal/backup"
 	"github.com/depado/buoy/internal/docker"
 	"github.com/depado/buoy/internal/registry"
@@ -114,6 +115,51 @@ func (s *Scheduler) RemoveContainer(containerID string) {
 
 func (s *Scheduler) Running() bool {
 	return s.active.Load() > 0
+}
+
+func (s *Scheduler) ListScheduled() []client.ScheduledEntry {
+	infos := s.containerReg.listAll()
+	entries := make([]client.ScheduledEntry, 0, len(infos))
+	for _, info := range infos {
+		ctr := info.ctr
+		cfg := docker.ParseBackupConfig(ctr.Labels, s.defaultSchedule, s.defaultRetention)
+
+		repoEntries, _ := s.repoReg.GetContainerRepos(ctr.ID)
+
+		var repoList []client.ScheduledRepo
+		if len(repoEntries) > 0 {
+			repoList = make([]client.ScheduledRepo, 0, len(repoEntries))
+			for _, re := range repoEntries {
+				repoList = append(repoList, client.ScheduledRepo{
+					URL:          re.URL,
+					Created:      !re.CreatedAt.IsZero(),
+					LastBackupAt: re.LastBackupAt,
+					LastBackupOK: re.LastBackupOK,
+				})
+			}
+		} else {
+			repoURLs, err := s.repoReg.ResolveRepos(ctr, cfg)
+			if err != nil {
+				s.logger.Warn("failed to resolve repos for scheduled container", "container", ctr.Name, "error", err)
+				repoURLs = nil
+			}
+			repoList = make([]client.ScheduledRepo, 0, len(repoURLs))
+			for _, url := range repoURLs {
+				repoList = append(repoList, client.ScheduledRepo{URL: url})
+			}
+		}
+
+		entries = append(entries, client.ScheduledEntry{
+			ContainerID:    ctr.ID,
+			ContainerName:  ctr.Name,
+			ComposeProject: ctr.ComposeProject,
+			ComposeService: ctr.ComposeService,
+			Schedule:       info.schedule,
+			Repos:          repoList,
+			StopBefore:     cfg.StopBefore,
+		})
+	}
+	return entries
 }
 
 func (s *Scheduler) ScheduleCheck(schedule string) error {

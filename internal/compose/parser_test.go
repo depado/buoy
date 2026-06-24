@@ -82,7 +82,7 @@ func TestParseShortSyntax(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := parseShortSyntax(tt.svcName, tt.spec, tt.baseDir)
+			got, ok := parseShortSyntax(tt.svcName, tt.spec, tt.baseDir, nil)
 			if ok != tt.ok {
 				t.Fatalf("ok = %v, want %v", ok, tt.ok)
 			}
@@ -205,7 +205,7 @@ func TestParseLongSyntax(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := parseLongSyntax(tt.svcName, tt.m, tt.baseDir)
+			got, ok := parseLongSyntax(tt.svcName, tt.m, tt.baseDir, nil)
 			if ok != tt.ok {
 				t.Fatalf("ok = %v, want %v", ok, tt.ok)
 			}
@@ -267,7 +267,7 @@ volumes:
 		t.Fatal(err)
 	}
 
-	stacks, err := Discover(dir, 0, DefaultPatterns)
+	stacks, err := Discover(dir, 0, DefaultPatterns, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,7 +346,7 @@ services:
     labels:
       buoy.enabled: "true"
       buoy.schedule: "@daily"
-      buoy.exclude-mounts: "/tmp/scratch"
+      buoy.exclude: "/tmp/scratch"
     volumes:
       - db_data:/var/lib/mysql
       - /tmp/scratch:/scratch
@@ -366,7 +366,7 @@ volumes:
 		t.Fatal(err)
 	}
 
-	stacks, err := Discover(dir, 0, DefaultPatterns)
+	stacks, err := Discover(dir, 0, DefaultPatterns, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,8 +394,8 @@ volumes:
 	if db.Labels["buoy.schedule"] != "@daily" {
 		t.Errorf("db schedule label: got %q, want \"@daily\"", db.Labels["buoy.schedule"])
 	}
-	if db.Labels["buoy.exclude-mounts"] != "/tmp/scratch" {
-		t.Errorf("db exclude-mounts label: got %q, want \"/tmp/scratch\"", db.Labels["buoy.exclude-mounts"])
+	if db.Labels["buoy.exclude"] != "/tmp/scratch" {
+		t.Errorf("db exclude label: got %q, want \"/tmp/scratch\"", db.Labels["buoy.exclude"])
 	}
 	if len(db.Volumes) != 3 {
 		t.Errorf("db volumes: got %d, want 3", len(db.Volumes))
@@ -423,7 +423,7 @@ services:
 		t.Fatal(err)
 	}
 
-	stacks, err := Discover(dir, 0, DefaultPatterns)
+	stacks, err := Discover(dir, 0, DefaultPatterns, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -439,7 +439,7 @@ services:
 
 func TestDiscoverNoComposeFile(t *testing.T) {
 	dir := t.TempDir()
-	_, err := Discover(dir, 0, DefaultPatterns)
+	_, err := Discover(dir, 0, DefaultPatterns, false)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -451,7 +451,7 @@ func TestDiscoverNotADirectory(t *testing.T) {
 	if err := os.WriteFile(path, []byte("hello"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := Discover(path, 0, DefaultPatterns)
+	_, err := Discover(path, 0, DefaultPatterns, false)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -472,7 +472,7 @@ services:
 		t.Fatal(err)
 	}
 
-	stacks, err := Discover(dir, 0, DefaultPatterns)
+	stacks, err := Discover(dir, 0, DefaultPatterns, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -529,7 +529,7 @@ services:
 `)
 
 	t.Run("depth 0 — only root", func(t *testing.T) {
-		stacks, err := Discover(root, 0, DefaultPatterns)
+		stacks, err := Discover(root, 0, DefaultPatterns, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -542,7 +542,7 @@ services:
 	})
 
 	t.Run("depth 1 — root + immediate children", func(t *testing.T) {
-		stacks, err := Discover(root, 1, DefaultPatterns)
+		stacks, err := Discover(root, 1, DefaultPatterns, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -561,7 +561,7 @@ services:
 	})
 
 	t.Run("depth 2 — includes nested/deep", func(t *testing.T) {
-		stacks, err := Discover(root, 2, DefaultPatterns)
+		stacks, err := Discover(root, 2, DefaultPatterns, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -571,7 +571,7 @@ services:
 	})
 
 	t.Run("depth -1 — unlimited", func(t *testing.T) {
-		stacks, err := Discover(root, -1, DefaultPatterns)
+		stacks, err := Discover(root, -1, DefaultPatterns, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -590,7 +590,7 @@ func TestDiscoverRecursiveEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := Discover(root, 1, DefaultPatterns)
+	_, err := Discover(root, 1, DefaultPatterns, false)
 	if err == nil {
 		t.Fatal("expected error for directory with no compose files")
 	}
@@ -621,7 +621,7 @@ services:
 		t.Fatal(err)
 	}
 
-	stacks, err := Discover(root, 0, []string{"stack.*.yml"})
+	stacks, err := Discover(root, 0, []string{"stack.*.yml"}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -662,7 +662,7 @@ volumes:
 		t.Fatal(err)
 	}
 
-	stacks, err := Discover(dir, 0, DefaultPatterns)
+	stacks, err := Discover(dir, 0, DefaultPatterns, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -708,7 +708,7 @@ services:
 		t.Fatal(err)
 	}
 
-	stacks, err := Discover(dir, 0, DefaultPatterns)
+	stacks, err := Discover(dir, 0, DefaultPatterns, true)
 	if err != nil {
 		t.Fatal(err)
 	}

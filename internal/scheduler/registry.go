@@ -113,6 +113,43 @@ func (r *containerRegistry) forEachEntry(fn func(id, key string) bool) {
 	}
 }
 
+type entryInfo struct {
+	ctr      *docker.Container
+	schedule string
+}
+
+func (r *containerRegistry) listAll() []entryInfo {
+	r.mu.Lock()
+	entries := make([]entryInfo, 0, len(r.index))
+	for id, key := range r.index {
+		schedule := scheduleFromKey(key)
+		for _, ctr := range r.groups[key] {
+			if ctr.ID == id {
+				entries = append(entries, entryInfo{ctr: ctr, schedule: schedule})
+				break
+			}
+		}
+	}
+	r.mu.Unlock()
+	return entries
+}
+
 func scheduleGroupKey(project, schedule string) string {
 	return project + "::" + schedule
+}
+
+func scheduleFromKey(key string) string {
+	if idx := lastIndex(key, "::"); idx >= 0 {
+		return key[idx+2:]
+	}
+	return key
+}
+
+func lastIndex(s, sep string) int {
+	for i := len(s) - len(sep); i >= 0; i-- {
+		if s[i:i+len(sep)] == sep {
+			return i
+		}
+	}
+	return -1
 }

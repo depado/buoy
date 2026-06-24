@@ -2,6 +2,7 @@ package restic
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -67,10 +68,23 @@ func ParseSnapshots(r io.Reader) ([]Snapshot, error) {
 }
 
 // ParseStats decodes the JSON output from "restic stats --json".
+// restic writes a human-readable progress line before the JSON object,
+// so we scan for the line starting with '{'.
 func ParseStats(r io.Reader) (*Stats, error) {
 	var stats Stats
-	if err := json.NewDecoder(r).Decode(&stats); err != nil {
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		line := bytes.TrimSpace(scanner.Bytes())
+		if len(line) == 0 || line[0] != '{' {
+			continue
+		}
+		if err := json.Unmarshal(line, &stats); err != nil {
+			return nil, fmt.Errorf("parse stats: %w", err)
+		}
+		return &stats, nil
+	}
+	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("parse stats: %w", err)
 	}
-	return &stats, nil
+	return nil, fmt.Errorf("parse stats: no JSON line found")
 }

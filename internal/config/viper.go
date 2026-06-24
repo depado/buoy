@@ -9,22 +9,11 @@ import (
 	"github.com/spf13/viper"
 )
 
-// InitConfig sets up viper with environment variables, config file, and applies
-// viper values to cobra flags that were not explicitly set on the command line.
-// This ensures the correct precedence: CLI flag > env var > config file > flag default.
+// InitConfig sets up viper and syncs values to cobra flags.
+// Precedence: CLI flag > env var > config file > flag default.
 func InitConfig(cmd *cobra.Command) error {
 	viper.SetEnvPrefix("buoy")
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
-
-	cmd.Flags().VisitAll(func(f *pflag.Flag) {
-		if f.Name == "conf" {
-			return
-		}
-		s := f.Value.String()
-		if s != "" && s != "0" && s != "false" && s != "[]" && s != "0s" {
-			viper.SetDefault(f.Name, s)
-		}
-	})
 
 	confFile, _ := cmd.Flags().GetString("conf")
 	if confFile != "" {
@@ -43,8 +32,31 @@ func InitConfig(cmd *cobra.Command) error {
 
 	viper.AutomaticEnv()
 
+	// Sync viper values into flags that were not explicitly set on the
+	// command line (config file or environment variable). Flags that were
+	// changed on the CLI keep their user-supplied value.
 	cmd.Flags().VisitAll(func(f *pflag.Flag) {
-		if f.Name != "conf" && f.Changed {
+		if f.Name == "conf" {
+			return
+		}
+		if !f.Changed && viper.IsSet(f.Name) {
+			if sv, ok := f.Value.(pflag.SliceValue); ok {
+				_ = sv.Replace(viper.GetStringSlice(f.Name))
+			} else {
+				val := viper.Get(f.Name)
+				cmd.Flags().Set(f.Name, fmt.Sprintf("%v", val))
+			}
+		}
+	})
+
+	// Push the resolved flag values into viper so NewConf() can unmarshal.
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		if f.Name == "conf" {
+			return
+		}
+		if sv, ok := f.Value.(pflag.SliceValue); ok {
+			viper.Set(f.Name, sv.GetSlice())
+		} else {
 			viper.Set(f.Name, f.Value.String())
 		}
 	})

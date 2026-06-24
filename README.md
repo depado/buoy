@@ -30,12 +30,30 @@
 - [How It Works](#how-it-works)
 - [Quick Start](#quick-start)
 - [Label Reference](#label-reference)
+  - [Schedule Format](#schedule-format)
+  - [Retention Format](#retention-format)
+  - [Include/Exclude Syntax](#includeexclude-syntax)
+  - [Compose Stack Awareness](#compose-stack-awareness)
 - [Examples](#examples)
+  - [PostgreSQL with dump hooks](#postgresql-with-dump-hooks)
+  - [Named includes with per-mount options](#named-includes-with-per-mount-options)
+  - [Compose stack with dependencies](#compose-stack-with-dependencies)
 - [Configuration](#configuration)
-- [CLI: `buoyctl repo`](#cli-buoyctl-repo)
-- [CLI: `buoyctl discover`](#cli-buoyctl-discover)
+  - [Config file](#config-file-confyaml)
+  - [Reference](#reference)
+  - [Password](#password)
+  - [Notifications](#notifications)
+  - [Periodic Repository Check](#periodic-repository-check)
+  - [State Persistence](#state-persistence)
+  - [HTTP API](#http-api)
+- [CLI](#cli)
+  - [`buoyctl repo`](#buoyctl-repo)
+  - [`buoyctl list`](#buoyctl-list)
+  - [`buoyctl discover`](#buoyctl-discover)
 - [Repository Layout](#repository-layout)
 - [Deployment](#deployment)
+  - [Restart policy](#restart-policy-caveat)
+  - [Signal handling](#signal-handling)
 - [Restoring](#restoring)
 - [Backends](#backends)
 - [Development](#development)
@@ -52,7 +70,7 @@
 - **Retention** - Automatic `restic forget` and `restic prune` with per-container policies (`keep-daily`, `keep-weekly`, `keep-monthly`, `keep-yearly`, `keep-within`).
 - **Real-time discovery** - Watches Docker events. New containers are picked up immediately; removed containers are cleaned up.
 - **Selective backup** - Include or exclude volumes and mounts by name or path. Use restic file patterns to back up only what matters.
-- **Stack lifecycle** - When a container opts into `stop-before-backup`, buoy cascades the stop to its dependents, backs up, then restarts everything in dependency order - waiting for each to be healthy before starting the next.
+- **Stack lifecycle** - When a container opts into `buoy.stop-before`, buoy cascades the stop to its dependents, backs up, then restarts everything in dependency order - waiting for each to be healthy before starting the next.
 
 ## How It Works
 
@@ -123,9 +141,8 @@ That's it. buoy discovers the container, initializes a restic repo at `/backup/<
 
 See [Examples](#examples) for more advanced setups with hooks, file patterns, and compose stacks.
 
-### Compose stacks
-
-Containers in a compose stack follow the same scheduling rules as standalone containers. When they share the same schedule, buoy batches them into one coordinated stop/start cycle that backs up each service in the stack. Different schedules run independently.
+> [!TIP]
+> For compose stacks, buoy reads `depends_on` ordering and batches containers sharing the same schedule into one coordinated stop/start cycle. See [Compose Stack Awareness](#compose-stack-awareness).
 
 ## Label Reference
 
@@ -135,23 +152,25 @@ Containers in a compose stack follow the same scheduling rules as standalone con
 | `buoy.schedule`           | Global `default_schedule`  | Cron expression. Falls back to global default. Containers sharing the same schedule in a compose stack are batched together.                                                 |
 | `buoy.repos`              | Global `repos`             | Comma-separated repo URLs, overrides the global list                                                                                                                         |
 | `buoy.retention`          | Global `default_retention` | Retention rules (see below). Falls back to global default.                                                                                                                   |
-| `buoy.stop-before-backup` | `"false"`                  | Stop the container before backing up. Defaults to `false` - opt-in to container stops.                                                                                       |
+| `buoy.stop-before`        | `"false"`                  | Stop the container before backing up. Defaults to `false` - opt-in to container stops.                                                                                       |
 | `buoy.stop-timeout`       | `"30s"`                    | Timeout for container stop                                                                                                                                                   |
-| `buoy.include-volumes`    | -                          | Comma-separated volume names to back up (overrides exclude)                                                                                                                  |
-| `buoy.include-mounts`     | -                          | Comma-separated source or destination paths to back up (overrides exclude)                                                                                                   |
-| `buoy.exclude-volumes`    | -                          | Comma-separated volume names to skip                                                                                                                                         |
-| `buoy.exclude-mounts`     | -                          | Comma-separated source or destination paths to skip                                                                                                                          |
-| `buoy.exclude-patterns`   | -                          | Comma-separated restic exclude patterns (e.g., `"*.log,*.tmp"`)                                                                                                              |
-| `buoy.files`              | -                          | Comma-separated file patterns to back up (uses `--files-from`). When set, only matching files are backed up, not the whole mount. Supports globs (`*.sql`) and `!` negation. |
-| `buoy.tags`               | -                          | Comma-separated restic snapshot tags                                                                                                                                         |
-| `buoy.pre-backup-cmd`     | -                          | Shell command to run on the host before backup                                                                                                                               |
-| `buoy.post-backup-cmd`    | -                          | Shell command to run on the host after backup                                                                                                                                |
-| `buoy.pre-backup-exec`    | -                          | Command to run inside the container before backup (docker exec)                                                                                                              |
-| `buoy.post-backup-exec`   | -                          | Command to run inside the container after backup (docker exec)                                                                                                               |
+| `buoy.include`            | -                          | Comma-separated mount identifiers (volume names or paths). Optional `name=value` syntax for per-mount backup overrides. Volume names are automatically used as the per-mount key when matched. |
+| `buoy.exclude`            | -                          | Comma-separated mount identifiers (volume names or paths) to skip                                                                                                            |
+| `buoy.backup.files`       | -                          | Comma-separated file patterns to back up (uses `--files-from`). When set, only matching files are backed up, not the whole mount. Supports globs (`*.sql`) and `!` negation. |
+| `buoy.backup.exclude`     | -                          | Comma-separated restic exclude patterns (e.g., `"*.log,*.tmp"`)                                                                                                              |
+| `buoy.backup.tags`        | -                          | Comma-separated restic snapshot tags                                                                                                                                         |
+| `buoy.backup.<name>.*`    | -                          | Per-mount overrides for named include entries. `<name>.files`, `<name>.exclude` replace globals for that mount; `<name>.tags` are appended.                                   |
+| `buoy.hook.pre.cmd`       | -                          | Shell command to run on the host before backup                                                                                                                               |
+| `buoy.hook.post.cmd`      | -                          | Shell command to run on the host after backup                                                                                                                                |
+| `buoy.hook.pre.exec`      | -                          | Command to run inside the container before backup (docker exec)                                                                                                              |
+| `buoy.hook.post.exec`     | -                          | Command to run inside the container after backup (docker exec)                                                                                                               |
+
+> [!IMPORTANT]
+> A container is skipped if it has no schedule (neither `buoy.schedule` nor `daemon.default_schedule`) or if no repos are resolved (neither `buoy.repos` nor `restic.repos`).
 
 ### Schedule Format
 
-Standard 5-field cron: `"minute hour day-of-month month day-of-week"`
+Standard 5-field cron (`minute hour day-of-month month day-of-week`) or `@every` interval.
 
 Shorthands:
 
@@ -178,13 +197,64 @@ Comma-separated `key:value` pairs. Supported keys:
 
 All keys are optional. Omitted keys are not passed to restic.
 
+### Include/Exclude Syntax
+
+`buoy.include` and `buoy.exclude` accept comma-separated mount identifiers.
+An identifier can be a volume name, a host source path, or a container destination
+path — buoy matches each entry against all three fields of every mount.
+
+#### Basic filtering
+
+```yaml
+# Back up only these mounts
+buoy.include: "db_data, /srv/uploads"
+
+# Back up everything except these
+buoy.exclude: "/tmp, cache_vol"
+```
+
+#### Named entries for per-mount backup options
+
+Prefix an include entry with `name=` to assign it a name. Per-mount labels at
+`buoy.backup.<name>.<option>` then apply to that mount, overriding the global
+defaults. See the [Named includes example](#named-includes-with-per-mount-options).
+
+```yaml
+buoy.include: "src=/app/code, data=/app/data, /var/log"
+
+# Per-mount: back up only .go files from /app/code
+buoy.backup.src.files: "*.go,*.ts"
+
+# Per-mount: exclude temp files from /app/data
+buoy.backup.src.exclude: "*.log,*.tmp"
+
+# Per-mount: append tags to the global set
+buoy.backup.src.tags: "source-code"
+
+# /var/log has no name — it uses global backup defaults
+```
+
+| Syntax       | Behavior                                                                          |
+| ------------ | --------------------------------------------------------------------------------- |
+| `name=value` | Named entry. `name` used as key for `buoy.backup.<name>.*` overrides.             |
+| Bare value   | Unnamed entry. If it matches a volume by its Docker name, that name is automatically used for per-mount overrides. Otherwise (bind mount), no per-mount overrides apply — uses globals. |
+| Mixed        | Both named and unnamed entries can appear in the same `buoy.include` value.       |
+
+Per-mount override semantics:
+
+| Option    | Per-mount behavior                               |
+| --------- | ------------------------------------------------ |
+| `files`   | Replaces global `buoy.backup.files`              |
+| `exclude` | Replaces global `buoy.backup.exclude`            |
+| `tags`    | Appended to global `buoy.backup.tags`            |
+
 ### Compose Stack Awareness
 
 buoy reads `com.docker.compose.project`, `com.docker.compose.service`, and `com.docker.compose.depends_on` labels that Docker Compose sets automatically.
 
 Scheduling works the same as standalone containers - a container is backed up if it has a schedule, from either `buoy.schedule` or the global `default_schedule`. When multiple containers in the same stack share the same schedule, buoy batches them into one coordinated stop/start cycle. Jobs arriving while a stack backup is running wait in a per-stack queue and run immediately after.
 
-**Stop set:** buoy stops containers with `buoy.stop-before-backup=true` plus any container that transitively depends on a stopped container. If the database stops, the API also stops rather than crashing on a lost connection.
+**Stop set:** buoy stops containers with `buoy.stop-before=true` plus any container that transitively depends on a stopped container. If the database stops, the API also stops rather than crashing on a lost connection.
 
 **Start order:** buoy restarts containers in dependency order (database before API) and waits for health checks before starting dependents - same behavior as `docker compose up`.
 
@@ -205,6 +275,9 @@ See [Examples](#examples) for a full compose stack setup.
 Run `pg_dumpall` before backup to create a consistent SQL dump, then back up only
 the dump file. Clean up after.
 
+<details>
+<summary>Click to expand</summary>
+
 ```yaml
 services:
   postgres:
@@ -214,20 +287,67 @@ services:
     labels:
       buoy.enabled: "true"
       buoy.schedule: "0 3 * * *"
-      buoy.retention: "keep-daily:7,keep-weekly:4,keep-monthly:6"
-      buoy.tags: "database,production"
-      buoy.files: "dump.sql"
-      buoy.pre-backup-exec: "pg_dumpall -U postgres -f /var/lib/postgresql/data/dump.sql"
-      buoy.post-backup-exec: "rm /var/lib/postgresql/data/dump.sql"
+      buoy.backup.files: "dump.sql"
+      buoy.hook.pre.exec: "pg_dumpall -U postgres -f /var/lib/postgresql/data/dump.sql"
+      buoy.hook.post.exec: "rm /var/lib/postgresql/data/dump.sql"
 
 volumes:
   postgres_data:
 ```
 
+</details>
+
+### Named includes with per-mount options
+
+A web application with two mount points: source code and user uploads. Different
+backup strategies for each mount using named include entries.
+
+<details>
+<summary>Click to expand</summary>
+
+```yaml
+services:
+  webapp:
+    image: myapp:latest
+    volumes:
+      - ./src:/app/src
+      - uploads:/app/uploads
+    labels:
+      buoy.enabled: "true"
+      buoy.schedule: "@daily"
+
+      # Named mount entries — volume names auto-derive their per-mount name
+      buoy.include: "code=./src, uploads"
+
+      # Global defaults — applied to both mounts
+      buoy.backup.tags: "production,webapp"
+
+      # Per-mount: src — back up only source files
+      buoy.backup.code.files: "*.go,*.ts,*.js,*.css"
+      buoy.backup.code.tags: "source-code"
+
+      # Per-mount: uploads — exclude temp and cache
+      buoy.backup.uploads.exclude: "*.tmp,*.cache,*.log,thumbs/"
+      buoy.backup.uploads.tags: "user-data"
+```
+
+</details>
+
+- `code=./src` creates a named entry `code`. Only `.go`, `.ts`, `.js`, `.css` files
+  are backed up from `/app/src`. Tags `production,webapp,source-code` are applied.
+- `uploads` is a bare entry matching the volume by its Docker name. Per-mount
+  overrides use the volume name automatically — `buoy.backup.uploads.*`.
+  Everything under `/app/uploads` is backed up except `*.tmp`, `*.cache`,
+  `*.log`, and `thumbs/`. Tags `production,webapp,user-data` are applied.
+- Global `buoy.backup.tags` apply to both mounts, with per-mount tags appended.
+
 ### Compose stack with dependencies
 
 Three services: DB (stop before backup), Cache, and API (depends on both).
 All share the same schedule, so buoy batches them into one coordinated cycle.
+
+<details>
+<summary>Click to expand</summary>
 
 ```yaml
 services:
@@ -238,7 +358,7 @@ services:
     labels:
       buoy.enabled: "true"
       buoy.schedule: "0 3 * * *"
-      buoy.stop-before-backup: "true"
+      buoy.stop-before: "true"
 
   cache:
     image: redis:7
@@ -267,111 +387,102 @@ volumes:
   api_data:
 ```
 
-At 3 AM: all three fire. DB has `stop-before-backup=true`, API depends on DB
+</details>
+
+At 3 AM: all three fire. DB has `stop-before=true`, API depends on DB
 → {DB, API} stop transitively. Cache stays running. Each service backed up.
 Restart DB, wait healthy, restart API.
 
 ## Configuration
 
-buoy is configured via a YAML file, environment variables (prefix `BUOY_`), or CLI flags.
+buoy is configured via a YAML file (`conf.yaml`), environment variables
+(`BUOY_` prefix, dots → underscores), or CLI flags. The table below lists
+every available key with its default value.
+
+When a container label refers to a global value (`buoy.schedule` →
+`daemon.default_schedule`, `buoy.retention` → `daemon.default_retention`,
+`buoy.repos` → `restic.repos`), the default shown here applies.
 
 ### Config file (`conf.yaml`)
 
-The values shown below are the defaults - you only need a config file to override them.
+The values shown are the defaults — copy this to get started.
 
 ```yaml
 log:
-  level: info # debug, info, warn, error
-  format: json # json, text
-  source: false # include source file/line in logs
-  color: auto # auto, always, never
+  level: info
+  format: json
+  source: false
+  color: auto
 
 daemon:
-  concurrency: 2 # max simultaneous backups (each container or stack batch uses one slot)
-  default_schedule: "" # global fallback for buoy.schedule
+  concurrency: 2
+  default_schedule: ""
   default_retention: "keep-within:7d,keep-daily:7,keep-weekly:4,keep-monthly:6,keep-yearly:3"
-
-  resync_interval: "5m" # interval for label resync (0 to disable)
-  exec_timeout: "5m" # max time for docker exec hooks
-  health_wait_timeout: "5m" # max time to wait for container health
-  backup_timeout: "1h" # max time for a complete backup cycle
-  check_schedule: "@weekly" # cron for periodic restic check (empty = disabled)
-  db_path: "./buoy.db" # path to the bbolt state database
+  resync_interval: "5m"
+  exec_timeout: "5m"
+  health_wait_timeout: "5m"
+  backup_timeout: "1h"
+  check_schedule: "@weekly"
+  db_path: "./buoy.db"
 
 docker:
   host: unix:///var/run/docker.sock
 
 restic:
   binary_path: restic
-  password: "${RESTIC_PASSWORD}"
+  password: ""
   compression: auto
   repos:
     - /backup
 
 api:
-  enabled: true # enable the HTTP API server (required for CLI commands like `buoyctl repo`)
-  host: "0.0.0.0" # API listen host
-  port: 8080 # API listen port
-  token: "" # bearer token (empty = no auth)
+  enabled: true
+  host: "0.0.0.0"
+  port: 8080
+  token: ""
 
 notify:
-  urls: # shoutrrr notification URLs
-    - slack://tokenA/tokenB/tokenC
-    - discord://token@channel
-  level: error # none, error, all
+  urls: []
+  level: error
 ```
+
+### Reference
+
+| Key                              | Default                                                                                  | Env / CLI                                                     |
+| -------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `log.level`                      | `info`                                                                                   | `BUOY_LOG_LEVEL` / `--log.level`                              |
+| `log.format`                     | `json`                                                                                   | `BUOY_LOG_FORMAT` / `--log.format`                            |
+| `log.source`                     | `false`                                                                                  | `BUOY_LOG_SOURCE` / `--log.source`                            |
+| `log.color`                      | `auto`                                                                                   | `BUOY_LOG_COLOR` / `--log.color`                              |
+| `daemon.concurrency`             | `2`                                                                                      | `BUOY_DAEMON_CONCURRENCY` / `--daemon.concurrency`            |
+| `daemon.default_schedule`        | `""`                                                                                     | `BUOY_DAEMON_DEFAULT_SCHEDULE` / `--daemon.default_schedule`  |
+| `daemon.default_retention`       | `keep-within:7d,keep-daily:7,keep-weekly:4,keep-monthly:6,keep-yearly:3`                 | `BUOY_DAEMON_DEFAULT_RETENTION` / `--daemon.default_retention` |
+| `daemon.resync_interval`         | `5m`                                                                                     | `BUOY_DAEMON_RESYNC_INTERVAL` / `--daemon.resync_interval`    |
+| `daemon.exec_timeout`            | `5m`                                                                                     | `BUOY_DAEMON_EXEC_TIMEOUT` / `--daemon.exec_timeout`          |
+| `daemon.health_wait_timeout`     | `5m`                                                                                     | `BUOY_DAEMON_HEALTH_WAIT_TIMEOUT` / `--daemon.health_wait_timeout` |
+| `daemon.backup_timeout`          | `1h`                                                                                     | `BUOY_DAEMON_BACKUP_TIMEOUT` / `--daemon.backup_timeout`      |
+| `daemon.check_schedule`          | `@weekly`                                                                                | `BUOY_DAEMON_CHECK_SCHEDULE` / `--daemon.check_schedule`      |
+| `daemon.db_path`                 | `./buoy.db`                                                                              | `BUOY_DAEMON_DB_PATH` / `--daemon.db_path`                    |
+| `docker.host`                    | `unix:///var/run/docker.sock`                                                            | `BUOY_DOCKER_HOST` / `--docker.host`                          |
+| `restic.binary_path`             | `restic`                                                                                 | `BUOY_RESTIC_BINARY_PATH` / `--restic.binary_path`            |
+| `restic.password`                | *(required)*                                                                             | `BUOY_RESTIC_PASSWORD` / `--restic.password`                  |
+| `restic.compression`             | `auto`                                                                                   | `BUOY_RESTIC_COMPRESSION` / `--restic.compression`            |
+| `restic.repos`                   | *(none)*                                                                                 | `BUOY_RESTIC_REPOS` / `--restic.repos`                        |
+| `api.enabled`                    | `true`                                                                                   | `BUOY_API_ENABLED` / `--api.enabled`                          |
+| `api.host`                       | `0.0.0.0`                                                                                | `BUOY_API_HOST` / `--api.host`                                |
+| `api.port`                       | `8080`                                                                                   | `BUOY_API_PORT` / `--api.port`                                |
+| `api.token`                      | `""`                                                                                     | `BUOY_API_TOKEN` / `--api.token`                              |
+| `notify.urls`                    | *(none)*                                                                                 | `BUOY_NOTIFY_URLS` / `--notify.urls`                          |
+| `notify.level`                   | `error`                                                                                  | `BUOY_NOTIFY_LEVEL` / `--notify.level`                        |
 
 > [!NOTE]
 > **Concurrency is I/O-bound.** Each backup spawns a restic process that reads from disk and writes to storage. Setting `concurrency` higher than your I/O capacity can degrade performance across all running backups. Start low (1–2) and increase only if your storage backend and disk I/O can handle it.
 
-### Environment variables
+### Password
 
-All config keys can be set as `BUOY_<SECTION>_<KEY>`:
-
-```bash
-BUOY_LOG_LEVEL=debug
-BUOY_LOG_FORMAT=json
-BUOY_LOG_SOURCE=false
-BUOY_LOG_COLOR=auto
-BUOY_DAEMON_CONCURRENCY=2
-BUOY_DAEMON_DEFAULT_SCHEDULE="0 3 * * *"
-BUOY_DAEMON_DEFAULT_RETENTION="keep-within:7d,keep-daily:7,keep-weekly:4,keep-monthly:6,keep-yearly:3"
-BUOY_DAEMON_RESYNC_INTERVAL=5m
-BUOY_DAEMON_EXEC_TIMEOUT=5m
-BUOY_DAEMON_HEALTH_WAIT_TIMEOUT=5m
-BUOY_DAEMON_BACKUP_TIMEOUT=1h
-BUOY_DAEMON_CHECK_SCHEDULE=@weekly
-BUOY_DAEMON_DB_PATH=./buoy.db
-BUOY_DOCKER_HOST=unix:///var/run/docker.sock
-BUOY_RESTIC_BINARY_PATH=restic
-BUOY_RESTIC_PASSWORD=my-password
-BUOY_RESTIC_COMPRESSION=auto
-BUOY_RESTIC_REPOS=/backup,s3:s3.amazonaws.com/my-bucket
-BUOY_API_ENABLED=true
-BUOY_API_HOST=0.0.0.0
-BUOY_API_PORT=8080
-BUOY_API_TOKEN=my-secret-token
-BUOY_NOTIFY_URLS=slack://tokenA/tokenB/tokenC
-BUOY_NOTIFY_LEVEL=error
-```
-
-### CLI flags
-
-```bash
-buoy run --daemon.concurrency 2 --daemon.resync_interval 5m --daemon.exec_timeout 5m --daemon.health_wait_timeout 5m --daemon.backup_timeout 1h --daemon.check_schedule @weekly --restic.password my-password --restic.compression auto --restic.repos /backup --restic.repos s3:s3.amazonaws.com/bucket --api.enabled true --api.host 0.0.0.0 --api.port 8080 --api.token my-secret-token --log.level debug --notify.urls slack://tokenA/tokenB/tokenC --notify.level error
-```
-
-### Password precedence
-
-buoy requires a password to start. Set it via config, env var, or CLI flag.
-
-1. `restic.password` in config file
-2. `BUOY_RESTIC_PASSWORD` environment variable
-3. `--restic.password` CLI flag
-
-The password is global - all per-container repos use the same one. Buoy passes
-it to restic via a temporary `--password-file` rather than the `RESTIC_PASSWORD`
-environment variable.
+buoy requires a restic repository password to start. Set it via config, env var, or CLI flag.
+The password is global — all per-container repos use the same one. buoy passes it to restic
+via a temporary `--password-file` rather than the `RESTIC_PASSWORD` environment variable.
 
 ### Notifications
 
@@ -396,8 +507,8 @@ Each URL encodes both the service and its credentials. Examples:
 See [shoutrrr's documentation](https://containrrr.dev/shoutrrr/latest/services/overview/)
 for the full list of services and URL formats.
 
-Notifications are best-effort - a notification failure logs a warning but
-never blocks or fails a backup.
+> [!NOTE]
+> Notifications are best-effort — a failure logs a warning but never blocks or fails a backup.
 
 ### Periodic Repository Check
 
@@ -445,6 +556,7 @@ required.
 | Method | Path                   | Description                                                       |
 | ------ | ---------------------- | ----------------------------------------------------------------- |
 | `GET`  | `/api/v1/health`       | Health check (no auth)                                            |
+| `GET`  | `/api/v1/scheduled`    | List currently scheduled backups                                  |
 | `GET`  | `/api/v1/repos`        | List all known repos. `?orphaned=true` to show only orphaned      |
 | `POST` | `/api/v1/repos/check`  | Run `restic check` on all repos. `?read-data=true` for full check |
 | `POST` | `/api/v1/repos/stats`  | Aggregate `restic stats` across all repos                         |
@@ -455,7 +567,9 @@ required.
 Connect to the API from a local or remote buoy CLI, or use it as the backend
 for a dashboard/aggregator.
 
-### CLI: `buoyctl repo`
+## CLI
+
+### `buoyctl repo`
 
 buoyctl provides a `repo` subcommand for querying and operating on managed
 repositories. The CLI communicates with a running buoy daemon via its HTTP API.
@@ -500,7 +614,18 @@ buoyctl repo stats --all
 > [!WARNING]
 > Destructive operations (`unlock`, `forget`, `prune`) return an error if any backup is currently in progress, preventing accidental lock conflicts or corruption. Read-only commands (`check`, `stats`) are not gated and may run alongside backups.
 
-### CLI: `buoyctl discover`
+### `buoyctl list`
+
+Lists all currently active scheduled backups known to the daemon.
+
+```bash
+buoyctl list            # render as a table
+buoyctl list --json     # JSON output
+```
+
+Shows container name, compose project/service, schedule expression, repos (if overridden), and whether the container is stopped before backup. Empty output means no containers are currently scheduled.
+
+### `buoyctl discover`
 
 Scans a directory recursively for Docker Compose files and lists the volumes
 and bind mounts buoy would need access to — so you can configure your buoy
@@ -525,24 +650,28 @@ buoyctl discover /opt/stacks --pattern "stack.*.yml"
 
 # JSON output
 buoyctl discover . --json
+
+# Resolve ${VAR} and ${VAR:-default} from .env and the environment
+buoyctl discover /opt/stacks --resolve-env
 ```
 
 **Flags:**
 
-| Flag        | Default                            | Description                                               |
-| ----------- | ---------------------------------- | --------------------------------------------------------- |
-| `--json`    | `false`                            | Output as JSON                                            |
-| `--depth`   | `-1`                               | Maximum directory depth (`-1` for unlimited)              |
-| `--pattern` | `compose.y*ml,docker-compose.y*ml` | Comma-separated glob patterns for compose file names      |
+| Flag             | Default                            | Description                                               |
+| ---------------- | ---------------------------------- | --------------------------------------------------------- |
+| `--json`         | `false`                            | Output as JSON                                            |
+| `--depth`        | `-1`                               | Maximum directory depth (`-1` for unlimited)              |
+| `--pattern`      | `compose.y*ml,docker-compose.y*ml` | Comma-separated glob patterns for compose file names      |
+| `--resolve-env`  | `false`                            | Resolve `${VAR}` and `${VAR:-default}` from `.env` files and process environment |
 
-**Respects buoy labels.** The `buoy.enabled`, `buoy.include-*/buoy.exclude-*`
+**Respects buoy labels.** The `buoy.enabled`, `buoy.include`/`buoy.exclude`
 labels defined in compose files are honored, including both map and list
 syntax:
 
 ```yaml
 labels:
   buoy.enabled: "true"         # map syntax
-  buoy.tags: "production"
+  buoy.backup.tags: "production"
 
 labels:
   - "buoy.enabled=true"        # list syntax
@@ -551,9 +680,9 @@ labels:
 
 - Services with `buoy.enabled: "true"` show `[green]yes[/green]` in the table;
   disabled or unlabeled services show `[red]no[/red]`.
-- `buoy.include-volumes` / `buoy.exclude-volumes` filter named volumes.
-- `buoy.include-mounts` / `buoy.exclude-mounts` filter bind mounts by source
-  or destination path.
+- `buoy.include` / `buoy.exclude` filter mounts by volume name, source path,
+  or destination path. `include` supports optional `name=value` syntax for
+  per-mount backup overrides (e.g. `src=/app/code`).
 - Bind mounts from enabled services are highlighted `[bold green]` — these are
   the ones that need to be added to buoy's compose service. Built-in mounts
   (`/var/run/docker.sock`, `/var/lib/docker/volumes`) are never highlighted.
@@ -562,7 +691,9 @@ labels:
 
 1. **Per-file table** — each compose file gets a green title and a table with
    service, enabled state, type, source (original compose path), destination,
-   and read/write mode. Variable substitution (`${VAR:-default}`) is resolved.
+   and read/write mode. With `--resolve-env`, `${VAR:-default}` syntax is
+   resolved from `.env` files and the process environment. Without the flag,
+   variables appear as-is.
 2. **YAML snippet** — ready-to-paste `volumes:` block for buoy's compose
    service, using resolved absolute paths and `:ro` mode.
 
@@ -595,10 +726,10 @@ volumes:
 
 ## Repository Layout
 
-Each container gets a separate restic repository under each configured base repo. For a container in compose project `myapp` service `db` with repos `[/backup, s3:my-bucket]`, buoy creates:
+Each container gets a separate restic repository under each configured base repo. For a container in compose project `myapp` service `db` with repos `[/backup, s3:s3.amazonaws.com/my-bucket]`, buoy creates:
 
 - `/backup/myapp/db`
-- `s3:my-bucket/myapp/db`
+- `s3:s3.amazonaws.com/my-bucket/myapp/db`
 
 For standalone containers, the URL is `<repo>/<container_name>`.
 
@@ -624,8 +755,6 @@ services:
       - BUOY_RESTIC_REPOS=/backup
       # - BUOY_NOTIFY_URLS=slack://tokenA/tokenB/tokenC
       # - BUOY_NOTIFY_LEVEL=error
-    labels:
-
     restart: unless-stopped
 
 volumes:
@@ -641,7 +770,8 @@ If a mount source doesn't exist inside buoy, it's skipped with a warning.
 
 ### Restart policy caveat
 
-Containers with `buoy.stop-before-backup=true` **must not** have `restart: always` (or similar). If they do, Docker restarts them immediately after buoy stops them, causing a race with the backup. Use `restart: "no"` or omit the restart policy on containers that buoy stops.
+> [!WARNING]
+> Containers with `buoy.stop-before=true` **must not** have `restart: always` (or similar). If they do, Docker restarts them immediately after buoy stops them, causing a race with the backup. Use `restart: "no"` or omit the restart policy on containers that buoy stops.
 
 ### Signal handling
 

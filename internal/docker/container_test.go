@@ -222,7 +222,8 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				Enabled:     true,
 				StopTimeout: 30 * time.Second,
-				Retention:   types.RetentionPolicy{KeepDaily: 7},
+				Retention:   types.RetentionPolicy{},
+				MountOpts:   make(map[string]MountBackupOpts),
 			},
 		},
 		{
@@ -230,7 +231,8 @@ func TestParseBackupConfig(t *testing.T) {
 			labels: map[string]string{},
 			want: BackupConfig{
 				StopTimeout: 30 * time.Second,
-				Retention:   types.RetentionPolicy{KeepDaily: 7},
+				Retention:   types.RetentionPolicy{},
+				MountOpts:   make(map[string]MountBackupOpts),
 			},
 		},
 		{
@@ -241,7 +243,8 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				Enabled:     true,
 				StopTimeout: 30 * time.Second,
-				Retention:   types.RetentionPolicy{KeepDaily: 7},
+				Retention:   types.RetentionPolicy{},
+				MountOpts:   make(map[string]MountBackupOpts),
 			},
 		},
 		{
@@ -252,7 +255,8 @@ func TestParseBackupConfig(t *testing.T) {
 				Enabled:     true,
 				Schedule:    "@daily",
 				StopTimeout: 30 * time.Second,
-				Retention:   types.RetentionPolicy{KeepDaily: 7},
+				Retention:   types.RetentionPolicy{},
+				MountOpts:   make(map[string]MountBackupOpts),
 			},
 		},
 		{
@@ -260,7 +264,8 @@ func TestParseBackupConfig(t *testing.T) {
 			labels: map[string]string{"buoy.stop-timeout": "5m"},
 			want: BackupConfig{
 				StopTimeout: 5 * time.Minute,
-				Retention:   types.RetentionPolicy{KeepDaily: 7},
+				Retention:   types.RetentionPolicy{},
+				MountOpts:   make(map[string]MountBackupOpts),
 			},
 		},
 		{
@@ -268,112 +273,163 @@ func TestParseBackupConfig(t *testing.T) {
 			labels: map[string]string{"buoy.stop-timeout": "not_a_duration"},
 			want: BackupConfig{
 				StopTimeout: 30 * time.Second,
-				Retention:   types.RetentionPolicy{KeepDaily: 7},
+				Retention:   types.RetentionPolicy{},
+				MountOpts:   make(map[string]MountBackupOpts),
 			},
 		},
 		{
-			name:   "include-volumes",
-			labels: map[string]string{"buoy.include-volumes": "vol1, vol2"},
+			name:   "buoy.include (unnamed)",
+			labels: map[string]string{"buoy.include": "vol1, /data"},
 			want: BackupConfig{
-				IncludeVolumes: []string{"vol1", "vol2"},
-				StopTimeout:    30 * time.Second,
-				Retention:      types.RetentionPolicy{KeepDaily: 7},
-			},
-		},
-		{
-			name:   "exclude-volumes",
-			labels: map[string]string{"buoy.exclude-volumes": "vol1, vol2"},
-			want: BackupConfig{
-				ExcludeVolumes: []string{"vol1", "vol2"},
-				StopTimeout:    30 * time.Second,
-				Retention:      types.RetentionPolicy{KeepDaily: 7},
-			},
-		},
-		{
-			name:   "include-mounts",
-			labels: map[string]string{"buoy.include-mounts": "/data, /config"},
-			want: BackupConfig{
-				IncludeMounts: []string{"/data", "/config"},
-				StopTimeout:   30 * time.Second,
-				Retention:     types.RetentionPolicy{KeepDaily: 7},
-			},
-		},
-		{
-			name:   "exclude-mounts",
-			labels: map[string]string{"buoy.exclude-mounts": "/data, /config"},
-			want: BackupConfig{
-				ExcludeMounts: []string{"/data", "/config"},
-				StopTimeout:   30 * time.Second,
-				Retention:     types.RetentionPolicy{KeepDaily: 7},
-			},
-		},
-		{
-			name:   "buoy.tags=foo,bar",
-			labels: map[string]string{"buoy.tags": "foo, bar"},
-			want: BackupConfig{
-				Tags:        []string{"foo", "bar"},
+				Include:     []MountEntry{{Key: "vol1"}, {Key: "/data"}},
 				StopTimeout: 30 * time.Second,
-				Retention:   types.RetentionPolicy{KeepDaily: 7},
+				Retention:   types.RetentionPolicy{},
+				MountOpts:   make(map[string]MountBackupOpts),
 			},
 		},
 		{
-			name:   "buoy.exclude-patterns=*.log,*.tmp",
-			labels: map[string]string{"buoy.exclude-patterns": "*.log, *.tmp"},
+			name:   "buoy.include (named)",
+			labels: map[string]string{"buoy.include": "src=/app/code, data=/app/data"},
 			want: BackupConfig{
-				ExcludePatterns: []string{"*.log", "*.tmp"},
-				StopTimeout:     30 * time.Second,
-				Retention:       types.RetentionPolicy{KeepDaily: 7},
+				Include: []MountEntry{
+					{Name: "src", Key: "/app/code"},
+					{Name: "data", Key: "/app/data"},
+				},
+				StopTimeout: 30 * time.Second,
+				Retention:   types.RetentionPolicy{},
+				MountOpts:   make(map[string]MountBackupOpts),
+			},
+		},
+		{
+			name:   "buoy.include (mixed named and unnamed)",
+			labels: map[string]string{"buoy.include": "src=/app/code, /tmp/scratch"},
+			want: BackupConfig{
+				Include: []MountEntry{
+					{Name: "src", Key: "/app/code"},
+					{Key: "/tmp/scratch"},
+				},
+				StopTimeout: 30 * time.Second,
+				Retention:   types.RetentionPolicy{},
+				MountOpts:   make(map[string]MountBackupOpts),
+			},
+		},
+		{
+			name:   "buoy.include (empty key skipped)",
+			labels: map[string]string{"buoy.include": "src= , /data"},
+			want: BackupConfig{
+				Include:     []MountEntry{{Key: "/data"}},
+				StopTimeout: 30 * time.Second,
+				Retention:   types.RetentionPolicy{},
+				MountOpts:   make(map[string]MountBackupOpts),
+			},
+		},
+		{
+			name:   "buoy.include (duplicate name warned, first wins)",
+			labels: map[string]string{"buoy.include": "src=/app, src=/other"},
+			want: BackupConfig{
+				Include:     []MountEntry{{Name: "src", Key: "/app"}},
+				StopTimeout: 30 * time.Second,
+				Retention:   types.RetentionPolicy{},
+				MountOpts:   make(map[string]MountBackupOpts),
+			},
+		},
+		{
+			name:   "buoy.exclude",
+			labels: map[string]string{"buoy.exclude": "/data, vol1"},
+			want: BackupConfig{
+				Exclude:     []string{"/data", "vol1"},
+				StopTimeout: 30 * time.Second,
+				Retention:   types.RetentionPolicy{},
+				MountOpts:   make(map[string]MountBackupOpts),
+			},
+		},
+		{
+			name:   "buoy.backup.tags",
+			labels: map[string]string{"buoy.backup.tags": "foo, bar"},
+			want: BackupConfig{
+				BackupTags:  []string{"foo", "bar"},
+				StopTimeout: 30 * time.Second,
+				Retention:   types.RetentionPolicy{},
+				MountOpts:   make(map[string]MountBackupOpts),
+			},
+		},
+		{
+			name:   "buoy.backup.exclude",
+			labels: map[string]string{"buoy.backup.exclude": "*.log, *.tmp"},
+			want: BackupConfig{
+				BackupExclude: []string{"*.log", "*.tmp"},
+				StopTimeout:   30 * time.Second,
+				Retention:     types.RetentionPolicy{},				MountOpts:     make(map[string]MountBackupOpts),
 			},
 		},
 		{
 			name: "hook commands",
 			labels: map[string]string{
-				"buoy.pre-backup-cmd":   "echo pre",
-				"buoy.post-backup-cmd":  "echo post",
-				"buoy.pre-backup-exec":  "echo pre exec",
-				"buoy.post-backup-exec": "echo post exec",
+				"buoy.hook.pre.cmd":   "echo pre",
+				"buoy.hook.post.cmd":  "echo post",
+				"buoy.hook.pre.exec":  "echo pre exec",
+				"buoy.hook.post.exec": "echo post exec",
 			},
 			want: BackupConfig{
-				PreBackupCmd:   "echo pre",
-				PostBackupCmd:  "echo post",
-				PreBackupExec:  "echo pre exec",
-				PostBackupExec: "echo post exec",
-				StopTimeout:    30 * time.Second,
-				Retention:      types.RetentionPolicy{KeepDaily: 7},
+				HookPreCmd:   "echo pre",
+				HookPostCmd:  "echo post",
+				HookPreExec:  "echo pre exec",
+				HookPostExec: "echo post exec",
+				StopTimeout:  30 * time.Second,
+				Retention:    types.RetentionPolicy{},
+				MountOpts:    make(map[string]MountBackupOpts),
+			},
+		},
+		{
+			name: "per-mount backup opts via wildcard",
+			labels: map[string]string{
+				"buoy.backup.src.files":   "*.go, *.ts",
+				"buoy.backup.src.exclude": "*.tmp",
+				"buoy.backup.src.tags":    "source, critical",
+				"buoy.backup.data.files":  "*.sql",
+			},
+			want: BackupConfig{
+				StopTimeout: 30 * time.Second,
+				Retention:   types.RetentionPolicy{},
+				MountOpts: map[string]MountBackupOpts{
+					"src":  {Files: []string{"*.go", "*.ts"}, Exclude: []string{"*.tmp"}, Tags: []string{"source", "critical"}},
+					"data": {Files: []string{"*.sql"}},
+				},
 			},
 		},
 		{
 			name: "full config with all labels set",
 			labels: map[string]string{
-				"buoy.enabled":            "true",
-				"buoy.schedule":           "@daily",
-				"buoy.repos":              "/custom/repo",
-				"buoy.retention":          "keep-daily:30,keep-weekly:4",
-				"buoy.stop-before-backup": "true",
-				"buoy.stop-timeout":       "2m",
-				"buoy.include-volumes":    "data",
-				"buoy.exclude-mounts":     "/tmp",
-				"buoy.exclude-patterns":   "*.log",
-				"buoy.files":              "important.txt",
-				"buoy.tags":               "critical, db",
-				"buoy.pre-backup-cmd":     "pg_dump > /backup/dump.sql",
-				"buoy.post-backup-exec":   "echo done",
+				"buoy.enabled":        "true",
+				"buoy.schedule":       "@daily",
+				"buoy.repos":          "/custom/repo",
+				"buoy.retention":      "keep-daily:30,keep-weekly:4",
+				"buoy.stop-before":    "true",
+				"buoy.stop-timeout":   "2m",
+				"buoy.include":        "data, /tmp",
+				"buoy.exclude":        "/scratch",
+				"buoy.backup.exclude": "*.log",
+				"buoy.backup.files":   "important.txt",
+				"buoy.backup.tags":    "critical, db",
+				"buoy.hook.pre.cmd":   "pg_dump > /backup/dump.sql",
+				"buoy.hook.post.exec": "echo done",
 			},
 			defaultRetention: "keep-within:7d,keep-daily:7,keep-weekly:4,keep-monthly:6,keep-yearly:3",
 			want: BackupConfig{
-				Enabled:         true,
-				Schedule:        "@daily",
-				ReposOverride:   []string{"/custom/repo"},
-				StopBefore:      true,
-				StopTimeout:     2 * time.Minute,
-				IncludeVolumes:  []string{"data"},
-				ExcludeMounts:   []string{"/tmp"},
-				ExcludePatterns: []string{"*.log"},
-				Files:           []string{"important.txt"},
-				Tags:            []string{"critical", "db"},
-				PreBackupCmd:    "pg_dump > /backup/dump.sql",
-				PostBackupExec:  "echo done",
-				Retention:       types.RetentionPolicy{KeepDaily: 30, KeepWeekly: 4},
+				Enabled:       true,
+				Schedule:      "@daily",
+				ReposOverride: []string{"/custom/repo"},
+				StopBefore:    true,
+				StopTimeout:   2 * time.Minute,
+				Include:       []MountEntry{{Key: "data"}, {Key: "/tmp"}},
+				Exclude:       []string{"/scratch"},
+				BackupExclude: []string{"*.log"},
+				BackupFiles:   []string{"important.txt"},
+				BackupTags:    []string{"critical", "db"},
+				HookPreCmd:    "pg_dump > /backup/dump.sql",
+				HookPostExec:  "echo done",
+				Retention:     types.RetentionPolicy{KeepDaily: 30, KeepWeekly: 4},
+				MountOpts:     make(map[string]MountBackupOpts),
 			},
 		},
 	}
@@ -395,38 +451,44 @@ func TestParseBackupConfig(t *testing.T) {
 			if got.StopTimeout != tt.want.StopTimeout {
 				t.Errorf("StopTimeout: got %v, want %v", got.StopTimeout, tt.want.StopTimeout)
 			}
-			if len(got.IncludeVolumes) != len(tt.want.IncludeVolumes) {
-				t.Errorf("IncludeVolumes: got %v, want %v", got.IncludeVolumes, tt.want.IncludeVolumes)
+			if len(got.Include) != len(tt.want.Include) {
+				t.Errorf("Include: got %v, want %v", got.Include, tt.want.Include)
+			} else {
+				for i := range got.Include {
+					if got.Include[i] != tt.want.Include[i] {
+						t.Errorf("Include[%d]: got %+v, want %+v", i, got.Include[i], tt.want.Include[i])
+					}
+				}
 			}
-			if len(got.ExcludeVolumes) != len(tt.want.ExcludeVolumes) {
-				t.Errorf("ExcludeVolumes: got %v, want %v", got.ExcludeVolumes, tt.want.ExcludeVolumes)
+			if len(got.Exclude) != len(tt.want.Exclude) {
+				t.Errorf("Exclude: got %v, want %v", got.Exclude, tt.want.Exclude)
+			} else {
+				for i := range got.Exclude {
+					if got.Exclude[i] != tt.want.Exclude[i] {
+						t.Errorf("Exclude[%d]: got %q, want %q", i, got.Exclude[i], tt.want.Exclude[i])
+					}
+				}
 			}
-			if len(got.IncludeMounts) != len(tt.want.IncludeMounts) {
-				t.Errorf("IncludeMounts: got %v, want %v", got.IncludeMounts, tt.want.IncludeMounts)
+			if len(got.BackupExclude) != len(tt.want.BackupExclude) {
+				t.Errorf("BackupExclude: got %v, want %v", got.BackupExclude, tt.want.BackupExclude)
 			}
-			if len(got.ExcludeMounts) != len(tt.want.ExcludeMounts) {
-				t.Errorf("ExcludeMounts: got %v, want %v", got.ExcludeMounts, tt.want.ExcludeMounts)
+			if len(got.BackupFiles) != len(tt.want.BackupFiles) {
+				t.Errorf("BackupFiles: got %v, want %v", got.BackupFiles, tt.want.BackupFiles)
 			}
-			if len(got.ExcludePatterns) != len(tt.want.ExcludePatterns) {
-				t.Errorf("ExcludePatterns: got %v, want %v", got.ExcludePatterns, tt.want.ExcludePatterns)
+			if len(got.BackupTags) != len(tt.want.BackupTags) {
+				t.Errorf("BackupTags: got %v, want %v", got.BackupTags, tt.want.BackupTags)
 			}
-			if len(got.Files) != len(tt.want.Files) {
-				t.Errorf("Files: got %v, want %v", got.Files, tt.want.Files)
+			if got.HookPreCmd != tt.want.HookPreCmd {
+				t.Errorf("HookPreCmd: got %q, want %q", got.HookPreCmd, tt.want.HookPreCmd)
 			}
-			if len(got.Tags) != len(tt.want.Tags) {
-				t.Errorf("Tags: got %v, want %v", got.Tags, tt.want.Tags)
+			if got.HookPostCmd != tt.want.HookPostCmd {
+				t.Errorf("HookPostCmd: got %q, want %q", got.HookPostCmd, tt.want.HookPostCmd)
 			}
-			if got.PreBackupCmd != tt.want.PreBackupCmd {
-				t.Errorf("PreBackupCmd: got %q, want %q", got.PreBackupCmd, tt.want.PreBackupCmd)
+			if got.HookPreExec != tt.want.HookPreExec {
+				t.Errorf("HookPreExec: got %q, want %q", got.HookPreExec, tt.want.HookPreExec)
 			}
-			if got.PostBackupCmd != tt.want.PostBackupCmd {
-				t.Errorf("PostBackupCmd: got %q, want %q", got.PostBackupCmd, tt.want.PostBackupCmd)
-			}
-			if got.PreBackupExec != tt.want.PreBackupExec {
-				t.Errorf("PreBackupExec: got %q, want %q", got.PreBackupExec, tt.want.PreBackupExec)
-			}
-			if got.PostBackupExec != tt.want.PostBackupExec {
-				t.Errorf("PostBackupExec: got %q, want %q", got.PostBackupExec, tt.want.PostBackupExec)
+			if got.HookPostExec != tt.want.HookPostExec {
+				t.Errorf("HookPostExec: got %q, want %q", got.HookPostExec, tt.want.HookPostExec)
 			}
 			if got.Retention.KeepDaily != tt.want.Retention.KeepDaily {
 				t.Errorf("Retention.KeepDaily: got %d, want %d", got.Retention.KeepDaily, tt.want.Retention.KeepDaily)
@@ -442,6 +504,132 @@ func TestParseBackupConfig(t *testing.T) {
 			}
 			if got.Retention.KeepWithin != tt.want.Retention.KeepWithin {
 				t.Errorf("Retention.KeepWithin: got %q, want %q", got.Retention.KeepWithin, tt.want.Retention.KeepWithin)
+			}
+			if len(got.MountOpts) != len(tt.want.MountOpts) {
+				t.Errorf("MountOpts len: got %d, want %d", len(got.MountOpts), len(tt.want.MountOpts))
+			} else {
+				for k, v := range got.MountOpts {
+					w, ok := tt.want.MountOpts[k]
+					if !ok {
+						t.Errorf("MountOpts[%q]: unexpected key", k)
+						continue
+					}
+					if len(v.Files) != len(w.Files) || (len(v.Files) > 0 && v.Files[0] != w.Files[0]) {
+						t.Errorf("MountOpts[%q].Files: got %v, want %v", k, v.Files, w.Files)
+					}
+					if len(v.Exclude) != len(w.Exclude) || (len(v.Exclude) > 0 && v.Exclude[0] != w.Exclude[0]) {
+						t.Errorf("MountOpts[%q].Exclude: got %v, want %v", k, v.Exclude, w.Exclude)
+					}
+					if len(v.Tags) != len(w.Tags) || (len(v.Tags) > 0 && v.Tags[0] != w.Tags[0]) {
+						t.Errorf("MountOpts[%q].Tags: got %v, want %v", k, v.Tags, w.Tags)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestMountMatches(t *testing.T) {
+	tests := []struct {
+		name     string
+		mount    Mount
+		include  []MountEntry
+		exclude  []string
+		wantOK   bool
+		wantName string
+	}{
+		{
+			name:   "no include or exclude -> all pass",
+			mount:  Mount{Name: "vol1", Source: "/data", Destination: "/app"},
+			wantOK: true,
+		},
+		{
+			name:     "include by volume name (auto-name)",
+			mount:    Mount{Name: "vol1", Source: "/var/lib/docker/volumes/vol1/_data"},
+			include:  []MountEntry{{Key: "vol1"}},
+			wantOK:   true,
+			wantName: "vol1",
+		},
+		{
+			name:    "include by source path",
+			mount:   Mount{Type: "bind", Source: "/data", Destination: "/app"},
+			include: []MountEntry{{Key: "/data"}},
+			wantOK:  true,
+		},
+		{
+			name:     "named entry takes priority over auto-name",
+			mount:    Mount{Name: "vol1"},
+			include:  []MountEntry{{Name: "custom", Key: "vol1"}},
+			wantOK:   true,
+			wantName: "custom",
+		},
+		{
+			name:    "include by destination path",
+			mount:   Mount{Type: "bind", Source: "/data", Destination: "/app"},
+			include: []MountEntry{{Key: "/app"}},
+			wantOK:  true,
+		},
+		{
+			name:    "include mismatch",
+			mount:   Mount{Name: "vol1"},
+			include: []MountEntry{{Key: "other"}},
+			wantOK:  false,
+		},
+		{
+			name:    "exclude by source",
+			mount:   Mount{Type: "bind", Source: "/tmp"},
+			exclude: []string{"/tmp"},
+			wantOK:  false,
+		},
+		{
+			name:    "exclude by destination",
+			mount:   Mount{Type: "bind", Source: "/data", Destination: "/tmp"},
+			exclude: []string{"/tmp"},
+			wantOK:  false,
+		},
+		{
+			name:    "exclude by name",
+			mount:   Mount{Name: "tmp_vol"},
+			exclude: []string{"tmp_vol"},
+			wantOK:  false,
+		},
+		{
+			name:    "not excluded",
+			mount:   Mount{Name: "vol1"},
+			exclude: []string{"other"},
+			wantOK:  true,
+		},
+		{
+			name:     "include takes priority over exclude",
+			mount:    Mount{Name: "vol1"},
+			include:  []MountEntry{{Key: "vol1"}},
+			exclude:  []string{"vol1"},
+			wantOK:   true,
+			wantName: "vol1",
+		},
+		{
+			name:     "named include returns name",
+			mount:    Mount{Name: "vol1"},
+			include:  []MountEntry{{Name: "src", Key: "vol1"}},
+			wantOK:   true,
+			wantName: "src",
+		},
+		{
+			name:     "first match wins for duplicate matches",
+			mount:    Mount{Name: "vol1"},
+			include:  []MountEntry{{Name: "first", Key: "vol1"}, {Name: "second", Key: "vol1"}},
+			wantOK:   true,
+			wantName: "first",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotName, gotOK := MountMatches(tt.mount, tt.include, tt.exclude)
+			if gotOK != tt.wantOK {
+				t.Errorf("ok: got %v, want %v", gotOK, tt.wantOK)
+			}
+			if gotName != tt.wantName {
+				t.Errorf("name: got %q, want %q", gotName, tt.wantName)
 			}
 		})
 	}

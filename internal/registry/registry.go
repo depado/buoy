@@ -260,13 +260,14 @@ func (r *Registry) resolveRepos(ctr *docker.Container, cfg docker.BackupConfig) 
 	}
 	repos := make([]string, len(bases))
 	for i, base := range bases {
+		base = strings.TrimRight(base, "/")
 		path := ctr.RepoPath(base)
 		if isLocalPath(path) {
 			abs, err := filepath.Abs(path)
 			if err != nil {
 				return nil, fmt.Errorf("repo path for base %q: %w", base, err)
 			}
-			path = abs
+			path = filepath.Clean(abs)
 		}
 		repos[i] = path
 	}
@@ -288,4 +289,41 @@ func isLocalPath(p string) bool {
 		return true
 	}
 	return false
+}
+
+func (r *Registry) ResolveRepos(ctr *docker.Container, cfg docker.BackupConfig) ([]string, error) {
+	return r.resolveRepos(ctr, cfg)
+}
+
+func (r *Registry) GetContainerRepos(containerID string) ([]RepoEntry, error) {
+	var entries []RepoEntry
+	err := r.db.View(func(tx *bolt.Tx) error {
+		cb := tx.Bucket(containerReposBucket)
+		rb := tx.Bucket(reposBucket)
+
+		data := cb.Get([]byte(containerID))
+		if data == nil {
+			return nil
+		}
+
+		var repos []string
+		if err := json.Unmarshal(data, &repos); err != nil {
+			return fmt.Errorf("unmarshal container repos for %s: %w", containerID, err)
+		}
+
+		for _, repo := range repos {
+			rd := rb.Get([]byte(repo))
+			if rd == nil {
+				entries = append(entries, RepoEntry{URL: repo})
+				continue
+			}
+			var entry RepoEntry
+			if err := json.Unmarshal(rd, &entry); err != nil {
+				return fmt.Errorf("unmarshal repo entry %s: %w", repo, err)
+			}
+			entries = append(entries, entry)
+		}
+		return nil
+	})
+	return entries, err
 }

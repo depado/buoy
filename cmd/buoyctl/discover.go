@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"slices"
 	"sort"
 	"strings"
 
@@ -24,7 +23,7 @@ var discoverCmd = &cobra.Command{
 	Long: `Scan a directory recursively for Docker Compose files and list all volumes
 and bind mounts that buoy would need access to for backing up the services.
 
-Respects buoy labels (buoy.enabled, buoy.include-*, buoy.exclude-*) defined
+Respects buoy labels (buoy.enabled, buoy.include, buoy.exclude) defined
 in the compose file. Only mounts from enabled services are included in the
 host paths and YAML sections.`,
 	Args: cobra.MaximumNArgs(1),
@@ -36,12 +35,13 @@ host paths and YAML sections.`,
 
 		depth, _ := cmd.Flags().GetInt("depth")
 		patternStr, _ := cmd.Flags().GetString("pattern")
+		resolveEnv, _ := cmd.Flags().GetBool("resolve-env")
 		patterns := splitTrim(patternStr)
 		if len(patterns) == 0 {
 			patterns = compose.DefaultPatterns
 		}
 
-		stacks, err := compose.Discover(dir, depth, patterns)
+		stacks, err := compose.Discover(dir, depth, patterns, resolveEnv)
 		if err != nil {
 			return err
 		}
@@ -157,19 +157,16 @@ host paths and YAML sections.`,
 }
 
 func isExcluded(e compose.VolumeEntry, cfg docker.BackupConfig) bool {
-	if e.Type == "volume" {
-		if len(cfg.IncludeVolumes) > 0 && !slices.Contains(cfg.IncludeVolumes, e.Source) {
-			return true
+	if len(cfg.Include) > 0 {
+		for _, entry := range cfg.Include {
+			if entry.Key == e.Source || entry.Key == e.Destination {
+				return false
+			}
 		}
-		if slices.Contains(cfg.ExcludeVolumes, e.Source) {
-			return true
-		}
+		return true
 	}
-	if e.Type == "bind" {
-		if len(cfg.IncludeMounts) > 0 && !slices.Contains(cfg.IncludeMounts, e.Source) && !slices.Contains(cfg.IncludeMounts, e.Destination) {
-			return true
-		}
-		if slices.Contains(cfg.ExcludeMounts, e.Source) || slices.Contains(cfg.ExcludeMounts, e.Destination) {
+	for _, ex := range cfg.Exclude {
+		if ex == e.Source || ex == e.Destination {
 			return true
 		}
 	}
@@ -209,4 +206,5 @@ func setupDiscoverCommand() {
 	discoverCmd.Flags().Int("depth", -1, "maximum directory depth to search for compose files (-1 for unlimited)")
 	discoverCmd.Flags().String("pattern", "", "comma-separated glob patterns for compose files (default: compose.y*ml,docker-compose.y*ml)")
 	discoverCmd.Flags().Bool("json", false, "output as JSON")
+	discoverCmd.Flags().Bool("resolve-env", false, "resolve ${VAR} and ${VAR:-default} from .env files and process environment")
 }

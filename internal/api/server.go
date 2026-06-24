@@ -13,12 +13,14 @@ import (
 	"github.com/depado/buoy/client"
 	"github.com/depado/buoy/internal/registry"
 	"github.com/depado/buoy/internal/restic"
+	"github.com/depado/buoy/internal/scheduler"
 	"github.com/depado/buoy/internal/types"
 )
 
 type Server struct {
 	reg          *registry.Registry
 	restic       *restic.Client
+	scheduler    *scheduler.Scheduler
 	token        string
 	version      string
 	srv          *http.Server
@@ -26,10 +28,11 @@ type Server struct {
 	backupActive func() bool
 }
 
-func New(reg *registry.Registry, rc *restic.Client, token, host string, port int, version string, logger *slog.Logger, backupActive func() bool) *Server {
+func New(reg *registry.Registry, rc *restic.Client, sched *scheduler.Scheduler, token, host string, port int, version string, logger *slog.Logger, backupActive func() bool) *Server {
 	s := &Server{
 		reg:          reg,
 		restic:       rc,
+		scheduler:    sched,
 		token:        token,
 		version:      version,
 		logger:       logger,
@@ -38,6 +41,7 @@ func New(reg *registry.Registry, rc *restic.Client, token, host string, port int
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
+	mux.HandleFunc("GET /api/v1/scheduled", s.handleListScheduled)
 	mux.HandleFunc("GET /api/v1/repos", s.handleListRepos)
 	mux.HandleFunc("POST /api/v1/repos/check", s.handleReposCheck)
 	mux.HandleFunc("POST /api/v1/repos/stats", s.handleReposStats)
@@ -100,6 +104,14 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"status":  "ok",
 		"version": s.version,
 	})
+}
+
+func (s *Server) handleListScheduled(w http.ResponseWriter, r *http.Request) {
+	if s.scheduler == nil {
+		writeJSON(w, http.StatusOK, []client.ScheduledEntry{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.scheduler.ListScheduled())
 }
 
 func (s *Server) handleListRepos(w http.ResponseWriter, r *http.Request) {

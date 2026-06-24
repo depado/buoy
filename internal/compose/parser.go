@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,7 +45,7 @@ type composeService struct {
 	Volumes []any `yaml:"volumes"`
 }
 
-func Discover(dir string, maxDepth int, patterns []string) ([]StackInfo, error) {
+func Discover(dir string, maxDepth int, patterns []string, resolveEnv bool) ([]StackInfo, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve directory: %w", err)
@@ -88,7 +89,12 @@ func Discover(dir string, maxDepth int, patterns []string) ([]StackInfo, error) 
 			return nil
 		}
 
-		services, perr := parseCompose(composePath, data)
+		var env map[string]string
+		if resolveEnv {
+			env = buildEnv(filepath.Dir(composePath))
+		}
+
+		services, perr := parseCompose(composePath, data, env)
 		if perr != nil {
 			fmt.Fprintf(os.Stderr, "warning: %s: %v\n", composePath, perr)
 			return nil
@@ -125,7 +131,39 @@ func findComposeFile(dir string, patterns []string) (string, error) {
 	return "", fmt.Errorf("no compose file found in %s (patterns: %s)", dir, strings.Join(patterns, ", "))
 }
 
-func parseCompose(path string, data []byte) ([]ServiceInfo, error) {
+func buildEnv(dir string) map[string]string {
+	env := loadDotEnv(dir)
+	for _, kv := range os.Environ() {
+		k, v, _ := strings.Cut(kv, "=")
+		env[k] = v
+	}
+	return env
+}
+
+func loadDotEnv(dir string) map[string]string {
+	env := make(map[string]string)
+	f, err := os.Open(filepath.Join(dir, ".env"))
+	if err != nil {
+		return env
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		env[strings.TrimSpace(k)] = strings.TrimSpace(v)
+	}
+	return env
+}
+
+func parseCompose(path string, data []byte, env map[string]string) ([]ServiceInfo, error) {
 	var cf composeFile
 	if err := yaml.Unmarshal(data, &cf); err != nil {
 		return nil, fmt.Errorf("invalid compose YAML: %w", err)
@@ -140,7 +178,7 @@ func parseCompose(path string, data []byte) ([]ServiceInfo, error) {
 			Labels: normalizeLabels(svc.Labels),
 		}
 		for _, vol := range svc.Volumes {
-			entry, ok := parseVolumeEntry(svcName, vol, baseDir)
+			entry, ok := parseVolumeEntry(svcName, vol, baseDir, env)
 			if ok {
 				si.Volumes = append(si.Volumes, entry)
 			}
@@ -151,18 +189,18 @@ func parseCompose(path string, data []byte) ([]ServiceInfo, error) {
 	return services, nil
 }
 
-func parseVolumeEntry(svcName string, vol any, baseDir string) (VolumeEntry, bool) {
+func parseVolumeEntry(svcName string, vol any, baseDir string, env map[string]string) (VolumeEntry, bool) {
 	switch v := vol.(type) {
 	case string:
-		return parseShortSyntax(svcName, v, baseDir)
+		return parseShortSyntax(svcName, v, baseDir, env)
 	case map[string]any:
-		return parseLongSyntax(svcName, v, baseDir)
+		return parseLongSyntax(svcName, v, baseDir, env)
 	default:
 		return VolumeEntry{}, false
 	}
 }
 
-func parseShortSyntax(svcName, spec string, baseDir string) (VolumeEntry, bool) {
+func parseShortSyntax(svcName, spec string, baseDir string, env map[string]string) (VolumeEntry, bool) {
 	parts := splitVolumeSpec(spec)
 	if len(parts) < 2 {
 		return VolumeEntry{}, false
@@ -180,11 +218,11 @@ func parseShortSyntax(svcName, spec string, baseDir string) (VolumeEntry, bool) 
 		}
 	}
 
-	volType, resolved := classifySource(source, baseDir)
+	volType, resolved := classifySource(source, baseDir, env)
 	return makeVolumeEntry(svcName, volType, source, resolved, target, mode), true
 }
 
-func parseLongSyntax(svcName string, m map[string]any, baseDir string) (VolumeEntry, bool) {
+func parseLongSyntax(svcName string, m map[string]any, baseDir string, env map[string]string) (VolumeEntry, bool) {
 	volType, _ := m["type"].(string)
 	source, _ := m["source"].(string)
 	target, _ := m["target"].(string)
@@ -200,7 +238,7 @@ func parseLongSyntax(svcName string, m map[string]any, baseDir string) (VolumeEn
 
 	resolved := source
 	if volType == "bind" {
-		resolved = resolvePath(resolveVars(source), baseDir)
+		resolved = resolvePath(resolveVars(source, env), baseDir)
 	}
 
 	return makeVolumeEntry(svcName, volType, source, resolved, target, mode), true
@@ -222,17 +260,30 @@ func makeVolumeEntry(svcName, volType, source, resolved, target, mode string) Vo
 
 var varPattern = regexp.MustCompile(`\$\{(\w+)(?::[?+-]([^}]*))?\}`)
 
-func classifySource(source, baseDir string) (volType, resolved string) {
+func classifySource(source, baseDir string, env map[string]string) (volType, resolved string) {
 	if strings.HasPrefix(source, "/") || strings.HasPrefix(source, ".") || strings.ContainsRune(source, '/') || strings.ContainsRune(source, '$') {
-		return "bind", resolvePath(resolveVars(source), baseDir)
+		return "bind", resolvePath(resolveVars(source, env), baseDir)
 	}
 	return "volume", source
 }
 
-func resolveVars(s string) string {
+func resolveVars(s string, env map[string]string) string {
+	if env == nil {
+		return s
+	}
 	return varPattern.ReplaceAllStringFunc(s, func(m string) string {
 		parts := varPattern.FindStringSubmatch(m)
-		if len(parts) == 3 && parts[2] != "" {
+		if len(parts) != 3 {
+			return m
+		}
+		name := parts[1]
+		if val, ok := env[name]; ok {
+			return val
+		}
+		if val, ok := os.LookupEnv(name); ok {
+			return val
+		}
+		if strings.Contains(m, ":-") || strings.Contains(m, ":?") || strings.Contains(m, ":+") {
 			return parts[2]
 		}
 		return m
