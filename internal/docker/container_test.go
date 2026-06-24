@@ -359,7 +359,8 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				BackupExclude: []string{"*.log", "*.tmp"},
 				StopTimeout:   30 * time.Second,
-				Retention:     types.RetentionPolicy{},				MountOpts:     make(map[string]MountBackupOpts),
+				Retention:     types.RetentionPolicy{},
+				MountOpts:     make(map[string]MountBackupOpts),
 			},
 		},
 		{

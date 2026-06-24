@@ -44,7 +44,7 @@ func InitConfig(cmd *cobra.Command) error {
 				_ = sv.Replace(viper.GetStringSlice(f.Name))
 			} else {
 				val := viper.Get(f.Name)
-				cmd.Flags().Set(f.Name, fmt.Sprintf("%v", val))
+				_ = cmd.Flags().Set(f.Name, fmt.Sprintf("%v", val))
 			}
 		}
 	})

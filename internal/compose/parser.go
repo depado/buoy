@@ -142,7 +142,7 @@ func buildEnv(dir string) map[string]string {
 
 func loadDotEnv(dir string) map[string]string {
 	env := make(map[string]string)
-	f, err := os.Open(filepath.Join(dir, ".env"))
+	f, err := os.Open(filepath.Join(dir, ".env")) //nolint:gosec
 	if err != nil {
 		return env
 	}
