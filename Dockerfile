@@ -2,7 +2,7 @@ FROM golang:1.26.4-alpine@sha256:3ad57304ad93bbec8548a0437ad9e06a455660655d9af01
 
 RUN apk add --no-cache make git
 
-ARG RESTIC_VERSION=0.19.0
+ARG RESTIC_VERSION=0.19.1
 ARG TARGETARCH
 RUN wget -q "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_${TARGETARCH}.bz2" && \
     bunzip2 "restic_${RESTIC_VERSION}_linux_${TARGETARCH}.bz2" && \
