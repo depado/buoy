@@ -5,10 +5,13 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/depado/buoy/internal/config"
 	"github.com/depado/buoy/internal/version"
 )
+
+var conf config.Conf
 
 func main() {
 	root := &cobra.Command{
@@ -18,7 +21,11 @@ func main() {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			return config.InitConfig(cmd)
+			v := viper.New()
+			if err := config.InitConfig(cmd, v); err != nil {
+				return err
+			}
+			return v.Unmarshal(&conf)
 		},
 	}
 

@@ -13,7 +13,6 @@ import (
 	"github.com/depado/gorich/table"
 	"github.com/depado/gorich/table/box"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/depado/buoy/client"
 )
@@ -309,8 +308,8 @@ func requireTarget(cmd *cobra.Command) error {
 
 func clientAPI() *client.Client {
 	return client.NewClient(
-		viper.GetString("api.url"),
-		viper.GetString("api.token"),
+		v.GetString("api.url"),
+		v.GetString("api.token"),
 	)
 }
 

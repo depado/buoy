@@ -11,6 +11,8 @@ import (
 	"github.com/depado/buoy/internal/version"
 )
 
+var v *viper.Viper
+
 func main() {
 	root := &cobra.Command{
 		Use:               "buoyctl",
@@ -24,9 +26,6 @@ func main() {
 	root.PersistentFlags().String("api.url", "http://127.0.0.1:8080", "buoy API URL (env: BUOY_URL, BUOY_API_URL)")
 	root.PersistentFlags().String("api.token", "", "buoy API bearer token (env: BUOY_TOKEN, BUOY_API_TOKEN)")
 	root.PersistentFlags().StringP("conf", "c", "", "configuration file to use")
-
-	_ = viper.BindEnv("api.url", "BUOY_URL")
-	_ = viper.BindEnv("api.token", "BUOY_TOKEN")
 
 	setupRepoCommands()
 	root.AddCommand(repoCmd)
@@ -47,5 +46,8 @@ func initBuoyctl(cmd *cobra.Command, args []string) error {
 	if cmd.Name() == "version" {
 		return nil
 	}
-	return config.InitConfig(cmd)
+	v = viper.New()
+	_ = v.BindEnv("api.url", "BUOY_URL")
+	_ = v.BindEnv("api.token", "BUOY_TOKEN")
+	return config.InitConfig(cmd, v)
 }

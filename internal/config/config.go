@@ -110,9 +110,9 @@ func NewLogger(c *Conf) *slog.Logger {
 	return slog.New(handler)
 }
 
-func NewConf() (*Conf, error) {
+func NewConf(v *viper.Viper) (*Conf, error) {
 	conf := &Conf{}
-	if err := viper.Unmarshal(conf); err != nil {
+	if err := v.Unmarshal(conf); err != nil {
 		return conf, fmt.Errorf("unable to unmarshal conf: %w", err)
 	}
 	return conf, nil
