@@ -7,11 +7,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/depado/buoy">GitHub</a> ·
-  <a href="https://github.com/depado/buoy/releases">Releases</a>
-</p>
-
-<p align="center">
   <a href="https://github.com/depado/buoy/actions"><img src="https://shieldcn.dev/github/ci/depado/buoy.svg?variant=branded" alt="CI" /></a>
   <a href="https://github.com/depado/buoy/releases"><img src="https://shieldcn.dev/github/release/depado/buoy.svg?variant=branded" alt="Release" /></a>
   <a href="https://github.com/depado/buoy/blob/main/LICENSE"><img src="https://shieldcn.dev/github/license/depado/buoy.svg?variant=branded" alt="License" /></a>
