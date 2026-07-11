@@ -3,7 +3,7 @@ module github.com/depado/buoy
 go 1.26.1
 
 require (
-	github.com/depado/gorich v1.0.4
+	github.com/depado/gorich v1.0.5
 	github.com/lmittmann/tint v1.1.3
 	github.com/mattn/go-isatty v0.0.22
 	github.com/moby/moby/api v1.55.0
@@ -51,7 +51,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/net v0.56.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/term v0.44.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/text v0.39.0 // indirect
 )
