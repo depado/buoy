@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -9,7 +8,6 @@ import (
 
 	"github.com/lmittmann/tint"
 	"github.com/mattn/go-isatty"
-	"github.com/spf13/viper"
 )
 
 type LogConf struct {
@@ -103,12 +101,4 @@ func NewLogger(c *Conf) *slog.Logger {
 	}
 
 	return slog.New(handler)
-}
-
-func NewConf(v *viper.Viper) (*Conf, error) {
-	conf := &Conf{}
-	if err := v.Unmarshal(conf); err != nil {
-		return conf, fmt.Errorf("unable to unmarshal conf: %w", err)
-	}
-	return conf, nil
 }

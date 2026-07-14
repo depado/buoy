@@ -5,41 +5,6 @@ import (
 	"testing"
 )
 
-func TestParseSnapshots(t *testing.T) {
-	input := `[{"id":"abc","short_id":"abc123","time":"2026-01-01T00:00:00Z"}]`
-	snapshots, err := ParseSnapshots(strings.NewReader(input))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(snapshots) != 1 {
-		t.Fatalf("expected 1 snapshot, got %d", len(snapshots))
-	}
-	if snapshots[0].ID != "abc" {
-		t.Errorf("expected ID 'abc', got %q", snapshots[0].ID)
-	}
-	if snapshots[0].ShortID != "abc123" {
-		t.Errorf("expected ShortID 'abc123', got %q", snapshots[0].ShortID)
-	}
-}
-
-func TestParseSnapshots_Empty(t *testing.T) {
-	input := `[]`
-	snapshots, err := ParseSnapshots(strings.NewReader(input))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(snapshots) != 0 {
-		t.Errorf("expected 0 snapshots, got %d", len(snapshots))
-	}
-}
-
-func TestParseSnapshots_InvalidJSON(t *testing.T) {
-	_, err := ParseSnapshots(strings.NewReader("not json"))
-	if err == nil {
-		t.Error("expected error for invalid JSON")
-	}
-}
-
 func TestParseStats(t *testing.T) {
 	input := `{"total_size":1024,"total_file_count":10,"snapshots_count":3}`
 	stats, err := ParseStats(strings.NewReader(input))

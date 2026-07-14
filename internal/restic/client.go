@@ -222,23 +222,6 @@ func (c *Client) CheckReadData(ctx context.Context, repo string) error {
 	return c.runSimple(ctx, "check", "check", "--read-data", "-r", repo)
 }
 
-// Snapshots lists all snapshots in the repository.
-func (c *Client) Snapshots(ctx context.Context, repo string) ([]Snapshot, error) {
-	var buf bytes.Buffer
-	var stderr bytes.Buffer
-	cmd, cleanup, err := c.command(ctx, "snapshots", "-r", repo, "--json")
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-	cmd.Stdout = &buf
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("restic snapshots: %w\n%s", err, stderr.String())
-	}
-	return ParseSnapshots(&buf)
-}
-
 // Stats returns statistics for the repository.
 // Runs both restore-size and raw-data modes to collect all available fields.
 // TotalSize and compression fields come from raw-data mode (actual repo data).
@@ -278,11 +261,6 @@ func (c *Client) statsMode(ctx context.Context, repo string, extraArgs ...string
 		return nil, fmt.Errorf("restic stats: %w\n%s", err, stderr.String())
 	}
 	return ParseStats(&buf)
-}
-
-// Restore restores a snapshot to the given target path.
-func (c *Client) Restore(ctx context.Context, repo, snapshotID, targetPath string) error {
-	return c.runSimple(ctx, "restore", "restore", snapshotID, "-r", repo, "--target", targetPath)
 }
 
 func (c *Client) runSimple(ctx context.Context, op string, args ...string) error {

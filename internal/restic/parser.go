@@ -58,15 +58,6 @@ func ParseBackupStream(stdout io.Reader, onStatus func(BackupStatus), onError fu
 	return summary, exitErr, nil
 }
 
-// ParseSnapshots decodes the JSON array output from "restic snapshots --json".
-func ParseSnapshots(r io.Reader) ([]Snapshot, error) {
-	var snapshots []Snapshot
-	if err := json.NewDecoder(r).Decode(&snapshots); err != nil {
-		return nil, fmt.Errorf("parse snapshots: %w", err)
-	}
-	return snapshots, nil
-}
-
 // ParseStats decodes the JSON output from "restic stats --json".
 // restic writes a human-readable progress line before the JSON object,
 // so we scan for the line starting with '{'.

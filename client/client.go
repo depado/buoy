@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"time"
 )
 
@@ -23,13 +22,6 @@ func NewClient(baseURL, token string) *Client {
 		Token:   token,
 		client:  &http.Client{Timeout: defaultTimeout},
 	}
-}
-
-func DefaultClient() *Client {
-	return NewClient(
-		envOrDefault("BUOY_URL", "http://127.0.0.1:8080"),
-		os.Getenv("BUOY_TOKEN"),
-	)
 }
 
 func (c *Client) doRequest(method, path string) (*http.Response, error) {
@@ -145,13 +137,6 @@ func decodeJSON[T any](resp *http.Response) (T, error) {
 		return v, fmt.Errorf("decode response: %w", err)
 	}
 	return v, nil
-}
-
-func envOrDefault(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
 }
 
 func listQuery(repo string, orphaned bool) string {
