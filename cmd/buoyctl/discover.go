@@ -116,7 +116,7 @@ host paths and YAML sections.`,
 			}
 
 			c.Render(tbl)
-			c.Print()
+			c.Println()
 		}
 
 		if len(volumeless) > 0 {
@@ -142,7 +142,7 @@ host paths and YAML sections.`,
 		}
 
 		fmt.Println()
-		gorich.Printf("[bold]Add to buoy's compose service volumes:[/]\n")
+		gorich.Println("[bold]Add to buoy's compose service volumes:[/]")
 		fmt.Println("volumes:")
 		paths := sortedKeys(bindMounts)
 		for _, src := range paths {

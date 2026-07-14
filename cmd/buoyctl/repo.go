@@ -1,14 +1,13 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/depado/gorich"
-	"github.com/depado/gorich/progress"
+	"github.com/depado/gorich/live"
 	"github.com/depado/gorich/style"
 	"github.com/depado/gorich/table"
 	"github.com/depado/gorich/table/box"
@@ -322,11 +321,9 @@ func withSpinner[T any](cmd *cobra.Command, text string, fn func() (T, error)) (
 	if asJSON(cmd) {
 		return fn()
 	}
-	p := newSpinner()
-	p.Start(context.Background())
-	p.AddTask("[bold]"+text+"[/]", nil)
+	s := live.StartSpinner("[bold]" + text + "[/]")
 	result, err := fn()
-	p.Stop()
+	s.Stop()
 	return result, err
 }
 
@@ -364,14 +361,4 @@ func printJSON(v any) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
-}
-
-func newSpinner() *progress.Progress {
-	return progress.New(
-		progress.WithColumns(
-			progress.NewSpinnerColumn(),
-			progress.DescriptionColumn(),
-		),
-		progress.WithTransient(true),
-	)
 }
