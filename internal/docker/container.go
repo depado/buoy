@@ -153,9 +153,9 @@ func parseIncludeEntries(raw string) []MountEntry {
 
 	for _, p := range parts {
 		name, key := "", p
-		if idx := strings.IndexByte(p, '='); idx >= 0 {
-			name = strings.TrimSpace(p[:idx])
-			key = strings.TrimSpace(p[idx+1:])
+		if before, after, ok := strings.Cut(p, "="); ok {
+			name = strings.TrimSpace(before)
+			key = strings.TrimSpace(after)
 		}
 		if key == "" {
 			continue
@@ -179,11 +179,10 @@ func parseBackupMountOpts(labels map[string]string, opts map[string]MountBackupO
 			continue
 		}
 		rest := k[len(prefix):]
-		dot := strings.IndexByte(rest, '.')
-		if dot < 0 {
+		name, option, ok := strings.Cut(rest, ".")
+		if !ok {
 			continue
 		}
-		name, option := rest[:dot], rest[dot+1:]
 		if name == "" || option == "" {
 			continue
 		}

@@ -6,37 +6,6 @@ import (
 	"github.com/depado/buoy/internal/docker"
 )
 
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}
-
-func TestContains(t *testing.T) {
-	tests := []struct {
-		name  string
-		slice []string
-		item  string
-		want  bool
-	}{
-		{"empty slice", nil, "foo", false},
-		{"item present", []string{"a", "b", "c"}, "b", true},
-		{"item absent", []string{"a", "b", "c"}, "d", false},
-		{"single element match", []string{"x"}, "x", true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := contains(tt.slice, tt.item)
-			if got != tt.want {
-				t.Errorf("got %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestMapKeys(t *testing.T) {
 	tests := []struct {
 		name string

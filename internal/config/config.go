@@ -97,12 +97,7 @@ func NewLogger(c *Conf) *slog.Logger {
 		default:
 			noColor = !isatty.IsTerminal(os.Stderr.Fd())
 		}
-		handler = tint.NewHandler(os.Stderr, &tint.Options{
-			Level:      level,
-			AddSource:  c.Log.Source,
-			TimeFormat: time.DateTime,
-			NoColor:    noColor,
-		})
+		handler = tint.NewTextHandler(os.Stderr, &tint.Options{Level: level, AddSource: c.Log.Source, TimeFormat: time.DateTime, NoColor: noColor})
 	default:
 		handler = slog.NewJSONHandler(os.Stderr, opts)
 	}

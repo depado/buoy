@@ -336,11 +336,11 @@ type cronLogger struct {
 	*slog.Logger
 }
 
-func (l cronLogger) Info(msg string, keysAndValues ...interface{}) {
+func (l cronLogger) Info(msg string, keysAndValues ...any) {
 	l.Debug(msg, keysAndValues...)
 }
 
-func (l cronLogger) Error(err error, msg string, keysAndValues ...interface{}) {
+func (l cronLogger) Error(err error, msg string, keysAndValues ...any) {
 	args := append([]any{"error", err}, keysAndValues...)
 	l.Logger.Error(msg, args...)
 }

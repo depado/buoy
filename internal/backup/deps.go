@@ -47,7 +47,7 @@ func serviceDeps(ctrs []*docker.Container) map[string][]depInfo {
 		if label == "" {
 			continue
 		}
-		for _, part := range strings.Split(label, ",") {
+		for part := range strings.SplitSeq(label, ",") {
 			part = strings.TrimSpace(part)
 			parts := strings.SplitN(part, ":", 3)
 			if len(parts) == 0 || parts[0] == "" {
