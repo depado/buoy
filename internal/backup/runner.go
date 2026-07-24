@@ -434,6 +434,9 @@ type mountError struct {
 }
 
 func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, repos []string, logger *slog.Logger) error {
+	if cfg.Password != "" {
+		ctx = restic.WithPassword(ctx, cfg.Password)
+	}
 	mountCount := 0
 	var failures []mountError
 
@@ -590,6 +593,9 @@ func summarizeFailures(failures []mountError, mountCount, repoCount int) error {
 }
 
 func (r *Runner) applyRetention(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, repos []string, logger *slog.Logger) []string {
+	if cfg.Password != "" {
+		ctx = restic.WithPassword(ctx, cfg.Password)
+	}
 	logger.Debug("applying retention", "policy", cfg.Retention, "repos", len(repos))
 	policy := cfg.Retention
 

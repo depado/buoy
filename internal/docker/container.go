@@ -69,6 +69,7 @@ type BackupConfig struct {
 	Schedule      string
 	ReposOverride []string
 	Retention     types.RetentionPolicy
+	Password      string
 
 	StopBefore  bool
 	StopTimeout time.Duration
@@ -124,6 +125,7 @@ func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetenti
 	cfg.Enabled = getBool(labels, "buoy.enabled", false)
 	cfg.Schedule = getString(labels, "buoy.schedule", defaultSchedule)
 	cfg.ReposOverride = getSlice(labels, "buoy.repos")
+	cfg.Password = getString(labels, "buoy.password", "")
 	cfg.StopBefore = getBool(labels, "buoy.stop-before", false)
 	cfg.StopTimeout = getDuration(labels, "buoy.stop-timeout", 30*time.Second)
 

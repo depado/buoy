@@ -146,6 +146,7 @@ See [Examples](#examples) for more advanced setups with hooks, file patterns, an
 | `buoy.enabled`            | -                          | Set to `"true"` to enable backup (required)                                                                                                                                  |
 | `buoy.schedule`           | Global `default_schedule`  | Cron expression. Falls back to global default. Containers sharing the same schedule in a compose stack are batched together.                                                 |
 | `buoy.repos`              | Global `repos`             | Comma-separated repo URLs, overrides the global list                                                                                                                         |
+| `buoy.password`           | Global `restic.password`   | Restic repository password for this container. Overrides the global password so each stack or container can use its own.                                                      |
 | `buoy.retention`          | Global `default_retention` | Retention rules (see below). Falls back to global default.                                                                                                                   |
 | `buoy.stop-before`        | `"false"`                  | Stop the container before backing up. Defaults to `false` - opt-in to container stops.                                                                                       |
 | `buoy.stop-timeout`       | `"30s"`                    | Timeout for container stop                                                                                                                                                   |
@@ -475,9 +476,21 @@ notify:
 
 ### Password
 
-buoy requires a restic repository password to start. Set it via config, env var, or CLI flag.
-The password is global — all per-container repos use the same one. buoy passes it to restic
-via a temporary `--password-file` rather than the `RESTIC_PASSWORD` environment variable.
+buoy requires a restic repository password to start. Set it via config, env var,
+or CLI flag. buoy passes it to restic via a temporary `--password-file` rather
+than the `RESTIC_PASSWORD` environment variable.
+
+To use different passwords per container or stack, set the `buoy.password` label
+on individual services. If the label is absent, the global `restic.password` is
+used.
+
+```yaml
+services:
+  app:
+    labels:
+      buoy.enabled: "true"
+      buoy.password: "${APP_RESTIC_PASSWORD}"
+```
 
 ### Notifications
 

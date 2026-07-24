@@ -32,6 +32,21 @@ func New(binPath, password, compression string) *Client {
 	}
 }
 
+type passwordCtxKey struct{}
+
+// WithPassword returns a context that carries a password override for a single
+// restic invocation. When set, it replaces the client's default password.
+func WithPassword(ctx context.Context, password string) context.Context {
+	return context.WithValue(ctx, passwordCtxKey{}, password)
+}
+
+func passwordFromCtx(ctx context.Context, fallback string) string {
+	if pw, ok := ctx.Value(passwordCtxKey{}).(string); ok && pw != "" {
+		return pw
+	}
+	return fallback
+}
+
 // Init initializes a new restic repository at the given location.
 func (c *Client) Init(ctx context.Context, repo string) error {
 	return c.runSimple(ctx, "init", "init", "-r", repo)
@@ -283,7 +298,7 @@ func (c *Client) command(ctx context.Context, args ...string) (*exec.Cmd, func()
 	if err != nil {
 		return nil, nil, fmt.Errorf("create password temp file: %w", err)
 	}
-	if _, err := f.WriteString(c.password); err != nil {
+	if _, err := f.WriteString(passwordFromCtx(ctx, c.password)); err != nil {
 		f.Close()           //nolint:errcheck
 		os.Remove(f.Name()) //nolint:errcheck
 		return nil, nil, fmt.Errorf("write password temp file: %w", err)
