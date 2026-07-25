@@ -48,7 +48,7 @@ func New(urls []string, level Level, logger *slog.Logger) (*Notifier, error) {
 		return disabledNotifier, nil
 	}
 
-	sender, err := shoutrrr.CreateSender(urls...)
+	sender, err := shoutrrr.CreateSenderWithOptions(types.SenderOptions{}, urls...)
 	if err != nil {
 		return nil, fmt.Errorf("create shoutrrr sender: %w", err)
 	}
