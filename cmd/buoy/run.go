@@ -34,17 +34,12 @@ var RunCmd = &cobra.Command{
 		slog.SetDefault(logger)
 		logger.Info("starting buoy daemon", "version", version.Version)
 
-		if conf.Restic.Password == "" {
-			return fmt.Errorf("restic.password is required")
-		}
-		if len(conf.Restic.Repos) == 0 {
-			return fmt.Errorf("restic.repos is required")
-		}
+		repoRefs, repoLogList := config.ToRepoRefs(conf.Restic.Repos)
 
 		logger.Info("configuration",
 			"concurrency", conf.Daemon.Concurrency,
 			"binary", conf.Restic.BinaryPath,
-			"repos", conf.Restic.Repos,
+			"repos", repoLogList,
 			"compression", conf.Restic.Compression,
 			"default_schedule", conf.Daemon.DefaultSchedule,
 			"default_retention", conf.Daemon.DefaultRetention,
@@ -54,7 +49,7 @@ var RunCmd = &cobra.Command{
 			"db_path", conf.Daemon.DBPath,
 		)
 
-		reg, err := registry.Open(conf.Daemon.DBPath, conf.Restic.Repos)
+		reg, err := registry.Open(conf.Daemon.DBPath, repoRefs)
 		if err != nil {
 			return fmt.Errorf("open registry: %w", err)
 		}
@@ -86,6 +81,7 @@ var RunCmd = &cobra.Command{
 			Restic:            resticClient,
 			Hook:              hookExec,
 			Registry:          reg,
+			ResticConf:        &conf.Restic,
 			DefaultSchedule:   conf.Daemon.DefaultSchedule,
 			DefaultRetention:  conf.Daemon.DefaultRetention,
 			IgnoredIDs:        ignoredIDs,
@@ -108,7 +104,7 @@ var RunCmd = &cobra.Command{
 
 		var apiSrv *api.Server
 		if conf.API.Enabled {
-			apiSrv = api.New(reg, resticClient, sched, conf.API.Token, conf.API.Host, conf.API.Port, version.Version, logger, sched.Running)
+			apiSrv = api.New(reg, resticClient, sched, &conf.Restic, conf.API.Token, conf.API.Host, conf.API.Port, version.Version, logger, sched.Running)
 			go func() {
 				if err := apiSrv.Start(); err != nil && err != http.ErrServerClosed {
 					logger.Error("api server error", "error", err)
@@ -185,7 +181,7 @@ var RunCmd = &cobra.Command{
 				sched.Resync(ctx)
 			case sig := <-sigs:
 				if sched.Running() {
-					logger.Warn("received signal, backup in progress — waiting for completion", "signal", sig)
+					logger.Warn("received signal, backup in progress - waiting for completion", "signal", sig)
 				} else {
 					logger.Info("received signal, shutting down", "signal", sig)
 				}

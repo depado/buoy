@@ -10,6 +10,14 @@ import (
 
 const defaultTimeout = 5 * time.Minute
 
+type OrphanedFilter string
+
+const (
+	AllRepos    OrphanedFilter = ""
+	Orphaned    OrphanedFilter = "true"
+	NonOrphaned OrphanedFilter = "false"
+)
+
 type Client struct {
 	BaseURL string
 	Token   string
@@ -41,8 +49,11 @@ func (c *Client) doRequest(method, path string) (*http.Response, error) {
 	return resp, nil
 }
 
-func (c *Client) ListRepos(repo string, orphaned bool) ([]RepoEntry, error) {
-	path := "/api/v1/repos" + listQuery(repo, orphaned)
+func (c *Client) ListRepos(repo string, orphaned OrphanedFilter) ([]RepoEntry, error) {
+	params := make(url.Values)
+	addQuery(params, repo, orphaned)
+	path := "/api/v1/repos" + queryString(params)
+
 	resp, err := c.doRequest("GET", path)
 	if err != nil {
 		return nil, err
@@ -60,19 +71,14 @@ func (c *Client) ListScheduled() ([]ScheduledEntry, error) {
 	return decodeJSON[[]ScheduledEntry](resp)
 }
 
-func (c *Client) CheckRepos(repo string, readData bool, orphaned bool) ([]Result, error) {
+func (c *Client) CheckRepos(repo string, readData bool, orphaned OrphanedFilter) ([]Result, error) {
 	params := make(url.Values)
-	appendRepoParam(params, repo)
+	addQuery(params, repo, orphaned)
 	if readData {
 		params.Set("read-data", "true")
 	}
-	if orphaned {
-		params.Set("orphaned", "true")
-	}
-	path := "/api/v1/repos/check"
-	if q := params.Encode(); q != "" {
-		path += "?" + q
-	}
+	path := "/api/v1/repos/check" + queryString(params)
+
 	resp, err := c.doRequest("POST", path)
 	if err != nil {
 		return nil, err
@@ -81,8 +87,11 @@ func (c *Client) CheckRepos(repo string, readData bool, orphaned bool) ([]Result
 	return decodeJSON[[]Result](resp)
 }
 
-func (c *Client) StatsRepos(repo string, orphaned bool) (*StatsResponse, error) {
-	path := "/api/v1/repos/stats" + listQuery(repo, orphaned)
+func (c *Client) StatsRepos(repo string, orphaned OrphanedFilter) (*StatsResponse, error) {
+	params := make(url.Values)
+	addQuery(params, repo, orphaned)
+	path := "/api/v1/repos/stats" + queryString(params)
+
 	resp, err := c.doRequest("POST", path)
 	if err != nil {
 		return nil, err
@@ -95,8 +104,11 @@ func (c *Client) StatsRepos(repo string, orphaned bool) (*StatsResponse, error) 
 	return &stats, nil
 }
 
-func (c *Client) UnlockRepos(repo string, orphaned bool) ([]Result, error) {
-	path := "/api/v1/repos/unlock" + listQuery(repo, orphaned)
+func (c *Client) UnlockRepos(repo string, orphaned OrphanedFilter) ([]Result, error) {
+	params := make(url.Values)
+	addQuery(params, repo, orphaned)
+	path := "/api/v1/repos/unlock" + queryString(params)
+
 	resp, err := c.doRequest("POST", path)
 	if err != nil {
 		return nil, err
@@ -105,14 +117,12 @@ func (c *Client) UnlockRepos(repo string, orphaned bool) ([]Result, error) {
 	return decodeJSON[[]Result](resp)
 }
 
-func (c *Client) ForgetRepos(repo string, retention string, orphaned bool) ([]Result, error) {
-	params := url.Values{}
+func (c *Client) ForgetRepos(repo string, retention string, orphaned OrphanedFilter) ([]Result, error) {
+	params := make(url.Values)
 	params.Set("retention", retention)
-	appendRepoParam(params, repo)
-	if orphaned {
-		params.Set("orphaned", "true")
-	}
-	path := "/api/v1/repos/forget?" + params.Encode()
+	addQuery(params, repo, orphaned)
+	path := "/api/v1/repos/forget" + queryString(params)
+
 	resp, err := c.doRequest("POST", path)
 	if err != nil {
 		return nil, err
@@ -121,8 +131,11 @@ func (c *Client) ForgetRepos(repo string, retention string, orphaned bool) ([]Re
 	return decodeJSON[[]Result](resp)
 }
 
-func (c *Client) PruneRepos(repo string, orphaned bool) ([]Result, error) {
-	path := "/api/v1/repos/prune" + listQuery(repo, orphaned)
+func (c *Client) PruneRepos(repo string, orphaned OrphanedFilter) ([]Result, error) {
+	params := make(url.Values)
+	addQuery(params, repo, orphaned)
+	path := "/api/v1/repos/prune" + queryString(params)
+
 	resp, err := c.doRequest("POST", path)
 	if err != nil {
 		return nil, err
@@ -139,22 +152,18 @@ func decodeJSON[T any](resp *http.Response) (T, error) {
 	return v, nil
 }
 
-func listQuery(repo string, orphaned bool) string {
-	params := make(url.Values)
-	appendRepoParam(params, repo)
-	if orphaned {
-		params.Set("orphaned", "true")
-	} else {
-		params.Set("orphaned", "false")
+func addQuery(params url.Values, repo string, orphaned OrphanedFilter) {
+	if repo != "" {
+		params.Set("repo", repo)
 	}
+	if orphaned != "" {
+		params.Set("orphaned", string(orphaned))
+	}
+}
+
+func queryString(params url.Values) string {
 	if q := params.Encode(); q != "" {
 		return "?" + q
 	}
 	return ""
-}
-
-func appendRepoParam(params url.Values, repo string) {
-	if repo != "" {
-		params.Set("repo", repo)
-	}
 }

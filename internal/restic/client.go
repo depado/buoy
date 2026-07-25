@@ -248,7 +248,7 @@ func (c *Client) Stats(ctx context.Context, repo string) (*Stats, error) {
 	}
 	rawStats, rawErr := c.statsMode(ctx, repo, "--mode", "raw-data")
 	if rawErr != nil {
-		return restoreStats, nil //nolint:nilerr
+		return restoreStats, fmt.Errorf("raw-data stats: %w", rawErr)
 	}
 	restoreStats.TotalSize = rawStats.TotalSize
 	restoreStats.TotalBlobCount = rawStats.TotalBlobCount

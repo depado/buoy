@@ -186,7 +186,7 @@ func TestTopologicalSort_CycleWarning(t *testing.T) {
 	for _, node := range result {
 		for _, dep := range deps[node] {
 			if visited[dep] {
-				// dependency already seen — topological order is respected for non-cycle edges
+				// dependency already seen - topological order is respected for non-cycle edges
 				continue
 			}
 			// If dep is not visited yet, it must be due to cycle, skip

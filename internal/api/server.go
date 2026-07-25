@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/depado/buoy/client"
+	"github.com/depado/buoy/internal/config"
 	"github.com/depado/buoy/internal/registry"
 	"github.com/depado/buoy/internal/restic"
 	"github.com/depado/buoy/internal/scheduler"
@@ -21,6 +22,7 @@ type Server struct {
 	reg          *registry.Registry
 	restic       *restic.Client
 	scheduler    *scheduler.Scheduler
+	resticConf   *config.ResticConf
 	token        string
 	version      string
 	srv          *http.Server
@@ -28,11 +30,12 @@ type Server struct {
 	backupActive func() bool
 }
 
-func New(reg *registry.Registry, rc *restic.Client, sched *scheduler.Scheduler, token, host string, port int, version string, logger *slog.Logger, backupActive func() bool) *Server {
+func New(reg *registry.Registry, rc *restic.Client, sched *scheduler.Scheduler, resticConf *config.ResticConf, token, host string, port int, version string, logger *slog.Logger, backupActive func() bool) *Server {
 	s := &Server{
 		reg:          reg,
 		restic:       rc,
 		scheduler:    sched,
+		resticConf:   resticConf,
 		token:        token,
 		version:      version,
 		logger:       logger,
@@ -63,6 +66,13 @@ func New(reg *registry.Registry, rc *restic.Client, sched *scheduler.Scheduler, 
 func (s *Server) Start() error {
 	s.logger.Info("api server listening", "addr", s.srv.Addr)
 	return s.srv.ListenAndServe()
+}
+
+func (s *Server) passwordForRepo(entry registry.RepoEntry) string {
+	if entry.RepoName != "" {
+		return s.resticConf.PasswordFor(entry.RepoName)
+	}
+	return s.resticConf.PasswordForURL(entry.URL)
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
@@ -101,7 +111,7 @@ func withAuth(token string) func(http.Handler) http.Handler {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
-		"status":  "ok",
+		"message": "ok",
 		"version": s.version,
 	})
 }
@@ -138,18 +148,21 @@ func (s *Server) handleReposCheck(w http.ResponseWriter, r *http.Request) {
 
 	results := make([]client.Result, 0, len(entries))
 	for _, entry := range entries {
+		ctx := restic.WithPassword(r.Context(), s.passwordForRepo(entry))
 		var checkErr error
 		if readData {
-			checkErr = s.restic.CheckReadData(r.Context(), entry.URL)
+			checkErr = s.restic.CheckReadData(ctx, entry.URL)
 		} else {
-			checkErr = s.restic.Check(r.Context(), entry.URL)
+			checkErr = s.restic.Check(ctx, entry.URL)
 		}
 		result := client.Result{Repo: entry.URL, OK: checkErr == nil}
 		if checkErr != nil {
 			result.Error = checkErr.Error()
 		}
 		results = append(results, result)
-		_ = s.reg.MarkCheckComplete(entry.URL, checkErr == nil)
+		if err := s.reg.MarkCheckComplete(entry.URL, checkErr == nil); err != nil {
+			s.logger.Warn("failed to persist check status", "repo", entry.URL, "error", err)
+		}
 	}
 	writeJSON(w, http.StatusOK, results)
 }
@@ -168,7 +181,7 @@ func (s *Server) handleReposStats(w http.ResponseWriter, r *http.Request) {
 	var total restic.Stats
 	perRepo := make([]client.RepoStats, 0, len(entries))
 	for _, entry := range entries {
-		st, err := s.restic.Stats(r.Context(), entry.URL)
+		st, err := s.restic.Stats(restic.WithPassword(r.Context(), s.passwordForRepo(entry)), entry.URL)
 		if err != nil {
 			perRepo = append(perRepo, client.RepoStats{Repo: entry.URL, Error: err.Error()})
 			continue
@@ -220,7 +233,7 @@ func (s *Server) handleReposUnlock(w http.ResponseWriter, r *http.Request) {
 
 	results := make([]client.Result, 0, len(entries))
 	for _, entry := range entries {
-		err := s.restic.Unlock(r.Context(), entry.URL)
+		err := s.restic.Unlock(restic.WithPassword(r.Context(), s.passwordForRepo(entry)), entry.URL)
 		result := client.Result{Repo: entry.URL, OK: err == nil}
 		if err != nil {
 			result.Error = err.Error()
@@ -253,7 +266,7 @@ func (s *Server) handleReposForget(w http.ResponseWriter, r *http.Request) {
 
 	results := make([]client.Result, 0, len(entries))
 	for _, entry := range entries {
-		err := s.restic.Forget(r.Context(), entry.URL, policy, entry.ContainerName)
+		err := s.restic.Forget(restic.WithPassword(r.Context(), s.passwordForRepo(entry)), entry.URL, policy, entry.ContainerName)
 		result := client.Result{Repo: entry.URL, OK: err == nil}
 		if err != nil {
 			result.Error = err.Error()
@@ -279,7 +292,7 @@ func (s *Server) handleReposPrune(w http.ResponseWriter, r *http.Request) {
 
 	results := make([]client.Result, 0, len(entries))
 	for _, entry := range entries {
-		err := s.restic.Prune(r.Context(), entry.URL)
+		err := s.restic.Prune(restic.WithPassword(r.Context(), s.passwordForRepo(entry)), entry.URL)
 		result := client.Result{Repo: entry.URL, OK: err == nil}
 		if err != nil {
 			result.Error = err.Error()

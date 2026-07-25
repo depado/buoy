@@ -107,8 +107,8 @@ services:
       - /srv/data:/srv/data:ro # bind mounts you want backed up
       - buoy_data:/data # state persistence
     environment:
-      - BUOY_RESTIC_PASSWORD=your-secure-password
-      - BUOY_RESTIC_REPOS=/backup
+      - BUOY_RESTIC_REPO_LOCAL_URL=/backup
+      - BUOY_RESTIC_REPO_LOCAL_PASSWORD=your-secure-password
       - BUOY_DAEMON_CONCURRENCY=2
     restart: unless-stopped
 
@@ -145,8 +145,8 @@ See [Examples](#examples) for more advanced setups with hooks, file patterns, an
 | ------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `buoy.enabled`            | -                          | Set to `"true"` to enable backup (required)                                                                                                                                  |
 | `buoy.schedule`           | Global `default_schedule`  | Cron expression. Falls back to global default. Containers sharing the same schedule in a compose stack are batched together.                                                 |
-| `buoy.repos`              | Global `repos`             | Comma-separated repo URLs, overrides the global list                                                                                                                         |
-| `buoy.password`           | Global `restic.password`   | Restic repository password for this container. Overrides the global password so each stack or container can use its own.                                                      |
+| `buoy.repos`              | Global `repos`             | Comma-separated repo **names** to back up to. Overrides the global list.                                                                                                              |
+| `buoy.password`           | Global fallback            | Restic repository password for this container. Overrides any per-repo and global password.                                                                                           |
 | `buoy.retention`          | Global `default_retention` | Retention rules (see below). Falls back to global default.                                                                                                                   |
 | `buoy.stop-before`        | `"false"`                  | Stop the container before backing up. Defaults to `false` - opt-in to container stops.                                                                                       |
 | `buoy.stop-timeout`       | `"30s"`                    | Timeout for container stop                                                                                                                                                   |
@@ -185,6 +185,8 @@ Comma-separated `key:value` pairs. Supported keys:
 
 | Key            | Restic Flag              | Example           |
 | -------------- | ------------------------ | ----------------- |
+| `keep-last`    | `--keep-last N`          | `keep-last:10`    |
+| `keep-hourly`  | `--keep-hourly N`        | `keep-hourly:24`  |
 | `keep-daily`   | `--keep-daily N`         | `keep-daily:7`    |
 | `keep-weekly`  | `--keep-weekly N`        | `keep-weekly:4`   |
 | `keep-monthly` | `--keep-monthly N`       | `keep-monthly:6`  |
@@ -429,7 +431,8 @@ restic:
   password: ""
   compression: auto
   repos:
-    - /backup
+    local:
+      url: /backup
 
 api:
   enabled: true
@@ -461,9 +464,9 @@ notify:
 | `daemon.db_path`                 | `./buoy.db`                                                                              | `BUOY_DAEMON_DB_PATH` / `--daemon.db_path`                    |
 | `docker.host`                    | `unix:///var/run/docker.sock`                                                            | `BUOY_DOCKER_HOST` / `--docker.host`                          |
 | `restic.binary_path`             | `restic`                                                                                 | `BUOY_RESTIC_BINARY_PATH` / `--restic.binary_path`            |
-| `restic.password`                | *(required)*                                                                             | `BUOY_RESTIC_PASSWORD` / `--restic.password`                  |
+| `restic.password`                | *(optional)*                                                                                 | `BUOY_RESTIC_PASSWORD` / `--restic.password`                  |
 | `restic.compression`             | `auto`                                                                                   | `BUOY_RESTIC_COMPRESSION` / `--restic.compression`            |
-| `restic.repos`                   | *(none)*                                                                                 | `BUOY_RESTIC_REPOS` / `--restic.repos`                        |
+| `restic.repos`                   | *(none)*                                                                                 | See [Password](#password) for env var format.                 |
 | `api.enabled`                    | `true`                                                                                   | `BUOY_API_ENABLED` / `--api.enabled`                          |
 | `api.host`                       | `0.0.0.0`                                                                                | `BUOY_API_HOST` / `--api.host`                                |
 | `api.port`                       | `8080`                                                                                   | `BUOY_API_PORT` / `--api.port`                                |
@@ -476,13 +479,29 @@ notify:
 
 ### Password
 
-buoy requires a restic repository password to start. Set it via config, env var,
-or CLI flag. buoy passes it to restic via a temporary `--password-file` rather
-than the `RESTIC_PASSWORD` environment variable.
+buoy supports three password levels for maximum flexibility:
 
-To use different passwords per container or stack, set the `buoy.password` label
-on individual services. If the label is absent, the global `restic.password` is
-used.
+| Level | Source | Priority |
+|-------|--------|----------|
+| Global fallback | `restic.password` config / `BUOY_RESTIC_PASSWORD` env / `--restic.password` flag | Lowest — used when nothing else is set |
+| Per-repo | `password` field on each named repo | Middle — overrides the global fallback |
+| Per-container | `buoy.password` Docker label | Highest — overrides both per-repo and global |
+
+buoy passes all passwords to restic via a temporary `--password-file` rather than
+the `RESTIC_PASSWORD` environment variable.
+
+**Env var format for named repos:**
+
+```sh
+BUOY_RESTIC_REPO_LOCAL_URL=/backup
+BUOY_RESTIC_REPO_LOCAL_PASSWORD=local-password
+BUOY_RESTIC_REPO_S3_URL=s3:https://mybucket/backups
+BUOY_RESTIC_REPO_S3_PASSWORD=s3-password
+```
+
+Repo names must match `[a-zA-Z0-9][a-zA-Z0-9_-]*`.
+
+**Per-container override:**
 
 ```yaml
 services:
@@ -491,6 +510,8 @@ services:
       buoy.enabled: "true"
       buoy.password: "${APP_RESTIC_PASSWORD}"
 ```
+
+This overrides all repo-level and global passwords for that container.
 
 ### Notifications
 
@@ -586,25 +607,30 @@ Set `--api.url` and `--api.token` per command, or use the `BUOY_URL` /
 `BUOY_TOKEN` environment variables. Defaults to `http://127.0.0.1:8080`.
 
 ```bash
-buoyctl repo list --all                 # list all non-orphaned repos
+buoyctl repo list                       # list active (non-orphaned) repos
 buoyctl repo list --orphaned            # show only orphaned repos
+buoyctl repo list --all                 # show all repos including orphaned
 buoyctl repo list --repo /backup/myapp  # show a specific repo
-buoyctl repo check --all                # structural integrity check
-buoyctl repo check --read-data --all    # full data integrity check
-buoyctl repo stats --all                # storage usage across all repos
+buoyctl repo check                      # structural integrity check (active repos)
+buoyctl repo check --read-data          # full data integrity check
+buoyctl repo stats                      # storage usage across active repos
 buoyctl repo unlock --repo /backup/myapp
 buoyctl repo forget --retention keep-daily:7,keep-weekly:4 --all
 buoyctl repo prune --orphaned
 
 # JSON output
-buoyctl repo list --all --json
-buoyctl repo stats --all --json
+buoyctl repo list --json
+buoyctl repo stats --json
 
 # Remote daemon with auth
 export BUOY_URL=https://buoy.internal.example.com
 export BUOY_TOKEN=secret123
-buoyctl repo stats --all
+buoyctl repo stats
 ```
+
+Read-only commands (`list`, `check`, `stats`) default to active (non-orphaned)
+repositories. Destructive commands (`unlock`, `forget`, `prune`) require an
+explicit scope via `--all`, `--orphaned`, or `--repo`.
 
 **Flags:**
 
@@ -613,14 +639,17 @@ buoyctl repo stats --all
 | `--json`      | all          | Output as JSON                                   |
 | `--api.url`   | all          | Daemon API URL (defaults to `BUOY_URL` env)      |
 | `--api.token` | all          | API bearer token (defaults to `BUOY_TOKEN` env)  |
-| `--orphaned`  | all          | Operate on orphaned repos only                   |
-| `--all`       | all          | Operate on all non-orphaned repos                |
+| `--orphaned`  | all          | Operate on orphaned repos only (mutually exclusive with `--all`) |
+| `--all`       | all          | Operate on all repos including orphaned (mutually exclusive with `--orphaned`) |
 | `--repo`      | all          | Operate on a specific repository URL             |
 | `--read-data` | `check`      | Read all pack files for full integrity check     |
 | `--retention` | `forget`     | Retention policy (e.g. `keep-daily:7`)           |
 
 > [!WARNING]
-> Destructive operations (`unlock`, `forget`, `prune`) return an error if any backup is currently in progress, preventing accidental lock conflicts or corruption. Read-only commands (`check`, `stats`) are not gated and may run alongside backups.
+> Destructive operations (`unlock`, `forget`, `prune`) require an explicit
+> scope flag (`--all`, `--orphaned`, or `--repo`). They also return an error
+> if any backup is currently in progress, preventing accidental lock conflicts
+> or corruption.
 
 ### `buoyctl list`
 
@@ -759,8 +788,8 @@ services:
       - /srv/app-data:/srv/app-data:ro # each bind mount explicitly
       - buoy_data:/data # state persistence
     environment:
-      - BUOY_RESTIC_PASSWORD=${RESTIC_PASSWORD:?required}
-      - BUOY_RESTIC_REPOS=/backup
+      - BUOY_RESTIC_REPO_LOCAL_URL=/backup
+      - BUOY_RESTIC_REPO_LOCAL_PASSWORD=${RESTIC_PASSWORD:?required}
       # - BUOY_NOTIFY_URLS=slack://tokenA/tokenB/tokenC
       # - BUOY_NOTIFY_LEVEL=error
     restart: unless-stopped
@@ -831,9 +860,14 @@ Configure one or more repos for 3-2-1 backup strategy. Each container backs up t
 ```yaml
 restic:
   repos:
-    - /backup # local copy
-    - s3:s3.amazonaws.com/my-bucket # offsite copy
-    - b2:my-bucket:/buoy # different media
+    local:
+      url: /backup
+    s3:
+      url: s3:s3.amazonaws.com/my-bucket
+      password: "s3-specific-password"
+    b2:
+      url: b2:my-bucket:/buoy
+      password: "b2-specific-password"
 ```
 
 ## Development

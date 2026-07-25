@@ -6,6 +6,7 @@ import (
 
 type RepoEntry struct {
 	URL            string    `json:"url"`
+	RepoName       string    `json:"repo_name,omitempty"`
 	ContainerID    string    `json:"container_id"`
 	ContainerName  string    `json:"container_name"`
 	ComposeProject string    `json:"compose_project,omitempty"`
@@ -49,6 +50,7 @@ type RepoStats struct {
 
 type ScheduledRepo struct {
 	URL          string    `json:"url"`
+	RepoName     string    `json:"repo_name,omitempty"`
 	Created      bool      `json:"created"`
 	LastBackupAt time.Time `json:"last_backup_at"`
 	LastBackupOK bool      `json:"last_backup_ok"`

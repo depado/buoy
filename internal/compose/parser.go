@@ -3,6 +3,7 @@ package compose
 import (
 	"bufio"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -85,7 +86,7 @@ func Discover(dir string, maxDepth int, patterns []string, resolveEnv bool) ([]S
 		//nolint:gosec
 		data, rerr := os.ReadFile(composePath)
 		if rerr != nil {
-			fmt.Fprintf(os.Stderr, "warning: %s: %v\n", composePath, rerr)
+			slog.Warn("failed to read compose file", "path", composePath, "error", rerr)
 			return nil
 		}
 
@@ -96,7 +97,7 @@ func Discover(dir string, maxDepth int, patterns []string, resolveEnv bool) ([]S
 
 		services, perr := parseCompose(composePath, data, env)
 		if perr != nil {
-			fmt.Fprintf(os.Stderr, "warning: %s: %v\n", composePath, perr)
+			slog.Warn("failed to parse compose file", "path", composePath, "error", perr)
 			return nil
 		}
 

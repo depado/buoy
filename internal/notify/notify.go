@@ -61,7 +61,7 @@ func New(urls []string, level Level, logger *slog.Logger) (*Notifier, error) {
 }
 
 // SendBackupError sends a notification about a backup failure.
-// The notifier handles shoutrrr errors internally — they are logged as
+// The notifier handles shoutrrr errors internally - they are logged as
 // warnings but never propagated to the caller.
 func (n *Notifier) SendBackupError(ctrName, msg string) {
 	if n.sender == nil {

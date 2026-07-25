@@ -109,7 +109,9 @@ func (s *Scheduler) AddContainer(ctr *docker.Container) error {
 
 func (s *Scheduler) RemoveContainer(containerID string) {
 	s.containerReg.unregister(containerID)
-	_ = s.repoReg.MarkOrphaned(containerID)
+	if err := s.repoReg.MarkOrphaned(containerID); err != nil {
+		s.logger.Warn("failed to mark container repos as orphaned", "container_id", containerID, "error", err)
+	}
 	s.logger.Debug("removed container from schedule", "id", containerID)
 }
 
@@ -132,6 +134,7 @@ func (s *Scheduler) ListScheduled() []client.ScheduledEntry {
 			for _, re := range repoEntries {
 				repoList = append(repoList, client.ScheduledRepo{
 					URL:          re.URL,
+					RepoName:     re.RepoName,
 					Created:      !re.CreatedAt.IsZero(),
 					LastBackupAt: re.LastBackupAt,
 					LastBackupOK: re.LastBackupOK,
@@ -144,8 +147,8 @@ func (s *Scheduler) ListScheduled() []client.ScheduledEntry {
 				repoURLs = nil
 			}
 			repoList = make([]client.ScheduledRepo, 0, len(repoURLs))
-			for _, url := range repoURLs {
-				repoList = append(repoList, client.ScheduledRepo{URL: url})
+			for _, ref := range repoURLs {
+				repoList = append(repoList, client.ScheduledRepo{URL: ref.URL, RepoName: ref.Name})
 			}
 		}
 

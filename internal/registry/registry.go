@@ -3,6 +3,7 @@ package registry
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	bolt "go.etcd.io/bbolt"
 
+	"github.com/depado/buoy/internal/config"
 	"github.com/depado/buoy/internal/docker"
 )
 
@@ -20,6 +22,7 @@ var (
 
 type RepoEntry struct {
 	URL            string    `json:"url"`
+	RepoName       string    `json:"repo_name,omitempty"`
 	ContainerID    string    `json:"container_id"`
 	ContainerName  string    `json:"container_name"`
 	ComposeProject string    `json:"compose_project,omitempty"`
@@ -32,12 +35,17 @@ type RepoEntry struct {
 	Orphaned       bool      `json:"orphaned"`
 }
 
-type Registry struct {
-	db    *bolt.DB
-	repos []string
+type RepoRef struct {
+	Name string
+	URL  string
 }
 
-func Open(path string, baseRepos []string) (*Registry, error) {
+type Registry struct {
+	db    *bolt.DB
+	repos []config.NamedRepo
+}
+
+func Open(path string, baseRepos []config.NamedRepo) (*Registry, error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("create registry directory %s: %w", dir, err)
@@ -64,7 +72,7 @@ func (r *Registry) Close() error {
 	return r.db.Close()
 }
 
-func (r *Registry) SyncContainer(ctr *docker.Container, cfg docker.BackupConfig) ([]string, error) {
+func (r *Registry) SyncContainer(ctr *docker.Container, cfg docker.BackupConfig) ([]RepoRef, error) {
 	repos, err := r.resolveRepos(ctr, cfg)
 	if err != nil {
 		return nil, err
@@ -75,13 +83,15 @@ func (r *Registry) SyncContainer(ctr *docker.Container, cfg docker.BackupConfig)
 		rb := tx.Bucket(reposBucket)
 		cb := tx.Bucket(containerReposBucket)
 
-		for _, repo := range repos {
-			if err := r.upsertRepoEntry(rb, repo, ctr, now); err != nil {
+		urls := make([]string, len(repos))
+		for i, ref := range repos {
+			urls[i] = ref.URL
+			if err := r.upsertRepoEntry(rb, ref, ctr, now); err != nil {
 				return err
 			}
 		}
 
-		idsJSON, err := json.Marshal(repos)
+		idsJSON, err := json.Marshal(urls)
 		if err != nil {
 			return fmt.Errorf("marshal container repos: %w", err)
 		}
@@ -91,14 +101,14 @@ func (r *Registry) SyncContainer(ctr *docker.Container, cfg docker.BackupConfig)
 	return repos, writeErr
 }
 
-func (r *Registry) upsertRepoEntry(b *bolt.Bucket, repo string, ctr *docker.Container, now time.Time) error {
-	key := []byte(repo)
+func (r *Registry) upsertRepoEntry(b *bolt.Bucket, ref RepoRef, ctr *docker.Container, now time.Time) error {
+	key := []byte(ref.URL)
 	existing := b.Get(key)
 
 	var entry RepoEntry
 	if existing != nil {
 		if err := json.Unmarshal(existing, &entry); err != nil {
-			return fmt.Errorf("unmarshal repo entry %s: %w", repo, err)
+			return fmt.Errorf("unmarshal repo entry %s: %w", ref.URL, err)
 		}
 		if entry.ContainerID == ctr.ID &&
 			entry.ContainerName == ctr.Name &&
@@ -111,10 +121,12 @@ func (r *Registry) upsertRepoEntry(b *bolt.Bucket, repo string, ctr *docker.Cont
 		entry.ContainerName = ctr.Name
 		entry.ComposeProject = ctr.ComposeProject
 		entry.ComposeService = ctr.ComposeService
+		entry.RepoName = ref.Name
 		entry.Orphaned = false
 	} else {
 		entry = RepoEntry{
-			URL:            repo,
+			URL:            ref.URL,
+			RepoName:       ref.Name,
 			ContainerID:    ctr.ID,
 			ContainerName:  ctr.Name,
 			ComposeProject: ctr.ComposeProject,
@@ -125,7 +137,7 @@ func (r *Registry) upsertRepoEntry(b *bolt.Bucket, repo string, ctr *docker.Cont
 
 	data, err := json.Marshal(entry)
 	if err != nil {
-		return fmt.Errorf("marshal repo entry %s: %w", repo, err)
+		return fmt.Errorf("marshal repo entry %s: %w", ref.URL, err)
 	}
 	return b.Put(key, data)
 }
@@ -253,14 +265,31 @@ func (r *Registry) ListRepos(opts ...ListOption) ([]RepoEntry, error) {
 	return entries, err
 }
 
-func (r *Registry) resolveRepos(ctr *docker.Container, cfg docker.BackupConfig) ([]string, error) {
-	bases := r.repos
+func (r *Registry) resolveRepos(ctr *docker.Container, cfg docker.BackupConfig) ([]RepoRef, error) {
+	var refs []RepoRef
+
 	if len(cfg.ReposOverride) > 0 {
-		bases = cfg.ReposOverride
+		repoMap := make(map[string]config.NamedRepo, len(r.repos))
+		for _, nr := range r.repos {
+			repoMap[nr.Name] = nr
+		}
+		for _, name := range cfg.ReposOverride {
+			nr, ok := repoMap[name]
+			if !ok {
+				slog.Warn("unknown repo name in buoy.repos label, skipping", "repo_name", name, "container", ctr.Name)
+				continue
+			}
+			refs = append(refs, RepoRef{Name: nr.Name, URL: nr.URL})
+		}
+	} else {
+		for _, nr := range r.repos {
+			refs = append(refs, RepoRef{Name: nr.Name, URL: nr.URL})
+		}
 	}
-	repos := make([]string, len(bases))
-	for i, base := range bases {
-		base = strings.TrimRight(base, "/")
+
+	repos := make([]RepoRef, 0, len(refs))
+	for _, ref := range refs {
+		base := strings.TrimRight(ref.URL, "/")
 		path := ctr.RepoPath(base)
 		if isLocalPath(path) {
 			abs, err := filepath.Abs(path)
@@ -269,7 +298,7 @@ func (r *Registry) resolveRepos(ctr *docker.Container, cfg docker.BackupConfig) 
 			}
 			path = filepath.Clean(abs)
 		}
-		repos[i] = path
+		repos = append(repos, RepoRef{Name: ref.Name, URL: path})
 	}
 	return repos, nil
 }
@@ -291,7 +320,7 @@ func isLocalPath(p string) bool {
 	return false
 }
 
-func (r *Registry) ResolveRepos(ctr *docker.Container, cfg docker.BackupConfig) ([]string, error) {
+func (r *Registry) ResolveRepos(ctr *docker.Container, cfg docker.BackupConfig) ([]RepoRef, error) {
 	return r.resolveRepos(ctr, cfg)
 }
 

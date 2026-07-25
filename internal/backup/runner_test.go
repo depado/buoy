@@ -3,7 +3,9 @@ package backup
 import (
 	"testing"
 
+	"github.com/depado/buoy/internal/config"
 	"github.com/depado/buoy/internal/docker"
+	"github.com/depado/buoy/internal/registry"
 )
 
 func TestMapKeys(t *testing.T) {
@@ -100,6 +102,85 @@ func TestDeduplicateByService(t *testing.T) {
 				if c.ComposeService != tt.wantSvcs[i] {
 					t.Errorf("index %d: got service %q, want %q", i, c.ComposeService, tt.wantSvcs[i])
 				}
+			}
+		})
+	}
+}
+
+func TestEffectivePassword(t *testing.T) {
+	rc := &config.ResticConf{
+		Password: "global",
+		Repos: map[string]config.RepoConfig{
+			"local": {URL: "/backup"},
+			"s3":    {URL: "s3:https://bucket", Password: "s3-pass"},
+		},
+	}
+	r := &Runner{resticConf: rc}
+
+	tests := []struct {
+		name     string
+		cfg      docker.BackupConfig
+		repoName string
+		want     string
+	}{
+		{"container label wins", docker.BackupConfig{Password: "ctr-pass"}, "s3", "ctr-pass"},
+		{"per-repo password", docker.BackupConfig{}, "s3", "s3-pass"},
+		{"global fallback", docker.BackupConfig{}, "local", "global"},
+		{"unknown repo uses global", docker.BackupConfig{}, "unknown", "global"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := r.effectivePassword(tt.cfg, tt.repoName)
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPasswordForEntry(t *testing.T) {
+	rc := &config.ResticConf{
+		Password: "global",
+		Repos: map[string]config.RepoConfig{
+			"local": {URL: "/backup", Password: "local-pass"},
+			"s3":    {URL: "s3:https://bucket", Password: "s3-pass"},
+		},
+	}
+	r := &Runner{resticConf: rc}
+
+	tests := []struct {
+		name  string
+		entry registry.RepoEntry
+		want  string
+	}{
+		{
+			"by repo name",
+			registry.RepoEntry{RepoName: "s3", URL: "s3:https://bucket/myapp/db"},
+			"s3-pass",
+		},
+		{
+			"by URL prefix match (no RepoName)",
+			registry.RepoEntry{URL: "/backup/myapp/db"},
+			"local-pass",
+		},
+		{
+			"global fallback",
+			registry.RepoEntry{URL: "/unknown/path"},
+			"global",
+		},
+		{
+			"repo name takes priority over prefix match",
+			registry.RepoEntry{RepoName: "s3", URL: "/backup/myapp/db"},
+			"s3-pass",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := r.passwordForEntry(tt.entry)
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
 	}

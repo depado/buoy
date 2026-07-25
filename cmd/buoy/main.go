@@ -25,7 +25,11 @@ func main() {
 			if err := config.InitConfig(cmd, v); err != nil {
 				return err
 			}
-			return v.Unmarshal(&conf)
+			if err := v.Unmarshal(&conf); err != nil {
+				return err
+			}
+			config.ScanEnvRepos(&conf.Restic)
+			return conf.Restic.Validate()
 		},
 	}
 

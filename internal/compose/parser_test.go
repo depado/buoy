@@ -528,7 +528,7 @@ services:
       - cache_data:/data
 `)
 
-	t.Run("depth 0 — only root", func(t *testing.T) {
+	t.Run("depth 0 - only root", func(t *testing.T) {
 		stacks, err := Discover(root, 0, DefaultPatterns, false)
 		if err != nil {
 			t.Fatal(err)
@@ -541,7 +541,7 @@ services:
 		}
 	})
 
-	t.Run("depth 1 — root + immediate children", func(t *testing.T) {
+	t.Run("depth 1 - root + immediate children", func(t *testing.T) {
 		stacks, err := Discover(root, 1, DefaultPatterns, false)
 		if err != nil {
 			t.Fatal(err)
@@ -560,7 +560,7 @@ services:
 		}
 	})
 
-	t.Run("depth 2 — includes nested/deep", func(t *testing.T) {
+	t.Run("depth 2 - includes nested/deep", func(t *testing.T) {
 		stacks, err := Discover(root, 2, DefaultPatterns, false)
 		if err != nil {
 			t.Fatal(err)
@@ -570,7 +570,7 @@ services:
 		}
 	})
 
-	t.Run("depth -1 — unlimited", func(t *testing.T) {
+	t.Run("depth -1 - unlimited", func(t *testing.T) {
 		stacks, err := Discover(root, -1, DefaultPatterns, false)
 		if err != nil {
 			t.Fatal(err)
