@@ -161,6 +161,9 @@ func loadDotEnv(dir string) map[string]string {
 		}
 		env[strings.TrimSpace(k)] = strings.TrimSpace(v)
 	}
+	if err := scanner.Err(); err != nil {
+		return env
+	}
 	return env
 }
 
