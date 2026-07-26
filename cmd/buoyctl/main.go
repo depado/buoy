@@ -33,6 +33,8 @@ func main() {
 	root.AddCommand(discoverCmd)
 	setupListCommand()
 	root.AddCommand(listCmd)
+	setupBackupCommand()
+	root.AddCommand(backupCmd)
 
 	root.AddCommand(version.NewCommand("buoyctl"))
 

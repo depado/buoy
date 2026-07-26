@@ -65,3 +65,9 @@ type ScheduledEntry struct {
 	Repos          []ScheduledRepo `json:"repos,omitempty"`
 	StopBefore     bool            `json:"stop_before"`
 }
+
+type BackupResult struct {
+	Container string `json:"container"`
+	OK        bool   `json:"ok"`
+	Error     string `json:"error,omitempty"`
+}

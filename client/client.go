@@ -144,6 +144,52 @@ func (c *Client) PruneRepos(repo string, orphaned OrphanedFilter) ([]Result, err
 	return decodeJSON[[]Result](resp)
 }
 
+func (c *Client) TriggerBackup(containers []string) ([]BackupResult, error) {
+	params := make(url.Values)
+	for _, name := range containers {
+		params.Add("container", name)
+	}
+	path := "/api/v1/backup" + queryString(params)
+
+	resp, err := c.doRequest("POST", path)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return decodeJSON[[]BackupResult](resp)
+}
+
+func (c *Client) TriggerProjectBackup(project string, services []string) (*BackupResult, error) {
+	params := url.Values{"project": {project}}
+	for _, svc := range services {
+		params.Add("container", svc)
+	}
+	path := "/api/v1/backup" + queryString(params)
+
+	resp, err := c.doRequest("POST", path)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	results, err := decodeJSON[[]BackupResult](resp)
+	if err != nil {
+		return nil, err
+	}
+	if len(results) == 0 {
+		return nil, fmt.Errorf("empty response")
+	}
+	return &results[0], nil
+}
+
+func (c *Client) TriggerBackupAll() ([]BackupResult, error) {
+	resp, err := c.doRequest("POST", "/api/v1/backup?all=true")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return decodeJSON[[]BackupResult](resp)
+}
+
 func decodeJSON[T any](resp *http.Response) (T, error) {
 	var v T
 	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/depado/buoy/client"
@@ -51,6 +52,7 @@ func New(reg *registry.Registry, rc *restic.Client, sched *scheduler.Scheduler, 
 	mux.HandleFunc("POST /api/v1/repos/unlock", s.handleReposUnlock)
 	mux.HandleFunc("POST /api/v1/repos/forget", s.handleReposForget)
 	mux.HandleFunc("POST /api/v1/repos/prune", s.handleReposPrune)
+	mux.HandleFunc("POST /api/v1/backup", s.handleTriggerBackup)
 
 	s.srv = &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", host, port),
@@ -300,6 +302,99 @@ func (s *Server) handleReposPrune(w http.ResponseWriter, r *http.Request) {
 		results = append(results, result)
 	}
 	writeJSON(w, http.StatusOK, results)
+}
+
+func (s *Server) handleTriggerBackup(w http.ResponseWriter, r *http.Request) {
+	all := r.URL.Query().Get("all") == "true"
+	containers := r.URL.Query()["container"]
+	project := r.URL.Query().Get("project")
+
+	if project != "" {
+		err := s.scheduler.TriggerProjectBackup(r.Context(), project, containers)
+		result := client.BackupResult{Container: project, OK: err == nil}
+		if err != nil {
+			result.Error = err.Error()
+		}
+		writeJSON(w, http.StatusOK, []client.BackupResult{result})
+		return
+	}
+
+	if all {
+		results := s.triggerAll(r.Context())
+		writeJSON(w, http.StatusOK, results)
+		return
+	}
+
+	if len(containers) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "specify ?all=true, ?project=<name>, or ?container=<name>"})
+		return
+	}
+
+	results := make([]client.BackupResult, len(containers))
+	var wg sync.WaitGroup
+	for i, target := range containers {
+		wg.Add(1)
+		go func(idx int, name string) {
+			defer wg.Done()
+			err := s.scheduler.TriggerBackup(r.Context(), name)
+			results[idx] = client.BackupResult{Container: name, OK: err == nil}
+			if err != nil {
+				results[idx].Error = err.Error()
+			}
+		}(i, target)
+	}
+	wg.Wait()
+	writeJSON(w, http.StatusOK, results)
+}
+
+func (s *Server) triggerAll(ctx context.Context) []client.BackupResult {
+	entries := s.scheduler.ListScheduled()
+	if len(entries) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	var projects []string
+	var standalones []string
+	for _, e := range entries {
+		if e.ComposeProject != "" {
+			if !seen[e.ComposeProject] {
+				seen[e.ComposeProject] = true
+				projects = append(projects, e.ComposeProject)
+			}
+		} else {
+			standalones = append(standalones, e.ContainerName)
+		}
+	}
+
+	n := len(projects) + len(standalones)
+	results := make([]client.BackupResult, n)
+	var wg sync.WaitGroup
+
+	for i, proj := range projects {
+		wg.Add(1)
+		go func(idx int, p string) {
+			defer wg.Done()
+			err := s.scheduler.TriggerProjectBackup(ctx, p, nil)
+			results[idx] = client.BackupResult{Container: p, OK: err == nil}
+			if err != nil {
+				results[idx].Error = err.Error()
+			}
+		}(i, proj)
+	}
+	for i, name := range standalones {
+		wg.Add(1)
+		go func(idx int, n string) {
+			defer wg.Done()
+			err := s.scheduler.TriggerBackup(ctx, n)
+			results[idx] = client.BackupResult{Container: n, OK: err == nil}
+			if err != nil {
+				results[idx].Error = err.Error()
+			}
+		}(len(projects)+i, name)
+	}
+	wg.Wait()
+	return results
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

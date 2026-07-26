@@ -21,9 +21,19 @@ func newTestLogger() *slog.Logger {
 func makeContainer(id, project, service string, labels map[string]string) *docker.Container {
 	return &docker.Container{
 		ID:             id,
+		Name:           id,
 		ComposeProject: project,
 		ComposeService: service,
 		Labels:         labels,
+	}
+}
+
+func makeNamedContainer(id, name, project, service string) *docker.Container {
+	return &docker.Container{
+		ID:             id,
+		Name:           name,
+		ComposeProject: project,
+		ComposeService: service,
 	}
 }
 
@@ -141,5 +151,60 @@ func TestScheduleGroupKey(t *testing.T) {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestContainerRegistry_FindByName(t *testing.T) {
+	cr := newContainerRegistry(newTestCron(), newTestLogger())
+	ctr := makeNamedContainer("abc123", "uptime-kuma", "uptime-kuma", "uptime-kuma")
+	if err := cr.register(ctr, "uptime-kuma::@daily", "@daily", func() {}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	got := cr.find("uptime-kuma")
+	if got == nil {
+		t.Fatal("expected found by name")
+	}
+	if got.ID != "abc123" {
+		t.Errorf("got ID %q, want %q", got.ID, "abc123")
+	}
+}
+
+func TestContainerRegistry_FindNotFound(t *testing.T) {
+	cr := newContainerRegistry(newTestCron(), newTestLogger())
+	ctr := makeNamedContainer("abc123", "myapp", "proj", "web")
+	if err := cr.register(ctr, "proj::@daily", "@daily", func() {}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	if got := cr.find("nonexistent"); got != nil {
+		t.Errorf("expected nil, got %v", got)
+	}
+}
+
+func TestContainerRegistry_FindByProject(t *testing.T) {
+	cr := newContainerRegistry(newTestCron(), newTestLogger())
+
+	if err := cr.register(makeNamedContainer("a", "db", "myapp", "db"), "myapp::@daily", "@daily", func() {}); err != nil {
+		t.Fatalf("register a: %v", err)
+	}
+	if err := cr.register(makeNamedContainer("b", "api", "myapp", "api"), "myapp::@daily", "@daily", func() {}); err != nil {
+		t.Fatalf("register b: %v", err)
+	}
+	if err := cr.register(makeNamedContainer("c", "web", "myapp", "web"), "myapp::@daily", "@daily", func() {}); err != nil {
+		t.Fatalf("register c: %v", err)
+	}
+
+	result := cr.findByProject("myapp")
+	if len(result) != 3 {
+		t.Fatalf("expected 3 containers, got %d", len(result))
+	}
+}
+
+func TestContainerRegistry_FindByProject_Empty(t *testing.T) {
+	cr := newContainerRegistry(newTestCron(), newTestLogger())
+	result := cr.findByProject("nonexistent")
+	if len(result) != 0 {
+		t.Errorf("expected empty, got %d", len(result))
 	}
 }

@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -327,6 +328,59 @@ func (s *Scheduler) pruneDead(ctr *docker.Container) {
 		s.logger.Debug("container no longer exists, removing from schedule", append(ctr.LogAttrs(), "error", err)...)
 		s.RemoveContainer(ctr.ID)
 	}
+}
+
+func (s *Scheduler) TriggerBackup(ctx context.Context, identifier string) error {
+	ctr := s.containerReg.find(identifier)
+	if ctr == nil {
+		return fmt.Errorf("container %q not found in scheduled backups", identifier)
+	}
+
+	if ctr.ComposeProject != "" {
+		s.enqueueBatch(ctr.ComposeProject, []*docker.Container{ctr})
+		return nil
+	}
+
+	s.active.Add(1)
+	s.wg.Add(1)
+	s.sem <- struct{}{}
+	defer func() { <-s.sem }()
+	defer s.active.Add(-1)
+	defer s.wg.Done()
+
+	if err := s.backup.Run(ctx, ctr); err != nil {
+		s.logger.Error("triggered backup failed", append(ctr.LogAttrs(), "error", err)...)
+		return err
+	}
+	s.pruneDead(ctr)
+	return nil
+}
+
+func (s *Scheduler) TriggerProjectBackup(ctx context.Context, project string, services []string) error {
+	batch := s.containerReg.findByProject(project)
+	if len(batch) == 0 {
+		return fmt.Errorf("project %q not found in scheduled backups", project)
+	}
+
+	if len(services) > 0 {
+		include := make(map[string]bool, len(services))
+		for _, svc := range services {
+			include[svc] = true
+		}
+		filtered := batch[:0]
+		for _, c := range batch {
+			if include[c.ComposeService] {
+				filtered = append(filtered, c)
+			}
+		}
+		if len(filtered) == 0 {
+			return fmt.Errorf("no matching services found in project %q", project)
+		}
+		batch = filtered
+	}
+
+	s.enqueueBatch(project, batch)
+	return nil
 }
 
 type stackQueue struct {

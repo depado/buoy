@@ -144,6 +144,36 @@ func scheduleFromKey(key string) string {
 	return key
 }
 
+func (r *containerRegistry) find(name string) *docker.Container {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, group := range r.groups {
+		for _, ctr := range group {
+			if ctr.Name == name {
+				return ctr
+			}
+		}
+	}
+	return nil
+}
+
+func (r *containerRegistry) findByProject(project string) []*docker.Container {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	seen := make(map[string]bool)
+	var result []*docker.Container
+	for _, ctrs := range r.groups {
+		for _, ctr := range ctrs {
+			if ctr.ComposeProject == project && !seen[ctr.ID] {
+				seen[ctr.ID] = true
+				result = append(result, ctr)
+			}
+		}
+	}
+	return result
+}
+
 func lastIndex(s, sep string) int {
 	for i := len(s) - len(sep); i >= 0; i-- {
 		if s[i:i+len(sep)] == sep {
