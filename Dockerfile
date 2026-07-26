@@ -1,6 +1,6 @@
 FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS builder
 
-RUN apk add --no-cache make git
+RUN apk add --no-cache make git tzdata
 
 ARG RESTIC_VERSION=0.19.1
 ARG TARGETARCH
@@ -19,6 +19,7 @@ RUN make daemon
 FROM gcr.io/distroless/static@sha256:9197324ba51d9cd071af8505989365c006adf9d6d2067eada25aef00abbb5278
 COPY --from=builder /app/buoy /usr/local/bin/buoy
 COPY --from=builder /usr/local/bin/restic /usr/local/bin/restic
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 WORKDIR /data
 ENTRYPOINT ["/usr/local/bin/buoy"]
 CMD ["run"]

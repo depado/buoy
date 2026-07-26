@@ -107,6 +107,7 @@ services:
       - /srv/data:/srv/data:ro # bind mounts you want backed up
       - buoy_data:/data # state persistence
     environment:
+      - TZ=Europe/Paris
       - BUOY_RESTIC_REPO_LOCAL_URL=/backup
       - BUOY_RESTIC_REPO_LOCAL_PASSWORD=your-secure-password
       - BUOY_DAEMON_CONCURRENCY=2
@@ -788,6 +789,7 @@ services:
       - /srv/app-data:/srv/app-data:ro # each bind mount explicitly
       - buoy_data:/data # state persistence
     environment:
+      - TZ=Europe/Paris
       - BUOY_RESTIC_REPO_LOCAL_URL=/backup
       - BUOY_RESTIC_REPO_LOCAL_PASSWORD=${RESTIC_PASSWORD:?required}
       # - BUOY_NOTIFY_URLS=slack://tokenA/tokenB/tokenC
@@ -804,6 +806,18 @@ Each path buoy needs to read must be mounted explicitly:
 - **Bind mounts:** Mount each host source path at the same location inside buoy. For example, if a container bind-mounts `/srv/app-data:/app/data`, mount `/srv/app-data:/srv/app-data:ro` in buoy's compose file.
 
 If a mount source doesn't exist inside buoy, it's skipped with a warning.
+
+### Timezone
+
+Cron schedules respect the `TZ` environment variable. Set it to your local
+timezone so `30 6 * * *` runs at 6:30 AM local time, not UTC.
+
+```yaml
+environment:
+  - TZ=Europe/Paris
+```
+
+Without `TZ`, schedules run on UTC.
 
 ### Restart policy caveat
 

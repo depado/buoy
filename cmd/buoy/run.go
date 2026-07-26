@@ -30,6 +30,9 @@ var RunCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Start the buoy daemon",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := conf.Restic.Validate(); err != nil {
+			return err
+		}
 		logger := config.NewLogger(&conf)
 		slog.SetDefault(logger)
 		logger.Info("starting buoy daemon", "version", version.Version)

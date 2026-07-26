@@ -29,7 +29,7 @@ func main() {
 				return err
 			}
 			config.ScanEnvRepos(&conf.Restic)
-			return conf.Restic.Validate()
+			return nil
 		},
 	}
 
