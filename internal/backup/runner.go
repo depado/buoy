@@ -257,6 +257,7 @@ func (r *Runner) effectivePassword(cfg docker.BackupConfig, repoName string) str
 func (r *Runner) ensureRepo(ctx context.Context, repo string, logger *slog.Logger, failures *[]mountError) bool {
 	l := logger.With("repo", repo)
 
+	l.Debug("checking repo")
 	exists, err := r.restic.RepoExists(ctx, repo)
 	if err != nil {
 		l.Warn("failed to check repo, skipping repo", "error", err)
