@@ -800,6 +800,13 @@ Snapshots use clean relative paths: buoy changes into each mount's source direct
 
 ### As a Docker container (recommended)
 
+Two image variants are available:
+
+- **`ghcr.io/depado/buoy:latest`** — distroless (~15 MB), no shell or SSH client. Use for
+  all backends except SFTP.
+- **`ghcr.io/depado/buoy:latest-alpine`** — Alpine (~20 MB), includes `openssh-client` for
+  the SFTP backend. Also works with all other backends.
+
 ```yaml
 services:
   buoy:

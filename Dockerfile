@@ -16,7 +16,16 @@ RUN go mod verify
 COPY . .
 RUN make daemon
 
-FROM gcr.io/distroless/static@sha256:9197324ba51d9cd071af8505989365c006adf9d6d2067eada25aef00abbb5278
+FROM gcr.io/distroless/static@sha256:9197324ba51d9cd071af8505989365c006adf9d6d2067eada25aef00abbb5278 AS distroless
+COPY --from=builder /app/buoy /usr/local/bin/buoy
+COPY --from=builder /usr/local/bin/restic /usr/local/bin/restic
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+WORKDIR /data
+ENTRYPOINT ["/usr/local/bin/buoy"]
+CMD ["run"]
+
+FROM alpine:3.24.1 AS alpine
+RUN apk add --no-cache openssh-client
 COPY --from=builder /app/buoy /usr/local/bin/buoy
 COPY --from=builder /usr/local/bin/restic /usr/local/bin/restic
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo

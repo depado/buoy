@@ -26,5 +26,21 @@ jobs:
     uses: depado/github-actions/.github/workflows/docker.yml@main
     with:
       platforms: linux/amd64,linux/arm64
+      target: distroless
+    secrets:
+      cleanup-token: ${{ secrets.PAT_DELETE_PACKAGES }}
+
+  docker-alpine:
+    name: Docker (alpine)
+    needs: [golang]
+    permissions:
+      contents: read
+      packages: write
+      actions: read
+    uses: depado/github-actions/.github/workflows/docker.yml@main
+    with:
+      platforms: linux/amd64,linux/arm64
+      target: alpine
+      tag-suffix: "-alpine"
     secrets:
       cleanup-token: ${{ secrets.PAT_DELETE_PACKAGES }}
