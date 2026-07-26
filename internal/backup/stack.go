@@ -120,7 +120,21 @@ func (r *Runner) stopStackServices(
 	stopOrder := orderForStopFromDeps(deps, func(svc string) {
 		l.Warn("dependency cycle detected", "service", svc, "project", project)
 	})
+
+	ordered := make(map[string]bool, len(stopOrder))
 	for _, svc := range stopOrder {
+		ordered[svc] = true
+	}
+
+	svcs := make([]string, 0, len(stopSvc))
+	svcs = append(svcs, stopOrder...)
+	for svc := range stopSvc {
+		if !ordered[svc] {
+			svcs = append(svcs, svc)
+		}
+	}
+
+	for _, svc := range svcs {
 		for _, ctr := range services[svc] {
 			if !stopSvc[svc] {
 				continue
@@ -128,7 +142,7 @@ func (r *Runner) stopStackServices(
 			sl := l.With(ctr.LogAttrs()...)
 			r.ignore(ctr.ID)
 			ignored[ctr.ID] = true
-			sl.Debug("stopping container")
+			sl.Info("stopping container")
 			cfg := r.parseConfig(ctr.Labels)
 			if err := r.docker.StopContainer(ctx, ctr.ID, cfg.StopTimeout); err != nil {
 				sl.Warn("failed to stop container", "error", err)
@@ -184,7 +198,21 @@ func (r *Runner) startStackServices(
 	startOrder := orderForStartFromDeps(deps, func(svc string) {
 		l.Warn("dependency cycle detected", "service", svc)
 	})
+
+	ordered := make(map[string]bool, len(startOrder))
 	for _, svc := range startOrder {
+		ordered[svc] = true
+	}
+
+	svcs := make([]string, 0, len(services))
+	svcs = append(svcs, startOrder...)
+	for svc := range services {
+		if !ordered[svc] {
+			svcs = append(svcs, svc)
+		}
+	}
+
+	for _, svc := range svcs {
 		if err := r.waitForDeps(ctx, deps, all, svc, l); err != nil {
 			l.Warn("failed waiting for dependencies", "service", svc, "error", err)
 		}
@@ -193,7 +221,7 @@ func (r *Runner) startStackServices(
 				continue
 			}
 			cl := l.With(ctr.LogAttrs()...)
-			cl.Debug("starting container")
+			cl.Info("starting container")
 			if err := r.docker.StartContainer(ctx, ctr.ID); err != nil {
 				cl.Warn("failed to start container", "error", err)
 			} else {
