@@ -59,7 +59,7 @@ Shows container name, compose project/service, schedule expression, repos (if ov
 
 ## `buoyctl backup`
 
-Triggers an immediate backup without waiting for the cron schedule. Respects compose stack dependencies and `buoy.stop-before` — containers are stopped and restarted in the correct order, just like scheduled backups.
+Triggers an immediate backup without waiting for the cron schedule. Respects compose stack dependencies and `buoy.stop-before` - containers are stopped and restarted in the correct order, just like scheduled backups.
 
 ```bash
 buoyctl backup uptime-kuma           # single container by name
@@ -70,11 +70,11 @@ buoyctl backup --all                 # all scheduled containers
 buoyctl backup --all --json          # JSON output
 ```
 
-For compose projects, triggered backups serialize through the same project queue as scheduled backups — triggering a project backup while one is already running queues it behind the current one, preventing race conditions.
+For compose projects, triggered backups serialize through the same project queue as scheduled backups - triggering a project backup while one is already running queues it behind the current one, preventing race conditions.
 
 ## `buoyctl discover`
 
-Scans a directory recursively for Docker Compose files and lists the volumes and bind mounts buoy would need access to — so you can configure your buoy container with the right host mounts before deploying.
+Scans a directory recursively for Docker Compose files and lists the volumes and bind mounts buoy would need access to - so you can configure your buoy container with the right host mounts before deploying.
 
 The output highlights bind mounts from enabled services, and produces a ready-to-paste `volumes:` block for buoy's compose service.
 

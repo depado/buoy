@@ -4,8 +4,8 @@
 
 Two image variants are available:
 
-- **`ghcr.io/depado/buoy:latest`** — distroless (~15 MB), no shell or SSH client. Use for all backends except SFTP.
-- **`ghcr.io/depado/buoy:latest-alpine`** — Alpine (~20 MB), includes `openssh-client` for the SFTP backend. Also works with all other backends.
+- **`ghcr.io/depado/buoy:latest`** - distroless (~15 MB), no shell or SSH client. Use for all backends except SFTP.
+- **`ghcr.io/depado/buoy:latest-alpine`** - Alpine (~20 MB), includes `openssh-client` for the SFTP backend. Also works with all other backends.
 
 ```yaml
 services:

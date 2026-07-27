@@ -183,7 +183,7 @@ All keys are optional. Omitted keys are not passed to restic.
 
 `buoy.include` and `buoy.exclude` accept comma-separated mount identifiers.
 An identifier can be a volume name, a host source path, or a container destination
-path — buoy matches each entry against all three fields of every mount.
+path - buoy matches each entry against all three fields of every mount.
 
 #### Basic filtering
 
@@ -213,13 +213,13 @@ buoy.backup.src.exclude: "*.log,*.tmp"
 # Per-mount: append tags to the global set
 buoy.backup.src.tags: "source-code"
 
-# /var/log has no name — it uses global backup defaults
+# /var/log has no name - it uses global backup defaults
 ```
 
 | Syntax       | Behavior                                                                                                                                                                                |
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `name=value` | Named entry. `name` used as key for `buoy.backup.<name>.*` overrides.                                                                                                                   |
-| Bare value   | Unnamed entry. If it matches a volume by its Docker name, that name is automatically used for per-mount overrides. Otherwise (bind mount), no per-mount overrides apply — uses globals. |
+| Bare value   | Unnamed entry. If it matches a volume by its Docker name, that name is automatically used for per-mount overrides. Otherwise (bind mount), no per-mount overrides apply - uses globals. |
 | Mixed        | Both named and unnamed entries can appear in the same `buoy.include` value.                                                                                                             |
 
 Per-mount override semantics:
@@ -298,17 +298,17 @@ services:
       buoy.enabled: "true"
       buoy.schedule: "@daily"
 
-      # Named mount entries — volume names auto-derive their per-mount name
+      # Named mount entries - volume names auto-derive their per-mount name
       buoy.include: "code=./src, uploads"
 
-      # Global defaults — applied to both mounts
+      # Global defaults - applied to both mounts
       buoy.backup.tags: "production,webapp"
 
-      # Per-mount: src — back up only source files
+      # Per-mount: src - back up only source files
       buoy.backup.code.files: "*.go,*.ts,*.js,*.css"
       buoy.backup.code.tags: "source-code"
 
-      # Per-mount: uploads — exclude temp and cache
+      # Per-mount: uploads - exclude temp and cache
       buoy.backup.uploads.exclude: "*.tmp,*.cache,*.log,thumbs/"
       buoy.backup.uploads.tags: "user-data"
 ```
@@ -318,7 +318,7 @@ services:
 - `code=./src` creates a named entry `code`. Only `.go`, `.ts`, `.js`, `.css` files
   are backed up from `/app/src`. Tags `production,webapp,source-code` are applied.
 - `uploads` is a bare entry matching the volume by its Docker name. Per-mount
-  overrides use the volume name automatically — `buoy.backup.uploads.*`.
+  overrides use the volume name automatically - `buoy.backup.uploads.*`.
   Everything under `/app/uploads` is backed up except `*.tmp`, `*.cache`,
   `*.log`, and `thumbs/`. Tags `production,webapp,user-data` are applied.
 - Global `buoy.backup.tags` apply to both mounts, with per-mount tags appended.
@@ -468,9 +468,9 @@ Run with debug logging:
 
 ## Docs
 
-- **[Configuration](docs/configuration.md)** — password levels, notifications, HTTP API, default config file
-- **[OpenTelemetry](docs/otel.md)** — traces, metrics, and logs with OTLP
-- **[CLI Reference](docs/cli.md)** — all `buoyctl` subcommands, flags, and examples
-- **[Deployment](docs/deployment.md)** — image variants, timezone, restart policies, signal handling
-- **[Restoring](docs/restoring.md)** — how to restore backups with restic
-- **[Backends](docs/backends.md)** — restic backend URL formats (S3, B2, SFTP, etc.)
+- **[Configuration](docs/configuration.md)** - password levels, notifications, HTTP API, default config file
+- **[OpenTelemetry](docs/otel.md)** - traces, metrics, and logs with OTLP
+- **[CLI Reference](docs/cli.md)** - all `buoyctl` subcommands, flags, and examples
+- **[Deployment](docs/deployment.md)** - image variants, timezone, restart policies, signal handling
+- **[Restoring](docs/restoring.md)** - how to restore backups with restic
+- **[Backends](docs/backends.md)** - restic backend URL formats (S3, B2, SFTP, etc.)

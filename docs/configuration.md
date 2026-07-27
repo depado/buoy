@@ -48,9 +48,9 @@ buoy supports three password levels for maximum flexibility:
 
 | Level         | Source                                                                           | Priority                                     |
 | ------------- | -------------------------------------------------------------------------------- | -------------------------------------------- |
-| Global fallback | `restic.password` config / `BUOY_RESTIC_PASSWORD` env / `--restic.password` flag | Lowest — used when nothing else is set       |
-| Per-repo      | `password` field on each named repo                                              | Middle — overrides the global fallback       |
-| Per-container | `buoy.password` Docker label                                                     | Highest — overrides both per-repo and global |
+| Global fallback | `restic.password` config / `BUOY_RESTIC_PASSWORD` env / `--restic.password` flag | Lowest - used when nothing else is set       |
+| Per-repo      | `password` field on each named repo                                              | Middle - overrides the global fallback       |
+| Per-container | `buoy.password` Docker label                                                     | Highest - overrides both per-repo and global |
 
 buoy passes all passwords to restic via a temporary `--password-file` rather than the `RESTIC_PASSWORD` environment variable.
 
@@ -81,9 +81,9 @@ This overrides all repo-level and global passwords for that container.
 
 buoy can send failure notifications via [shoutrrr](https://github.com/nicholas-fedor/shoutrrr), supporting 50+ services including Slack, Discord, Telegram, email, and Gotify. Configure one or more shoutrrr URLs and set the notification level:
 
-- `error` — notify on backup failures only (default)
-- `all` — notify on all backup events
-- `none` — disable notifications (or omit config)
+- `error` - notify on backup failures only (default)
+- `all` - notify on all backup events
+- `none` - disable notifications (or omit config)
 
 Each URL encodes both the service and its credentials. Examples:
 
@@ -98,7 +98,7 @@ Each URL encodes both the service and its credentials. Examples:
 See [shoutrrr's documentation](https://containrrr.dev/shoutrrr/latest/services/overview/) for the full list of services and URL formats.
 
 > [!NOTE]
-> Notifications are best-effort — a failure logs a warning but never blocks or fails a backup.
+> Notifications are best-effort - a failure logs a warning but never blocks or fails a backup.
 
 ## Periodic Repository Check
 
@@ -111,7 +111,7 @@ daemon:
   check_schedule: "@weekly"
 ```
 
-When the check runs, buoy reads known repositories from its persistent state database (`buoy.db`). Failures are logged and optionally trigger notifications. This is a structural check only — it does not read pack file data (use the CLI or API for `restic check --read-data` if needed).
+When the check runs, buoy reads known repositories from its persistent state database (`buoy.db`). Failures are logged and optionally trigger notifications. This is a structural check only - it does not read pack file data (use the CLI or API for `restic check --read-data` if needed).
 
 ## State Persistence
 

@@ -18,9 +18,9 @@ All fields are optional. The OTel SDK auto-reads `OTEL_EXPORTER_OTLP_*` env vars
 BUOY_OTEL_ENABLED=true OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318 ./buoy run
 ```
 
-- **Traces** — every backup cycle is a trace with child spans for each phase: container stop, restic backup (per mount), container start, hooks, retention, dependency waits.
-- **Metrics** — `buoy.backup.duration`, `buoy.backups.total`, `buoy.container.stop.duration`, `buoy.container.start.duration`, `buoy.hook.duration`, `buoy.retention.duration`. Go runtime metrics (GC, memory) included automatically.
-- **Log correlation** — existing slog output is bridged to OTLP. Every log line inside a span gets `trace_id` and `span_id`. Click a span in Tempo → see the logs.
+- **Traces** - every backup cycle is a trace with child spans for each phase: container stop, restic backup (per mount), container start, hooks, retention, dependency waits.
+- **Metrics** - `buoy.backup.duration`, `buoy.backups.total`, `buoy.container.stop.duration`, `buoy.container.start.duration`, `buoy.hook.duration`, `buoy.retention.duration`. Go runtime metrics (GC, memory) included automatically.
+- **Log correlation** - existing slog output is bridged to OTLP. Every log line inside a span gets `trace_id` and `span_id`. Click a span in Tempo → see the logs.
 
 ## Local development
 
@@ -66,7 +66,7 @@ volumes:
 ```
 
 > [!WARNING]
-> `otel-lgtm` is a **development image** — not suitable for production.
+> `otel-lgtm` is a **development image** - not suitable for production.
 
 ```yaml
 # buoy conf.yaml
@@ -77,7 +77,7 @@ otel:
   insecure: true
 ```
 
-Grafana is at `http://localhost:3000`. Traces in Tempo, logs in Loki, metrics in Prometheus — all pre-wired.
+Grafana is at `http://localhost:3000`. Traces in Tempo, logs in Loki, metrics in Prometheus - all pre-wired.
 
 ## Production deployment
 
@@ -191,7 +191,7 @@ Add Tempo (`http://tempo:3200`), Loki (`http://loki:3100`), and Prometheus (`htt
 | `buoy.resync`              | Periodic label resync                     |
 | `buoy.check`               | Periodic restic check                     |
 
-Hooks only appear when configured — no empty spans when no labels are set.
+Hooks only appear when configured - no empty spans when no labels are set.
 
 ## Grafana dashboard
 
@@ -202,4 +202,4 @@ Hooks only appear when configured — no empty spans when no labels are set.
 | Start latency      | `histogram_quantile(0.50, rate(buoy_container_start_duration_seconds_bucket[1h]))`              |
 
 > [!NOTE]
-> **Graceful degradation.** Each signal initializes independently. An unreachable collector at startup disables only that signal (logged as a warning). The daemon always starts. When `otel.enabled: false` (default), no exporters start and all metric/spans are no-op — zero overhead.
+> **Graceful degradation.** Each signal initializes independently. An unreachable collector at startup disables only that signal (logged as a warning). The daemon always starts. When `otel.enabled: false` (default), no exporters start and all metric/spans are no-op - zero overhead.
