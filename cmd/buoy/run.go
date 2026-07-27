@@ -111,7 +111,6 @@ var RunCmd = &cobra.Command{
 			Logger:            logger,
 			ExecTimeout:       execTimeout,
 			HealthWaitTimeout: healthWaitTimeout,
-			BackupTimeout:     backupTimeout,
 			Meters:            tel.Meters(),
 			Tracers:           tel.Tracers(),
 		})
