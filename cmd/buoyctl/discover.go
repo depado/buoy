@@ -15,6 +15,7 @@ import (
 
 	"github.com/depado/buoy/internal/compose"
 	"github.com/depado/buoy/internal/docker"
+	"github.com/depado/buoy/internal/types"
 )
 
 var discoverCmd = &cobra.Command{
@@ -36,7 +37,7 @@ host paths and YAML sections.`,
 		depth, _ := cmd.Flags().GetInt("depth")
 		patternStr, _ := cmd.Flags().GetString("pattern")
 		resolveEnv, _ := cmd.Flags().GetBool("resolve-env")
-		patterns := splitTrim(patternStr)
+		patterns := types.SplitTrim(patternStr)
 		if len(patterns) == 0 {
 			patterns = compose.DefaultPatterns
 		}
@@ -180,18 +181,6 @@ func sortedKeys(m map[string]bool) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-func splitTrim(s string) []string {
-	parts := strings.Split(s, ",")
-	var result []string
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			result = append(result, p)
-		}
-	}
-	return result
 }
 
 func isBuiltinMount(source string) bool {

@@ -8,14 +8,8 @@ import (
 
 	"github.com/depado/buoy/internal/registry"
 	"github.com/depado/buoy/internal/restic"
+	"github.com/depado/buoy/internal/types"
 )
-
-func (r *Runner) passwordForEntry(entry registry.RepoEntry) string {
-	if entry.RepoName != "" {
-		return r.resticConf.PasswordFor(entry.RepoName)
-	}
-	return r.resticConf.PasswordForURL(entry.URL)
-}
 
 func (r *Runner) CheckKnownRepos(ctx context.Context) {
 	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.check")
@@ -74,7 +68,7 @@ func (r *Runner) CheckKnownRepos(ctx context.Context) {
 	}
 }
 
-func (r *Runner) checkRepoEntries(ctx context.Context, entries []registry.RepoEntry, logger *slog.Logger) []string {
+func (r *Runner) checkRepoEntries(ctx context.Context, entries []types.RepoEntry, logger *slog.Logger) []string {
 	var failed []string
 	seen := make(map[string]bool)
 	for _, entry := range entries {
@@ -82,7 +76,7 @@ func (r *Runner) checkRepoEntries(ctx context.Context, entries []registry.RepoEn
 			continue
 		}
 		seen[entry.URL] = true
-		ctx := restic.WithPassword(ctx, r.passwordForEntry(entry))
+		ctx := restic.WithPassword(ctx, r.resticConf.PasswordForEntry(entry.RepoName, entry.URL))
 		if err := r.restic.Check(ctx, entry.URL); err != nil {
 			logger.Error("check: repository check failed", "repo", entry.URL, "error", err)
 			if err := r.repoReg.MarkCheckComplete(entry.URL, false); err != nil {

@@ -22,6 +22,7 @@ import (
 	"github.com/depado/buoy/internal/registry"
 	"github.com/depado/buoy/internal/restic"
 	"github.com/depado/buoy/internal/telemetry"
+	"github.com/depado/buoy/internal/types"
 )
 
 type Runner struct {
@@ -332,7 +333,7 @@ type mountError struct {
 	err   error
 }
 
-func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, repos []registry.RepoRef, logger *slog.Logger) error {
+func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, repos []types.RepoRef, logger *slog.Logger) error {
 	mountCount := 0
 	var failures []mountError
 
@@ -541,7 +542,7 @@ func summarizeFailures(failures []mountError, mountCount, repoCount int) error {
 	return fmt.Errorf("%d failure(s): %s", len(failures), joined)
 }
 
-func (r *Runner) applyRetention(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, repos []registry.RepoRef, logger *slog.Logger) []string {
+func (r *Runner) applyRetention(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, repos []types.RepoRef, logger *slog.Logger) []string {
 	logger.Debug("applying retention", "policy", cfg.Retention, "repos", len(repos))
 	policy := cfg.Retention
 

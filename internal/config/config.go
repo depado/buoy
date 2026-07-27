@@ -11,6 +11,8 @@ import (
 
 	"github.com/lmittmann/tint"
 	"github.com/mattn/go-isatty"
+
+	"github.com/depado/buoy/internal/types"
 )
 
 type LogConf struct {
@@ -50,22 +52,17 @@ type ResticConf struct {
 
 var repoNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
-type NamedRepo struct {
-	Name string
-	URL  string
-}
-
-func ToRepoRefs(repos map[string]RepoConfig) ([]NamedRepo, []string) {
+func ToRepoRefs(repos map[string]RepoConfig) ([]types.RepoRef, []string) {
 	names := make([]string, 0, len(repos))
 	for name := range repos {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 
-	refs := make([]NamedRepo, 0, len(names))
+	refs := make([]types.RepoRef, 0, len(names))
 	list := make([]string, 0, len(names))
 	for _, name := range names {
-		refs = append(refs, NamedRepo{Name: name, URL: repos[name].URL})
+		refs = append(refs, types.RepoRef{Name: name, URL: repos[name].URL})
 		list = append(list, name+":"+repos[name].URL)
 	}
 	return refs, list
@@ -241,9 +238,19 @@ func (rc *ResticConf) PasswordFor(name string) string {
 
 func (rc *ResticConf) PasswordForURL(url string) string {
 	for _, c := range rc.Repos {
-		if strings.HasPrefix(url, c.URL) && c.Password != "" {
+		if c.Password == "" {
+			continue
+		}
+		if url == c.URL || (strings.HasPrefix(url, c.URL) && url[len(c.URL)] == '/') {
 			return c.Password
 		}
 	}
 	return rc.Password
+}
+
+func (rc *ResticConf) PasswordForEntry(repoName, url string) string {
+	if repoName != "" {
+		return rc.PasswordFor(repoName)
+	}
+	return rc.PasswordForURL(url)
 }

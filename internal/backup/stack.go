@@ -15,7 +15,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/depado/buoy/internal/docker"
-	"github.com/depado/buoy/internal/registry"
+	"github.com/depado/buoy/internal/types"
 )
 
 func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*docker.Container) (batchErr error) {
@@ -105,9 +105,9 @@ func (r *Runner) inspectStackContainers(ctx context.Context, summaries []docker.
 	return all, byID
 }
 
-func (r *Runner) resolveStackConfigs(fresh []*docker.Container, l *slog.Logger) (map[string]docker.BackupConfig, map[string][]registry.RepoRef) {
+func (r *Runner) resolveStackConfigs(fresh []*docker.Container, l *slog.Logger) (map[string]docker.BackupConfig, map[string][]types.RepoRef) {
 	cfgs := make(map[string]docker.BackupConfig, len(fresh))
-	repos := make(map[string][]registry.RepoRef, len(fresh))
+	repos := make(map[string][]types.RepoRef, len(fresh))
 	for _, ctr := range fresh {
 		cfg := r.parseConfig(ctr.Labels)
 		resolved, err := r.repoReg.SyncContainer(ctr, cfg)
@@ -213,7 +213,7 @@ func (r *Runner) backupStackServices(
 	ctx context.Context,
 	fresh []*docker.Container,
 	cfgs map[string]docker.BackupConfig,
-	repos map[string][]registry.RepoRef,
+	repos map[string][]types.RepoRef,
 	stopFailed map[string]bool,
 	l *slog.Logger,
 ) (map[string]error, []string) {
@@ -301,7 +301,7 @@ func (r *Runner) runPostHooksAndRetention(
 	ctx context.Context,
 	fresh []*docker.Container,
 	cfgs map[string]docker.BackupConfig,
-	repos map[string][]registry.RepoRef,
+	repos map[string][]types.RepoRef,
 	backupErrors map[string]error,
 	allIssues *[]string,
 	l *slog.Logger,
@@ -352,7 +352,7 @@ func (r *Runner) waitForDeps(ctx context.Context, deps map[string][]depInfo, ctr
 			if err := r.waitForCondition(ctx, ctr, dep.Condition); err != nil {
 				return err
 			}
-			if dep.Condition == ServiceHealthy {
+			if dep.Condition == serviceHealthy {
 				l.Info("container healthy")
 			} else {
 				l.Debug("dependency satisfied")
@@ -416,20 +416,20 @@ func (r *Runner) waitForEvent(
 	}
 }
 
-func eventsForCondition(c DepCondition) []string {
+func eventsForCondition(c depCondition) []string {
 	switch c {
-	case ServiceStarted, ServiceRunningOrHealthy:
+	case serviceStarted, serviceRunningOrHealthy:
 		return []string{"start", "die"}
-	case ServiceHealthy:
+	case serviceHealthy:
 		return []string{"health_status", "die"}
-	case ServiceCompletedSuccessfully:
+	case serviceCompletedSuccessfully:
 		return []string{"die"}
 	default:
 		return nil
 	}
 }
 
-func (r *Runner) waitForCondition(ctx context.Context, ctr *docker.Container, condition DepCondition) error {
+func (r *Runner) waitForCondition(ctx context.Context, ctr *docker.Container, condition depCondition) error {
 	ctx, cancel := context.WithTimeout(ctx, r.healthWaitTimeout)
 	defer cancel()
 
@@ -440,7 +440,7 @@ func (r *Runner) waitForCondition(ctx context.Context, ctr *docker.Container, co
 
 	return r.waitForEvent(ctx, ctr, eventTypes, func(c *docker.Container) (bool, error) {
 		switch condition {
-		case ServiceHealthy:
+		case serviceHealthy:
 			if c.Health == nil {
 				return false, fmt.Errorf("%s has no healthcheck configured", ctr.Name)
 			}
@@ -448,9 +448,9 @@ func (r *Runner) waitForCondition(ctx context.Context, ctr *docker.Container, co
 				return false, fmt.Errorf("%s is unhealthy", ctr.Name)
 			}
 			return c.Health.Status == "healthy", nil
-		case ServiceStarted, ServiceRunningOrHealthy:
+		case serviceStarted, serviceRunningOrHealthy:
 			return c.State == "running", nil
-		case ServiceCompletedSuccessfully:
+		case serviceCompletedSuccessfully:
 			if c.State == "exited" {
 				if c.ExitCode != 0 {
 					return false, fmt.Errorf("%s exited with code %d", ctr.Name, c.ExitCode)

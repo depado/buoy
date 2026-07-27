@@ -38,14 +38,12 @@ type Notifier struct {
 	logger *slog.Logger
 }
 
-var disabledNotifier = &Notifier{}
-
 // New creates a Notifier from shoutrrr service URLs. If urls is empty or
 // level is LevelNone, returns a no-op Notifier (notifications disabled).
 // Unknown services in the URLs cause a creation error.
 func New(urls []string, level Level, logger *slog.Logger) (*Notifier, error) {
 	if level == LevelNone || len(urls) == 0 {
-		return disabledNotifier, nil
+		return &Notifier{}, nil
 	}
 
 	sender, err := shoutrrr.CreateSenderWithOptions(types.SenderOptions{}, urls...)

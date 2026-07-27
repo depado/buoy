@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+
+	"github.com/depado/buoy/internal/types"
 )
 
 type message struct {
@@ -15,7 +17,7 @@ type message struct {
 // ParseBackupStream reads restic's JSON line output from stdout.
 // It calls onStatus for each progress update and onError for each file-level error.
 // Returns the final backup summary and any fatal exit error.
-func ParseBackupStream(stdout io.Reader, onStatus func(BackupStatus), onError func(BackupError)) (*BackupSummary, *ExitError, error) {
+func parseBackupStream(stdout io.Reader, onStatus func(BackupStatus), onError func(BackupError)) (*BackupSummary, *ExitError, error) {
 	var summary *BackupSummary
 	var exitErr *ExitError
 
@@ -61,8 +63,8 @@ func ParseBackupStream(stdout io.Reader, onStatus func(BackupStatus), onError fu
 // ParseStats decodes the JSON output from "restic stats --json".
 // restic writes a human-readable progress line before the JSON object,
 // so we scan for the line starting with '{'.
-func ParseStats(r io.Reader) (*Stats, error) {
-	var stats Stats
+func parseStats(r io.Reader) (*types.Stats, error) {
+	var stats types.Stats
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := bytes.TrimSpace(scanner.Bytes())

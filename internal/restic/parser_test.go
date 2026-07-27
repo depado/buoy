@@ -7,7 +7,7 @@ import (
 
 func TestParseStats(t *testing.T) {
 	input := `{"total_size":1024,"total_file_count":10,"snapshots_count":3}`
-	stats, err := ParseStats(strings.NewReader(input))
+	stats, err := parseStats(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -22,11 +22,11 @@ func TestParseStats(t *testing.T) {
 	}
 }
 
-func TestParseBackupStream_Summary(t *testing.T) {
+func TestParseStream_Summary(t *testing.T) {
 	lines := `{"message_type":"summary","files_new":5,"files_changed":0,"files_unmodified":0,"dirs_new":1,"dirs_changed":0,"dirs_unmodified":0,"data_blobs":1,"tree_blobs":1,"data_added":1024,"total_files_processed":5,"total_bytes_processed":2048,"total_duration":1.5,"snapshot_id":"snap1"}
 `
 	stdout := strings.NewReader(lines)
-	summary, exitErr, err := ParseBackupStream(stdout, nil, nil)
+	summary, exitErr, err := parseBackupStream(stdout, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestParseBackupStream_Summary(t *testing.T) {
 	}
 }
 
-func TestParseBackupStream_StatusCallback(t *testing.T) {
+func TestParseStream_StatusCallback(t *testing.T) {
 	lines := `{"message_type":"status","percent_done":50.0,"files_done":10,"total_files":20}
 {"message_type":"status","percent_done":100.0,"files_done":20,"total_files":20}
 `
@@ -53,7 +53,7 @@ func TestParseBackupStream_StatusCallback(t *testing.T) {
 		statuses = append(statuses, s)
 	}
 	stdout := strings.NewReader(lines)
-	_, _, err := ParseBackupStream(stdout, onStatus, nil)
+	_, _, err := parseBackupStream(stdout, onStatus, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -65,11 +65,11 @@ func TestParseBackupStream_StatusCallback(t *testing.T) {
 	}
 }
 
-func TestParseBackupStream_ExitError(t *testing.T) {
+func TestParseStream_ExitError(t *testing.T) {
 	lines := `{"message_type":"exit_error","code":1,"message":"repository does not exist"}
 `
 	stdout := strings.NewReader(lines)
-	_, exitErr, err := ParseBackupStream(stdout, nil, nil)
+	_, exitErr, err := parseBackupStream(stdout, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -81,9 +81,9 @@ func TestParseBackupStream_ExitError(t *testing.T) {
 	}
 }
 
-func TestParseBackupStream_EmptyInput(t *testing.T) {
+func TestParseStream_EmptyInput(t *testing.T) {
 	stdout := strings.NewReader("")
-	summary, exitErr, err := ParseBackupStream(stdout, nil, nil)
+	summary, exitErr, err := parseBackupStream(stdout, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

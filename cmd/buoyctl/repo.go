@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/depado/buoy/client"
+	"github.com/depado/buoy/internal/types"
 )
 
 var repoCmd = &cobra.Command{
@@ -31,7 +32,7 @@ var repoListCmd = &cobra.Command{
 		}
 		repo := getRepoFlag(cmd)
 
-		entries, err := withSpinner(cmd, "Fetching repos...", func() ([]client.RepoEntry, error) {
+		entries, err := withSpinner(cmd, "Fetching repos...", func() ([]types.RepoEntry, error) {
 			return clientAPI().ListRepos(repo, orphaned)
 		})
 		if err != nil {

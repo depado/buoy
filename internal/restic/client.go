@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
@@ -136,7 +137,7 @@ func (c *Client) Backup(ctx context.Context, repo string, paths []string, opts B
 	}
 
 	var errors []BackupError
-	summary, exitErr, parseErr := ParseBackupStream(stdout, nil, func(e BackupError) {
+	summary, exitErr, parseErr := parseBackupStream(stdout, nil, func(e BackupError) {
 		errors = append(errors, e)
 	})
 
@@ -241,7 +242,7 @@ func (c *Client) CheckReadData(ctx context.Context, repo string) error {
 // Runs both restore-size and raw-data modes to collect all available fields.
 // TotalSize and compression fields come from raw-data mode (actual repo data).
 // TotalFileCount and SnapshotsCount come from restore-size mode.
-func (c *Client) Stats(ctx context.Context, repo string) (*Stats, error) {
+func (c *Client) Stats(ctx context.Context, repo string) (*types.Stats, error) {
 	restoreStats, err := c.statsMode(ctx, repo)
 	if err != nil {
 		return nil, err
@@ -259,7 +260,7 @@ func (c *Client) Stats(ctx context.Context, repo string) (*Stats, error) {
 	return restoreStats, nil
 }
 
-func (c *Client) statsMode(ctx context.Context, repo string, extraArgs ...string) (*Stats, error) {
+func (c *Client) statsMode(ctx context.Context, repo string, extraArgs ...string) (*types.Stats, error) {
 	args := make([]string, 0, 4+len(extraArgs))
 	args = append(args, "stats", "-r", repo, "--json")
 	args = append(args, extraArgs...)
@@ -275,7 +276,7 @@ func (c *Client) statsMode(ctx context.Context, repo string, extraArgs ...string
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("restic stats: %w\n%s", err, stderr.String())
 	}
-	return ParseStats(&buf)
+	return parseStats(&buf)
 }
 
 func (c *Client) runSimple(ctx context.Context, op string, args ...string) error {
@@ -299,11 +300,17 @@ func (c *Client) command(ctx context.Context, args ...string) (*exec.Cmd, func()
 		return nil, nil, fmt.Errorf("create password temp file: %w", err)
 	}
 	if _, err := f.WriteString(passwordFromCtx(ctx, c.password)); err != nil {
-		f.Close()           //nolint:errcheck
-		os.Remove(f.Name()) //nolint:errcheck
+		if err := f.Close(); err != nil {
+			slog.Warn("failed to close password temp file", "error", err)
+		}
+		if err := os.Remove(f.Name()); err != nil {
+			slog.Warn("failed to remove password temp file", "error", err)
+		}
 		return nil, nil, fmt.Errorf("write password temp file: %w", err)
 	}
-	f.Close() //nolint:errcheck
+	if err := f.Close(); err != nil {
+		slog.Warn("failed to close password temp file", "error", err)
+	}
 
 	args = append([]string{"--password-file", f.Name()}, args...)
 	cmd := exec.CommandContext(ctx, c.binPath, args...)
@@ -314,7 +321,9 @@ func (c *Client) command(ctx context.Context, args ...string) (*exec.Cmd, func()
 	)
 
 	cleanup := func() {
-		os.Remove(f.Name()) //nolint:errcheck
+		if err := os.Remove(f.Name()); err != nil {
+			slog.Warn("failed to remove password temp file", "error", err)
+		}
 	}
 	return cmd, cleanup, nil
 }

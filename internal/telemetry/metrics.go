@@ -1,6 +1,8 @@
 package telemetry
 
 import (
+	"log/slog"
+
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
 )
@@ -38,34 +40,55 @@ func (t *Telemetry) Meters() MeterSet {
 }
 
 func buildMeterSet(m metric.Meter) MeterSet {
-	backupDuration, _ := m.Float64Histogram("buoy.backup.duration",
+	backupDuration, err := m.Float64Histogram("buoy.backup.duration",
 		metric.WithUnit("s"),
 		metric.WithDescription("Duration of restic backup per mount"),
 	)
-	backupMountCount, _ := m.Int64Histogram("buoy.backup.mounts",
+	if err != nil {
+		slog.Warn("failed to create metric", "name", "buoy.backup.duration", "error", err)
+	}
+	backupMountCount, err := m.Int64Histogram("buoy.backup.mounts",
 		metric.WithUnit("{mount}"),
 		metric.WithDescription("Number of backup-eligible mounts"),
 	)
-	backupsTotal, _ := m.Int64Counter("buoy.backups.total",
+	if err != nil {
+		slog.Warn("failed to create metric", "name", "buoy.backup.mounts", "error", err)
+	}
+	backupsTotal, err := m.Int64Counter("buoy.backups.total",
 		metric.WithUnit("{backup}"),
 		metric.WithDescription("Total number of backup operations"),
 	)
-	containerStopDur, _ := m.Float64Histogram("buoy.container.stop.duration",
+	if err != nil {
+		slog.Warn("failed to create metric", "name", "buoy.backups.total", "error", err)
+	}
+	containerStopDur, err := m.Float64Histogram("buoy.container.stop.duration",
 		metric.WithUnit("s"),
 		metric.WithDescription("Duration of container stop operations"),
 	)
-	containerStartDur, _ := m.Float64Histogram("buoy.container.start.duration",
+	if err != nil {
+		slog.Warn("failed to create metric", "name", "buoy.container.stop.duration", "error", err)
+	}
+	containerStartDur, err := m.Float64Histogram("buoy.container.start.duration",
 		metric.WithUnit("s"),
 		metric.WithDescription("Duration of container start operations"),
 	)
-	hookDuration, _ := m.Float64Histogram("buoy.hook.duration",
+	if err != nil {
+		slog.Warn("failed to create metric", "name", "buoy.container.start.duration", "error", err)
+	}
+	hookDuration, err := m.Float64Histogram("buoy.hook.duration",
 		metric.WithUnit("s"),
 		metric.WithDescription("Duration of hook command execution"),
 	)
-	retentionDuration, _ := m.Float64Histogram("buoy.retention.duration",
+	if err != nil {
+		slog.Warn("failed to create metric", "name", "buoy.hook.duration", "error", err)
+	}
+	retentionDuration, err := m.Float64Histogram("buoy.retention.duration",
 		metric.WithUnit("s"),
 		metric.WithDescription("Duration of retention operations"),
 	)
+	if err != nil {
+		slog.Warn("failed to create metric", "name", "buoy.retention.duration", "error", err)
+	}
 
 	return MeterSet{
 		BackupDuration:    backupDuration,

@@ -223,7 +223,7 @@ func TestParseBackupConfig(t *testing.T) {
 				Enabled:     true,
 				StopTimeout: 30 * time.Second,
 				Retention:   types.RetentionPolicy{},
-				MountOpts:   make(map[string]MountBackupOpts),
+				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
 		{
@@ -232,7 +232,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				StopTimeout: 30 * time.Second,
 				Retention:   types.RetentionPolicy{},
-				MountOpts:   make(map[string]MountBackupOpts),
+				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
 		{
@@ -244,7 +244,7 @@ func TestParseBackupConfig(t *testing.T) {
 				Enabled:     true,
 				StopTimeout: 30 * time.Second,
 				Retention:   types.RetentionPolicy{},
-				MountOpts:   make(map[string]MountBackupOpts),
+				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
 		{
@@ -256,7 +256,7 @@ func TestParseBackupConfig(t *testing.T) {
 				Schedule:    "@daily",
 				StopTimeout: 30 * time.Second,
 				Retention:   types.RetentionPolicy{},
-				MountOpts:   make(map[string]MountBackupOpts),
+				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
 		{
@@ -265,7 +265,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				StopTimeout: 5 * time.Minute,
 				Retention:   types.RetentionPolicy{},
-				MountOpts:   make(map[string]MountBackupOpts),
+				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
 		{
@@ -274,7 +274,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				StopTimeout: 30 * time.Second,
 				Retention:   types.RetentionPolicy{},
-				MountOpts:   make(map[string]MountBackupOpts),
+				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
 		{
@@ -284,7 +284,7 @@ func TestParseBackupConfig(t *testing.T) {
 				Include:     []MountEntry{{Key: "vol1"}, {Key: "/data"}},
 				StopTimeout: 30 * time.Second,
 				Retention:   types.RetentionPolicy{},
-				MountOpts:   make(map[string]MountBackupOpts),
+				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
 		{
@@ -297,7 +297,7 @@ func TestParseBackupConfig(t *testing.T) {
 				},
 				StopTimeout: 30 * time.Second,
 				Retention:   types.RetentionPolicy{},
-				MountOpts:   make(map[string]MountBackupOpts),
+				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
 		{
@@ -310,7 +310,7 @@ func TestParseBackupConfig(t *testing.T) {
 				},
 				StopTimeout: 30 * time.Second,
 				Retention:   types.RetentionPolicy{},
-				MountOpts:   make(map[string]MountBackupOpts),
+				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
 		{
@@ -320,7 +320,7 @@ func TestParseBackupConfig(t *testing.T) {
 				Include:     []MountEntry{{Key: "/data"}},
 				StopTimeout: 30 * time.Second,
 				Retention:   types.RetentionPolicy{},
-				MountOpts:   make(map[string]MountBackupOpts),
+				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
 		{
@@ -330,7 +330,7 @@ func TestParseBackupConfig(t *testing.T) {
 				Include:     []MountEntry{{Name: "src", Key: "/app"}},
 				StopTimeout: 30 * time.Second,
 				Retention:   types.RetentionPolicy{},
-				MountOpts:   make(map[string]MountBackupOpts),
+				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
 		{
@@ -340,7 +340,7 @@ func TestParseBackupConfig(t *testing.T) {
 				Exclude:     []string{"/data", "vol1"},
 				StopTimeout: 30 * time.Second,
 				Retention:   types.RetentionPolicy{},
-				MountOpts:   make(map[string]MountBackupOpts),
+				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
 		{
@@ -350,7 +350,7 @@ func TestParseBackupConfig(t *testing.T) {
 				BackupTags:  []string{"foo", "bar"},
 				StopTimeout: 30 * time.Second,
 				Retention:   types.RetentionPolicy{},
-				MountOpts:   make(map[string]MountBackupOpts),
+				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
 		{
@@ -360,7 +360,7 @@ func TestParseBackupConfig(t *testing.T) {
 				BackupExclude: []string{"*.log", "*.tmp"},
 				StopTimeout:   30 * time.Second,
 				Retention:     types.RetentionPolicy{},
-				MountOpts:     make(map[string]MountBackupOpts),
+				MountOpts:     make(map[string]mountBackupOpts),
 			},
 		},
 		{
@@ -378,7 +378,7 @@ func TestParseBackupConfig(t *testing.T) {
 				HookPostExec: "echo post exec",
 				StopTimeout:  30 * time.Second,
 				Retention:    types.RetentionPolicy{},
-				MountOpts:    make(map[string]MountBackupOpts),
+				MountOpts:    make(map[string]mountBackupOpts),
 			},
 		},
 		{
@@ -392,7 +392,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				StopTimeout: 30 * time.Second,
 				Retention:   types.RetentionPolicy{},
-				MountOpts: map[string]MountBackupOpts{
+				MountOpts: map[string]mountBackupOpts{
 					"src":  {Files: []string{"*.go", "*.ts"}, Exclude: []string{"*.tmp"}, Tags: []string{"source", "critical"}},
 					"data": {Files: []string{"*.sql"}},
 				},
@@ -430,7 +430,7 @@ func TestParseBackupConfig(t *testing.T) {
 				HookPreCmd:    "pg_dump > /backup/dump.sql",
 				HookPostExec:  "echo done",
 				Retention:     types.RetentionPolicy{KeepDaily: 30, KeepWeekly: 4},
-				MountOpts:     make(map[string]MountBackupOpts),
+				MountOpts:     make(map[string]mountBackupOpts),
 			},
 		},
 	}

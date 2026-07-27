@@ -147,7 +147,11 @@ func (c *Client) ExecInContainer(ctx context.Context, containerID, command strin
 	}
 	defer attachResp.Close()
 
-	go io.Copy(io.Discard, attachResp.Reader) //nolint:errcheck
+	done := make(chan struct{})
+	go func() {
+		io.Copy(io.Discard, attachResp.Reader) //nolint:errcheck
+		close(done)
+	}()
 
 	for {
 		inspect, err := c.api.ExecInspect(ctx, execResp.ID, client.ExecInspectOptions{})
@@ -155,6 +159,7 @@ func (c *Client) ExecInContainer(ctx context.Context, containerID, command strin
 			return -1, fmt.Errorf("exec inspect: %w", err)
 		}
 		if !inspect.Running {
+			<-done
 			return inspect.ExitCode, nil
 		}
 		time.Sleep(500 * time.Millisecond)

@@ -3,6 +3,7 @@ package scheduler
 import (
 	"log/slog"
 	"maps"
+	"strings"
 	"sync"
 
 	"github.com/robfig/cron/v3"
@@ -139,7 +140,7 @@ func scheduleGroupKey(project, schedule string) string {
 }
 
 func scheduleFromKey(key string) string {
-	if idx := lastIndex(key, "::"); idx >= 0 {
+	if idx := strings.LastIndex(key, "::"); idx >= 0 {
 		return key[idx+2:]
 	}
 	return key
@@ -173,13 +174,4 @@ func (r *containerRegistry) findByProject(project string) []*docker.Container {
 		}
 	}
 	return result
-}
-
-func lastIndex(s, sep string) int {
-	for i := len(s) - len(sep); i >= 0; i-- {
-		if s[i:i+len(sep)] == sep {
-			return i
-		}
-	}
-	return -1
 }

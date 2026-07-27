@@ -56,8 +56,8 @@ type MountEntry struct {
 	Key  string
 }
 
-// MountBackupOpts holds per-mount backup configuration for a named include entry.
-type MountBackupOpts struct {
+// mountBackupOpts holds per-mount backup configuration for a named include entry.
+type mountBackupOpts struct {
 	Files   []string
 	Exclude []string
 	Tags    []string
@@ -81,7 +81,7 @@ type BackupConfig struct {
 	BackupExclude []string
 	BackupTags    []string
 
-	MountOpts map[string]MountBackupOpts
+	MountOpts map[string]mountBackupOpts
 
 	HookPreCmd   string
 	HookPostCmd  string
@@ -119,7 +119,7 @@ func (c BackupConfig) ResolveMountBackup(name string) (files, excludes, tags []s
 func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetention string) BackupConfig {
 	cfg := BackupConfig{
 		StopTimeout: 30 * time.Second,
-		MountOpts:   make(map[string]MountBackupOpts),
+		MountOpts:   make(map[string]mountBackupOpts),
 	}
 
 	cfg.Enabled = getBool(labels, "buoy.enabled", false)
@@ -174,7 +174,7 @@ func parseIncludeEntries(raw string) []MountEntry {
 	return entries
 }
 
-func parseBackupMountOpts(labels map[string]string, opts map[string]MountBackupOpts) {
+func parseBackupMountOpts(labels map[string]string, opts map[string]mountBackupOpts) {
 	const prefix = "buoy.backup."
 	for k, v := range labels {
 		if !strings.HasPrefix(k, prefix) {

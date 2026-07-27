@@ -8,18 +8,18 @@ import (
 )
 
 // DepCondition represents a Docker Compose dependency condition.
-type DepCondition string
+type depCondition string
 
 const (
-	ServiceStarted               DepCondition = "service_started"
-	ServiceHealthy               DepCondition = "service_healthy"
-	ServiceRunningOrHealthy      DepCondition = "service_running_or_healthy"
-	ServiceCompletedSuccessfully DepCondition = "service_completed_successfully"
+	serviceStarted               depCondition = "service_started"
+	serviceHealthy               depCondition = "service_healthy"
+	serviceRunningOrHealthy      depCondition = "service_running_or_healthy"
+	serviceCompletedSuccessfully depCondition = "service_completed_successfully"
 )
 
 type depInfo struct {
 	Name      string
-	Condition DepCondition
+	Condition depCondition
 }
 
 // orderForStopFromDeps returns service names in reverse dependency order
@@ -53,9 +53,9 @@ func serviceDeps(ctrs []*docker.Container) map[string][]depInfo {
 			if len(parts) == 0 || parts[0] == "" {
 				continue
 			}
-			info := depInfo{Name: parts[0], Condition: ServiceStarted}
+			info := depInfo{Name: parts[0], Condition: serviceStarted}
 			if len(parts) > 1 && parts[1] != "" {
-				info.Condition = DepCondition(parts[1])
+				info.Condition = depCondition(parts[1])
 			}
 			deps[svc] = append(deps[svc], info)
 		}
@@ -63,7 +63,7 @@ func serviceDeps(ctrs []*docker.Container) map[string][]depInfo {
 	return deps
 }
 
-// depConditionsFrom looks up the dependency list for a service from a
+// DepConditionsFrom looks up the dependency list for a service from a
 // pre-computed dependency map.
 func depConditionsFrom(deps map[string][]depInfo, serviceName string) []depInfo {
 	return deps[serviceName]

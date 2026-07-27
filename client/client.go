@@ -3,9 +3,12 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/depado/buoy/internal/types"
 )
 
 const defaultTimeout = 5 * time.Minute
@@ -49,7 +52,7 @@ func (c *Client) doRequest(method, path string) (*http.Response, error) {
 	return resp, nil
 }
 
-func (c *Client) ListRepos(repo string, orphaned OrphanedFilter) ([]RepoEntry, error) {
+func (c *Client) ListRepos(repo string, orphaned OrphanedFilter) ([]types.RepoEntry, error) {
 	params := make(url.Values)
 	addQuery(params, repo, orphaned)
 	path := "/api/v1/repos" + queryString(params)
@@ -59,7 +62,7 @@ func (c *Client) ListRepos(repo string, orphaned OrphanedFilter) ([]RepoEntry, e
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return decodeJSON[[]RepoEntry](resp)
+	return decodeJSON[[]types.RepoEntry](resp)
 }
 
 func (c *Client) ListScheduled() ([]ScheduledEntry, error) {
@@ -79,7 +82,7 @@ func (c *Client) CheckRepos(repo string, readData bool, orphaned OrphanedFilter)
 	}
 	path := "/api/v1/repos/check" + queryString(params)
 
-	resp, err := c.doRequest("POST", path)
+	resp, err := c.doRequest("GET", path)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +95,7 @@ func (c *Client) StatsRepos(repo string, orphaned OrphanedFilter) (*StatsRespons
 	addQuery(params, repo, orphaned)
 	path := "/api/v1/repos/stats" + queryString(params)
 
-	resp, err := c.doRequest("POST", path)
+	resp, err := c.doRequest("GET", path)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +195,20 @@ func (c *Client) TriggerBackupAll() ([]BackupResult, error) {
 
 func decodeJSON[T any](resp *http.Response) (T, error) {
 	var v T
-	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return v, fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		var errResp struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(body, &errResp) == nil && errResp.Error != "" {
+			return v, fmt.Errorf("%s", errResp.Error)
+		}
+		return v, fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+	if err := json.Unmarshal(body, &v); err != nil {
 		return v, fmt.Errorf("decode response: %w", err)
 	}
 	return v, nil

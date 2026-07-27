@@ -49,11 +49,11 @@ func TestNew_Disabled(t *testing.T) {
 }
 
 func TestSendBackupError_NoOpNotifier(t *testing.T) {
-	// Must not panic with no-op sentinel.
-	disabledNotifier.SendBackupError("test-container", "test error message")
+	n := &Notifier{}
+	n.SendBackupError("test-container", "test error message")
 }
 
 func TestSendInfo_NoOpNotifier(t *testing.T) {
-	// Must not panic with no-op sentinel.
-	disabledNotifier.SendInfo("title", "test message")
+	n := &Notifier{}
+	n.SendInfo("title", "test message")
 }

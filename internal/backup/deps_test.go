@@ -43,7 +43,7 @@ func TestServiceDeps(t *testing.T) {
 				makeCtr("web", "db"),
 			},
 			want: map[string][]depInfo{
-				"web": {{Name: "db", Condition: ServiceStarted}},
+				"web": {{Name: "db", Condition: serviceStarted}},
 			},
 		},
 		{
@@ -53,8 +53,8 @@ func TestServiceDeps(t *testing.T) {
 			},
 			want: map[string][]depInfo{
 				"web": {
-					{Name: "db", Condition: ServiceStarted},
-					{Name: "redis", Condition: ServiceStarted},
+					{Name: "db", Condition: serviceStarted},
+					{Name: "redis", Condition: serviceStarted},
 				},
 			},
 		},
@@ -64,7 +64,7 @@ func TestServiceDeps(t *testing.T) {
 				makeCtr("web", "db:service_healthy"),
 			},
 			want: map[string][]depInfo{
-				"web": {{Name: "db", Condition: ServiceHealthy}},
+				"web": {{Name: "db", Condition: serviceHealthy}},
 			},
 		},
 		{
@@ -73,7 +73,7 @@ func TestServiceDeps(t *testing.T) {
 				makeCtr("web", "db::restart"),
 			},
 			want: map[string][]depInfo{
-				"web": {{Name: "db", Condition: ServiceStarted}},
+				"web": {{Name: "db", Condition: serviceStarted}},
 			},
 		},
 		{

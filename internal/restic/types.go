@@ -44,46 +44,6 @@ type ExitError struct {
 	Message     string `json:"message"`
 }
 
-// Snapshot represents a restic snapshot.
-type Snapshot struct {
-	ID       string           `json:"id"`
-	ShortID  string           `json:"short_id"`
-	Time     string           `json:"time"`
-	Parent   string           `json:"parent"`
-	Tree     string           `json:"tree"`
-	Paths    []string         `json:"paths"`
-	Hostname string           `json:"hostname"`
-	Username string           `json:"username"`
-	UID      uint32           `json:"uid"`
-	GID      uint32           `json:"gid"`
-	Tags     []string         `json:"tags"`
-	Summary  *SnapshotSummary `json:"summary"`
-}
-
-// SnapshotSummary contains statistics about a snapshot.
-type SnapshotSummary struct {
-	FilesNew        uint64  `json:"files_new"`
-	FilesChanged    uint64  `json:"files_changed"`
-	FilesUnmodified uint64  `json:"files_unmodified"`
-	DirsNew         uint64  `json:"dirs_new"`
-	DirsChanged     uint64  `json:"dirs_changed"`
-	DirsUnmodified  uint64  `json:"dirs_unmodified"`
-	DataAdded       uint64  `json:"data_added"`
-	TotalDuration   float64 `json:"total_duration"`
-}
-
-// Stats contains repository-level statistics.
-type Stats struct {
-	TotalSize              uint64  `json:"total_size"`
-	TotalFileCount         uint64  `json:"total_file_count"`
-	TotalBlobCount         uint64  `json:"total_blob_count"`
-	SnapshotsCount         uint64  `json:"snapshots_count"`
-	TotalUncompressedSize  uint64  `json:"total_uncompressed_size"`
-	CompressionRatio       float64 `json:"compression_ratio"`
-	CompressionProgress    float64 `json:"compression_progress"`
-	CompressionSpaceSaving float64 `json:"compression_space_saving"`
-}
-
 // BackupOptions configures a restic backup operation.
 type BackupOptions struct {
 	Tags     []string

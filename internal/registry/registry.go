@@ -11,8 +11,8 @@ import (
 
 	bolt "go.etcd.io/bbolt"
 
-	"github.com/depado/buoy/internal/config"
 	"github.com/depado/buoy/internal/docker"
+	"github.com/depado/buoy/internal/types"
 )
 
 var (
@@ -20,33 +20,13 @@ var (
 	containerReposBucket = []byte("container_repos")
 )
 
-type RepoEntry struct {
-	URL            string    `json:"url"`
-	RepoName       string    `json:"repo_name,omitempty"`
-	ContainerID    string    `json:"container_id"`
-	ContainerName  string    `json:"container_name"`
-	ComposeProject string    `json:"compose_project,omitempty"`
-	ComposeService string    `json:"compose_service,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
-	LastBackupAt   time.Time `json:"last_backup_at"`
-	LastBackupOK   bool      `json:"last_backup_ok"`
-	LastCheckAt    time.Time `json:"last_check_at"`
-	LastCheckOK    bool      `json:"last_check_ok"`
-	Orphaned       bool      `json:"orphaned"`
-}
-
-type RepoRef struct {
-	Name string
-	URL  string
-}
-
 type Registry struct {
 	db     *bolt.DB
-	repos  []config.NamedRepo
+	repos  []types.RepoRef
 	logger *slog.Logger
 }
 
-func Open(path string, baseRepos []config.NamedRepo, logger *slog.Logger) (*Registry, error) {
+func Open(path string, baseRepos []types.RepoRef, logger *slog.Logger) (*Registry, error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("create registry directory %s: %w", dir, err)
@@ -74,7 +54,7 @@ func (r *Registry) Close() error {
 	return r.db.Close()
 }
 
-func (r *Registry) SyncContainer(ctr *docker.Container, cfg docker.BackupConfig) ([]RepoRef, error) {
+func (r *Registry) SyncContainer(ctr *docker.Container, cfg docker.BackupConfig) ([]types.RepoRef, error) {
 	repos, err := r.resolveRepos(ctr, cfg)
 	if err != nil {
 		return nil, err
@@ -103,11 +83,11 @@ func (r *Registry) SyncContainer(ctr *docker.Container, cfg docker.BackupConfig)
 	return repos, writeErr
 }
 
-func (r *Registry) upsertRepoEntry(b *bolt.Bucket, ref RepoRef, ctr *docker.Container, now time.Time) error {
+func (r *Registry) upsertRepoEntry(b *bolt.Bucket, ref types.RepoRef, ctr *docker.Container, now time.Time) error {
 	key := []byte(ref.URL)
 	existing := b.Get(key)
 
-	var entry RepoEntry
+	var entry types.RepoEntry
 	if existing != nil {
 		if err := json.Unmarshal(existing, &entry); err != nil {
 			return fmt.Errorf("unmarshal repo entry %s: %w", ref.URL, err)
@@ -129,7 +109,7 @@ func (r *Registry) upsertRepoEntry(b *bolt.Bucket, ref RepoRef, ctr *docker.Cont
 		entry.Orphaned = false
 	} else {
 		r.logger.Debug("creating repo entry", "repo", ref.URL, "container", ctr.Name)
-		entry = RepoEntry{
+		entry = types.RepoEntry{
 			URL:            ref.URL,
 			RepoName:       ref.Name,
 			ContainerID:    ctr.ID,
@@ -149,27 +129,27 @@ func (r *Registry) upsertRepoEntry(b *bolt.Bucket, ref RepoRef, ctr *docker.Cont
 
 func (r *Registry) MarkBackupComplete(repo string, ok bool) error {
 	r.logger.Debug("marking backup complete", "repo", repo, "ok", ok)
-	return r.updateRepoMeta(repo, func(entry *RepoEntry) {
+	return r.updateRepoMeta(repo, func(entry *types.RepoEntry) {
 		entry.LastBackupAt = time.Now()
 		entry.LastBackupOK = ok
 	})
 }
 
 func (r *Registry) MarkCheckComplete(repo string, ok bool) error {
-	return r.updateRepoMeta(repo, func(entry *RepoEntry) {
+	return r.updateRepoMeta(repo, func(entry *types.RepoEntry) {
 		entry.LastCheckAt = time.Now()
 		entry.LastCheckOK = ok
 	})
 }
 
-func (r *Registry) updateRepoMeta(repo string, fn func(*RepoEntry)) error {
+func (r *Registry) updateRepoMeta(repo string, fn func(*types.RepoEntry)) error {
 	return r.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(reposBucket)
 		data := b.Get([]byte(repo))
 		if data == nil {
 			return nil
 		}
-		var entry RepoEntry
+		var entry types.RepoEntry
 		if err := json.Unmarshal(data, &entry); err != nil {
 			return fmt.Errorf("unmarshal repo entry %s: %w", repo, err)
 		}
@@ -203,7 +183,7 @@ func (r *Registry) MarkOrphaned(containerID string) error {
 			if rd == nil {
 				continue
 			}
-			var entry RepoEntry
+			var entry types.RepoEntry
 			if err := json.Unmarshal(rd, &entry); err != nil {
 				return fmt.Errorf("unmarshal repo entry %s: %w", repo, err)
 			}
@@ -246,18 +226,18 @@ func FilterByRepo(url string) ListOption {
 	return func(c *listConfig) { c.repoURL = url }
 }
 
-func (r *Registry) ListRepos(opts ...ListOption) ([]RepoEntry, error) {
+func (r *Registry) ListRepos(opts ...ListOption) ([]types.RepoEntry, error) {
 	var cfg listConfig
 	for _, o := range opts {
 		o(&cfg)
 	}
 
-	var entries []RepoEntry
+	var entries []types.RepoEntry
 	err := r.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(reposBucket)
 		c := b.Cursor()
 		for k, v := c.First(); k != nil; k, v = c.Next() {
-			var entry RepoEntry
+			var entry types.RepoEntry
 			if err := json.Unmarshal(v, &entry); err != nil {
 				return fmt.Errorf("unmarshal repo entry %s: %w", string(k), err)
 			}
@@ -277,11 +257,11 @@ func (r *Registry) ListRepos(opts ...ListOption) ([]RepoEntry, error) {
 	return entries, err
 }
 
-func (r *Registry) resolveRepos(ctr *docker.Container, cfg docker.BackupConfig) ([]RepoRef, error) {
-	var refs []RepoRef
+func (r *Registry) resolveRepos(ctr *docker.Container, cfg docker.BackupConfig) ([]types.RepoRef, error) {
+	var refs []types.RepoRef
 
 	if len(cfg.ReposOverride) > 0 {
-		repoMap := make(map[string]config.NamedRepo, len(r.repos))
+		repoMap := make(map[string]types.RepoRef, len(r.repos))
 		for _, nr := range r.repos {
 			repoMap[nr.Name] = nr
 		}
@@ -291,15 +271,15 @@ func (r *Registry) resolveRepos(ctr *docker.Container, cfg docker.BackupConfig) 
 				r.logger.Warn("unknown repo name in buoy.repos label, skipping", "repo_name", name, "container", ctr.Name)
 				continue
 			}
-			refs = append(refs, RepoRef{Name: nr.Name, URL: nr.URL})
+			refs = append(refs, types.RepoRef{Name: nr.Name, URL: nr.URL})
 		}
 	} else {
 		for _, nr := range r.repos {
-			refs = append(refs, RepoRef{Name: nr.Name, URL: nr.URL})
+			refs = append(refs, types.RepoRef{Name: nr.Name, URL: nr.URL})
 		}
 	}
 
-	repos := make([]RepoRef, 0, len(refs))
+	repos := make([]types.RepoRef, 0, len(refs))
 	for _, ref := range refs {
 		base := strings.TrimRight(ref.URL, "/")
 		path := ctr.RepoPath(base)
@@ -310,7 +290,7 @@ func (r *Registry) resolveRepos(ctr *docker.Container, cfg docker.BackupConfig) 
 			}
 			path = filepath.Clean(abs)
 		}
-		repos = append(repos, RepoRef{Name: ref.Name, URL: path})
+		repos = append(repos, types.RepoRef{Name: ref.Name, URL: path})
 	}
 	return repos, nil
 }
@@ -332,12 +312,12 @@ func isLocalPath(p string) bool {
 	return false
 }
 
-func (r *Registry) ResolveRepos(ctr *docker.Container, cfg docker.BackupConfig) ([]RepoRef, error) {
+func (r *Registry) ResolveRepos(ctr *docker.Container, cfg docker.BackupConfig) ([]types.RepoRef, error) {
 	return r.resolveRepos(ctr, cfg)
 }
 
-func (r *Registry) GetContainerRepos(containerID string) ([]RepoEntry, error) {
-	var entries []RepoEntry
+func (r *Registry) GetContainerRepos(containerID string) ([]types.RepoEntry, error) {
+	var entries []types.RepoEntry
 	err := r.db.View(func(tx *bolt.Tx) error {
 		cb := tx.Bucket(containerReposBucket)
 		rb := tx.Bucket(reposBucket)
@@ -355,10 +335,10 @@ func (r *Registry) GetContainerRepos(containerID string) ([]RepoEntry, error) {
 		for _, repo := range repos {
 			rd := rb.Get([]byte(repo))
 			if rd == nil {
-				entries = append(entries, RepoEntry{URL: repo})
+				entries = append(entries, types.RepoEntry{URL: repo})
 				continue
 			}
-			var entry RepoEntry
+			var entry types.RepoEntry
 			if err := json.Unmarshal(rd, &entry); err != nil {
 				return fmt.Errorf("unmarshal repo entry %s: %w", repo, err)
 			}

@@ -5,7 +5,7 @@ import (
 
 	"github.com/depado/buoy/internal/config"
 	"github.com/depado/buoy/internal/docker"
-	"github.com/depado/buoy/internal/registry"
+	"github.com/depado/buoy/internal/types"
 )
 
 func TestMapKeys(t *testing.T) {
@@ -151,34 +151,34 @@ func TestPasswordForEntry(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		entry registry.RepoEntry
+		entry types.RepoEntry
 		want  string
 	}{
 		{
 			"by repo name",
-			registry.RepoEntry{RepoName: "s3", URL: "s3:https://bucket/myapp/db"},
+			types.RepoEntry{RepoName: "s3", URL: "s3:https://bucket/myapp/db"},
 			"s3-pass",
 		},
 		{
 			"by URL prefix match (no RepoName)",
-			registry.RepoEntry{URL: "/backup/myapp/db"},
+			types.RepoEntry{URL: "/backup/myapp/db"},
 			"local-pass",
 		},
 		{
 			"global fallback",
-			registry.RepoEntry{URL: "/unknown/path"},
+			types.RepoEntry{URL: "/unknown/path"},
 			"global",
 		},
 		{
 			"repo name takes priority over prefix match",
-			registry.RepoEntry{RepoName: "s3", URL: "/backup/myapp/db"},
+			types.RepoEntry{RepoName: "s3", URL: "/backup/myapp/db"},
 			"s3-pass",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := r.passwordForEntry(tt.entry)
+			got := r.resticConf.PasswordForEntry(tt.entry.RepoName, tt.entry.URL)
 			if got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}

@@ -19,7 +19,7 @@ func New(docker *docker.Client, logger *slog.Logger) *Executor {
 }
 
 func (e *Executor) ExecOnHost(ctx context.Context, command string) error {
-	e.logger.Debug("executing host command", "command", command)
+	e.logger.Debug("executing host command")
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -30,7 +30,7 @@ func (e *Executor) ExecOnHost(ctx context.Context, command string) error {
 }
 
 func (e *Executor) ExecInContainer(ctx context.Context, containerID, command string) error {
-	e.logger.Debug("executing command in container", "container_id", containerID, "command", command)
+	e.logger.Debug("executing command in container", "container_id", containerID)
 	exitCode, err := e.docker.ExecInContainer(ctx, containerID, command)
 	if err != nil {
 		return fmt.Errorf("exec in container: %w", err)

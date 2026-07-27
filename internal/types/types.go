@@ -3,7 +3,39 @@ package types
 import (
 	"strconv"
 	"strings"
+	"time"
 )
+
+type RepoEntry struct {
+	URL            string    `json:"url"`
+	RepoName       string    `json:"repo_name,omitempty"`
+	ContainerID    string    `json:"container_id"`
+	ContainerName  string    `json:"container_name"`
+	ComposeProject string    `json:"compose_project,omitempty"`
+	ComposeService string    `json:"compose_service,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	LastBackupAt   time.Time `json:"last_backup_at"`
+	LastBackupOK   bool      `json:"last_backup_ok"`
+	LastCheckAt    time.Time `json:"last_check_at"`
+	LastCheckOK    bool      `json:"last_check_ok"`
+	Orphaned       bool      `json:"orphaned"`
+}
+
+type Stats struct {
+	TotalSize              uint64  `json:"total_size"`
+	TotalFileCount         uint64  `json:"total_file_count"`
+	TotalBlobCount         uint64  `json:"total_blob_count"`
+	SnapshotsCount         uint64  `json:"snapshots_count"`
+	TotalUncompressedSize  uint64  `json:"total_uncompressed_size"`
+	CompressionRatio       float64 `json:"compression_ratio"`
+	CompressionProgress    float64 `json:"compression_progress"`
+	CompressionSpaceSaving float64 `json:"compression_space_saving"`
+}
+
+type RepoRef struct {
+	Name string
+	URL  string
+}
 
 type RetentionPolicy struct {
 	KeepLast    int

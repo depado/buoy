@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/depado/buoy/internal/config"
 	"github.com/depado/buoy/internal/docker"
+	"github.com/depado/buoy/internal/types"
 )
 
 func newTestRegistry(t *testing.T) *Registry {
@@ -15,7 +15,7 @@ func newTestRegistry(t *testing.T) *Registry {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.db")
 
-	r, err := Open(path, []config.NamedRepo{
+	r, err := Open(path, []types.RepoRef{
 		{Name: "local", URL: "/backup"},
 		{Name: "s3", URL: "s3:https://bucket"},
 	}, slog.Default())
@@ -321,9 +321,7 @@ func TestOpen_NonExistentDir(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "subdir", "nested")
 	path := filepath.Join(dir, "test.db")
 
-	r, err := Open(path, []config.NamedRepo{
-		{Name: "local", URL: "/backup"},
-	}, slog.Default())
+	r, err := Open(path, []types.RepoRef{{Name: "local", URL: "/backup"}}, slog.Default())
 	if err != nil {
 		t.Fatalf("Open should create parent dirs: %v", err)
 	}

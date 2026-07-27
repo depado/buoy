@@ -106,10 +106,14 @@ func (w *Watcher) streamEvents(
 				w.logger.Debug("docker event stream closed, reconnecting")
 				return true
 			}
-			eventsCh <- Event{
+			select {
+			case eventsCh <- Event{
 				Type:      EventType(msg.Action),
 				ID:        msg.Actor.ID,
 				ActorName: msg.Actor.Attributes["name"],
+			}:
+			case <-ctx.Done():
+				return false
 			}
 		case err, ok := <-errs:
 			if !ok {
@@ -118,7 +122,10 @@ func (w *Watcher) streamEvents(
 			}
 			if err != nil {
 				w.logger.Warn("docker event stream error", "error", err)
-				errCh <- err
+				select {
+				case errCh <- err:
+				case <-ctx.Done():
+				}
 				return true
 			}
 		case <-ctx.Done():
