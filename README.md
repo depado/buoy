@@ -30,29 +30,11 @@
   - [Include/Exclude Syntax](#includeexclude-syntax)
   - [Compose Stack Awareness](#compose-stack-awareness)
 - [Examples](#examples)
-  - [PostgreSQL with dump hooks](#postgresql-with-dump-hooks)
-  - [Named includes with per-mount options](#named-includes-with-per-mount-options)
-  - [Compose stack with dependencies](#compose-stack-with-dependencies)
 - [Configuration](#configuration)
-  - [Config file](#config-file-confyaml)
-  - [Reference](#reference)
-  - [Password](#password)
-  - [Notifications](#notifications)
-  - [Periodic Repository Check](#periodic-repository-check)
-  - [State Persistence](#state-persistence)
-  - [HTTP API](#http-api)
 - [CLI](#cli)
-  - [`buoyctl repo`](#buoyctl-repo)
-  - [`buoyctl list`](#buoyctl-list)
-  - [`buoyctl backup`](#buoyctl-backup)
-  - [`buoyctl discover`](#buoyctl-discover)
 - [Repository Layout](#repository-layout)
-- [Deployment](#deployment)
-  - [Restart policy](#restart-policy-caveat)
-  - [Signal handling](#signal-handling)
-- [Restoring](#restoring)
-- [Backends](#backends)
 - [Development](#development)
+- [Docs](#docs)
 
 ## Features
 
@@ -403,50 +385,6 @@ When a container label refers to a global value (`buoy.schedule` →
 `daemon.default_schedule`, `buoy.retention` → `daemon.default_retention`,
 `buoy.repos` → `restic.repos`), the default shown here applies.
 
-### Config file (`conf.yaml`)
-
-The values shown are the defaults — copy this to get started.
-
-```yaml
-log:
-  level: info
-  format: json
-  source: false
-  color: auto
-
-daemon:
-  concurrency: 2
-  default_schedule: ""
-  default_retention: "keep-within:7d,keep-daily:7,keep-weekly:4,keep-monthly:6,keep-yearly:3"
-  resync_interval: "5m"
-  exec_timeout: "5m"
-  health_wait_timeout: "5m"
-  backup_timeout: "1h"
-  check_schedule: "@weekly"
-  db_path: "./buoy.db"
-
-docker:
-  host: unix:///var/run/docker.sock
-
-restic:
-  binary_path: restic
-  password: ""
-  compression: auto
-  repos:
-    local:
-      url: /backup
-
-api:
-  enabled: true
-  host: "0.0.0.0"
-  port: 8080
-  token: ""
-
-notify:
-  urls: []
-  level: error
-```
-
 ### Reference
 
 | Key                          | Default                                                                  | Env / CLI                                                          |
@@ -468,7 +406,11 @@ notify:
 | `restic.binary_path`         | `restic`                                                                 | `BUOY_RESTIC_BINARY_PATH` / `--restic.binary_path`                 |
 | `restic.password`            | _(optional)_                                                             | `BUOY_RESTIC_PASSWORD` / `--restic.password`                       |
 | `restic.compression`         | `auto`                                                                   | `BUOY_RESTIC_COMPRESSION` / `--restic.compression`                 |
-| `restic.repos`               | _(none)_                                                                 | See [Password](#password) for env var format.                      |
+| `restic.repos`               | _(none)_                                                                 | See [Configuration](docs/configuration.md#password) for env var format. |
+| `otel.enabled`               | `false`                                                                  | `BUOY_OTEL_ENABLED` / `--otel.enabled`                               |
+| `otel.protocol`              | `grpc`                                                                   | `BUOY_OTEL_PROTOCOL` / `--otel.protocol`                            |
+| `otel.endpoint`              | _(empty)_                                                                | `BUOY_OTEL_ENDPOINT` / `--otel.endpoint`                            |
+| `otel.insecure`              | `false`                                                                  | `BUOY_OTEL_INSECURE` / `--otel.insecure`                            |
 | `api.enabled`                | `true`                                                                   | `BUOY_API_ENABLED` / `--api.enabled`                               |
 | `api.host`                   | `0.0.0.0`                                                                | `BUOY_API_HOST` / `--api.host`                                     |
 | `api.port`                   | `8080`                                                                   | `BUOY_API_PORT` / `--api.port`                                     |
@@ -479,364 +421,20 @@ notify:
 > [!NOTE]
 > **Concurrency is I/O-bound.** Each backup spawns a restic process that reads from disk and writes to storage. Setting `concurrency` higher than your I/O capacity can degrade performance across all running backups. Start low (1–2) and increase only if your storage backend and disk I/O can handle it.
 
-### Password
-
-buoy supports three password levels for maximum flexibility:
-
-| Level           | Source                                                                           | Priority                                     |
-| --------------- | -------------------------------------------------------------------------------- | -------------------------------------------- |
-| Global fallback | `restic.password` config / `BUOY_RESTIC_PASSWORD` env / `--restic.password` flag | Lowest — used when nothing else is set       |
-| Per-repo        | `password` field on each named repo                                              | Middle — overrides the global fallback       |
-| Per-container   | `buoy.password` Docker label                                                     | Highest — overrides both per-repo and global |
-
-buoy passes all passwords to restic via a temporary `--password-file` rather than
-the `RESTIC_PASSWORD` environment variable.
-
-**Env var format for named repos:**
-
-```sh
-BUOY_RESTIC_REPO_LOCAL_URL=/backup
-BUOY_RESTIC_REPO_LOCAL_PASSWORD=local-password
-BUOY_RESTIC_REPO_S3_URL=s3:https://mybucket/backups
-BUOY_RESTIC_REPO_S3_PASSWORD=s3-password
-```
-
-Repo names must match `[a-zA-Z0-9][a-zA-Z0-9_-]*`.
-
-**Per-container override:**
-
-```yaml
-services:
-  app:
-    labels:
-      buoy.enabled: "true"
-      buoy.password: "${APP_RESTIC_PASSWORD}"
-```
-
-This overrides all repo-level and global passwords for that container.
-
-### Notifications
-
-buoy can send failure notifications via [shoutrrr](https://github.com/nicholas-fedor/shoutrrr),
-supporting 50+ services including Slack, Discord, Telegram, email, and Gotify.
-Configure one or more shoutrrr URLs and set the notification level:
-
-- `error` - notify on backup failures only (default)
-- `all` - notify on all backup events
-- `none` - disable notifications (or omit config)
-
-Each URL encodes both the service and its credentials. Examples:
-
-| Service      | URL format                                                                     |
-| ------------ | ------------------------------------------------------------------------------ |
-| Slack        | `slack://hook:tokenA-tokenB-tokenC@webhook`                                    |
-| Discord      | `discord://token@channel`                                                      |
-| Telegram     | `telegram://token@telegram?chats=@channel`                                     |
-| Gotify       | `gotify://host:port/token`                                                     |
-| Email (SMTP) | `smtp://user:pass@host:port/?from=sender@example.com&to=recipient@example.com` |
-
-See [shoutrrr's documentation](https://containrrr.dev/shoutrrr/latest/services/overview/)
-for the full list of services and URL formats.
-
-> [!NOTE]
-> Notifications are best-effort — a failure logs a warning but never blocks or fails a backup.
-
-### Periodic Repository Check
-
-buoy can periodically verify the structural integrity of all restic repositories
-with `restic check`. This is a lightweight verification that reads the repository
-index and ensures all pack files are referenced correctly.
-
-Configure via `daemon.check_schedule` (default: `@weekly`). Set to `""` to
-disable.
-
-```yaml
-daemon:
-  check_schedule: "@weekly"
-```
-
-When the check runs, buoy reads known repositories from its persistent state
-database (`buoy.db`). Failures are logged and optionally trigger notifications.
-This is a structural check only - it does not read pack file data (use the CLI
-or API for `restic check --read-data` if needed).
-
-### State Persistence
-
-buoy maintains a [bbolt](https://github.com/etcd-io/bbolt) database at the path
-configured by `daemon.db_path` (default `./buoy.db`). This database tracks
-every repository buoy has ever managed: when it was created, when it was last
-backed up, and whether the associated container still exists.
-
-This enables:
-
-- **Orphaned repo detection**: repos belonging to removed containers are tracked
-  rather than forgotten, so you can still run retention, integrity checks, or
-  manually clean them up
-- **Cross-restart awareness**: the repository list survives daemon restarts
-
-The database is a single file. Mount a volume or bind mount at the directory
-containing it to persist state across container recreates.
-
-### OpenTelemetry
-
-buoy can export traces, metrics, and logs to any OTLP-compatible backend (Grafana Cloud, OTel Collector, etc.). Enable it with a single config key; all three signals are disabled by default.
-
-```yaml
-otel:
-  enabled: true
-  protocol: "grpc"       # grpc (default) or http
-  endpoint: ""           # override OTEL_EXPORTER_OTLP_ENDPOINT
-  insecure: false        # skip TLS
-```
-
-All fields are optional. The OTel SDK auto-reads `OTEL_EXPORTER_OTLP_*` env vars; the config fields are YAML overrides for users who prefer not to set environment variables.
-
-**Env var only (no config file changes):**
-
-```bash
-BUOY_OTEL_ENABLED=true OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318 ./buoy run
-```
-
-**What you get:**
-
-- **Traces** — every backup cycle is a trace with child spans for each phase: container stop, restic backup (per mount), container start, hooks, retention, dependency waits.
-- **Metrics** — `buoy.backup.duration`, `buoy.backups.total`, `buoy.container.stop.duration`, `buoy.container.start.duration`, `buoy.hook.duration`, `buoy.retention.duration`. Go runtime metrics (GC, memory) included automatically.
-- **Log correlation** — existing slog output is bridged to OTLP. Every log line inside a span gets `trace_id` and `span_id`. Click a span in Tempo → see the logs.
-
-**Span names** (see `docs/otel-plan.md` for the full hierarchy):
-
-| Span | Context |
-|------|---------|
-| `buoy.schedule.run` | Cron trigger wrapping full backup cycle |
-| `buoy.backup` | Standalone container backup |
-| `buoy.stack.backup` | Compose stack batch backup |
-| `buoy.container.stop` | Container stop (standalone or stack) |
-| `buoy.container.start` | Container start + health check wait |
-| `buoy.restic.backup` | Per-mount restic invocation |
-| `buoy.hook.pre.host` / `.exec` | Pre-backup hook execution |
-| `buoy.hook.post.host` / `.exec` | Post-backup hook execution |
-| `buoy.container.wait` | Docker event polling (health/dependency) |
-| `buoy.startup_scan` | Initial container discovery |
-| `buoy.resync` | Periodic label resync |
-| `buoy.check` | Periodic restic check |
-
-Hooks only appear when configured — no empty spans when no labels are set.
-
-**Dashboard (Grafana example):**
-
-| Panel | PromQL |
-|-------|--------|
-| Backup failures | `rate(buoy_backups_total{status="fail"}[10m]) > 0` |
-| Duration p95 | `histogram_quantile(0.95, rate(buoy_backup_duration_seconds_bucket[1h]))` |
-| Start latency | `histogram_quantile(0.50, rate(buoy_container_start_duration_seconds_bucket[1h]))` |
-
-**Graceful degradation:** Each signal initializes independently. An unreachable collector at startup disables only that signal (logged as a warning). The daemon always starts. When `otel.enabled: false` (default), no exporters start and all metric/spans are no-op — zero overhead.
-
-### HTTP API
-
-buoy exposes a read/write HTTP API on `api.host:api.port` (default
-`0.0.0.0:8080`) for querying and operating on repositories. Authentication is
-via a Bearer token (`api.token`); when the token is empty, no authentication is
-required.
-
-| Method | Path                   | Description                                                            |
-| ------ | ---------------------- | ---------------------------------------------------------------------- |
-| `GET`  | `/api/v1/health`       | Health check (no auth)                                                 |
-| `GET`  | `/api/v1/scheduled`    | List currently scheduled backups                                       |
-| `GET`  | `/api/v1/repos`        | List all known repos. `?orphaned=true` to show only orphaned           |
-| `POST` | `/api/v1/repos/check`  | Run `restic check` on all repos. `?read-data=true` for full check      |
-| `POST` | `/api/v1/repos/stats`  | Aggregate `restic stats` across all repos                              |
-| `POST` | `/api/v1/repos/unlock` | Unlock all repos                                                       |
-| `POST` | `/api/v1/repos/forget` | Run `restic forget` with `?retention=keep-daily:7,...`                 |
-| `POST` | `/api/v1/repos/prune`  | Run `restic prune` on all repos                                        |
-| `POST` | `/api/v1/backup`       | Trigger backup. `?all=true`, `?project=<name>`, or `?container=<name>` |
-
-Connect to the API from a local or remote buoy CLI, or use it as the backend
-for a dashboard/aggregator.
+For password setup, notifications, and the HTTP API, see **[Configuration](docs/configuration.md)**. For observability, see **[OpenTelemetry](docs/otel.md)**.
 
 ## CLI
 
-### `buoyctl repo`
-
-buoyctl provides a `repo` subcommand for querying and operating on managed
-repositories. The CLI communicates with a running buoy daemon via its HTTP API.
-
-Set `--api.url` and `--api.token` per command, or use the `BUOY_URL` /
-`BUOY_TOKEN` environment variables. Defaults to `http://127.0.0.1:8080`.
+buoyctl talks to the daemon's HTTP API. Quick reference:
 
 ```bash
-buoyctl repo list                       # list active (non-orphaned) repos
-buoyctl repo list --orphaned            # show only orphaned repos
-buoyctl repo list --all                 # show all repos including orphaned
-buoyctl repo list --repo /backup/myapp  # show a specific repo
-buoyctl repo check                      # structural integrity check (active repos)
-buoyctl repo check --read-data          # full data integrity check
-buoyctl repo stats                      # storage usage across active repos
-buoyctl repo unlock --repo /backup/myapp
-buoyctl repo forget --retention keep-daily:7,keep-weekly:4 --all
-buoyctl repo prune --orphaned
-
-# JSON output
-buoyctl repo list --json
-buoyctl repo stats --json
-
-# Remote daemon with auth
-export BUOY_URL=https://buoy.internal.example.com
-export BUOY_TOKEN=secret123
-buoyctl repo stats
+buoyctl repo list     # list managed repos
+buoyctl list          # list scheduled backups
+buoyctl backup --all  # trigger immediate backup
+buoyctl discover .    # scan compose files for mounts
 ```
 
-Read-only commands (`list`, `check`, `stats`) default to active (non-orphaned)
-repositories. Destructive commands (`unlock`, `forget`, `prune`) require an
-explicit scope via `--all`, `--orphaned`, or `--repo`.
-
-**Flags:**
-
-| Flag          | Availability | Description                                                                    |
-| ------------- | ------------ | ------------------------------------------------------------------------------ |
-| `--json`      | all          | Output as JSON                                                                 |
-| `--api.url`   | all          | Daemon API URL (defaults to `BUOY_URL` env)                                    |
-| `--api.token` | all          | API bearer token (defaults to `BUOY_TOKEN` env)                                |
-| `--orphaned`  | all          | Operate on orphaned repos only (mutually exclusive with `--all`)               |
-| `--all`       | all          | Operate on all repos including orphaned (mutually exclusive with `--orphaned`) |
-| `--repo`      | all          | Operate on a specific repository URL                                           |
-| `--read-data` | `check`      | Read all pack files for full integrity check                                   |
-| `--retention` | `forget`     | Retention policy (e.g. `keep-daily:7`)                                         |
-
-> [!WARNING]
-> Destructive operations (`unlock`, `forget`, `prune`) require an explicit
-> scope flag (`--all`, `--orphaned`, or `--repo`). They also return an error
-> if any backup is currently in progress, preventing accidental lock conflicts
-> or corruption.
-
-### `buoyctl list`
-
-Lists all currently active scheduled backups known to the daemon.
-
-```bash
-buoyctl list            # render as a table
-buoyctl list --json     # JSON output
-```
-
-Shows container name, compose project/service, schedule expression, repos (if overridden), and whether the container is stopped before backup. Empty output means no containers are currently scheduled.
-
-### `buoyctl backup`
-
-Triggers an immediate backup without waiting for the cron schedule. Respects compose
-stack dependencies and `buoy.stop-before` — containers are stopped and restarted
-in the correct order, just like scheduled backups.
-
-```bash
-buoyctl backup uptime-kuma           # single container by name
-buoyctl backup uptime-kuma beszel    # multiple containers
-buoyctl backup --project myapp       # all services in a compose project
-buoyctl backup --project myapp db api # specific services in a project
-buoyctl backup --all                 # all scheduled containers
-buoyctl backup --all --json          # JSON output
-```
-
-For compose projects, triggered backups serialize through the same project
-queue as scheduled backups — triggering a project backup while one is already
-running queues it behind the current one, preventing race conditions.
-
-### `buoyctl discover`
-
-Scans a directory recursively for Docker Compose files and lists the volumes
-and bind mounts buoy would need access to — so you can configure your buoy
-container with the right host mounts before deploying.
-
-Uses gorich tables with styled output. Bind mounts from enabled services are
-highlighted green in the table. Built-in mounts (`/var/run/docker.sock`,
-`/var/lib/docker/volumes`) are shown in plain text since buoy already needs them.
-
-```bash
-# Scan current directory (unlimited depth)
-buoyctl discover .
-
-# Scan a specific directory, two levels deep
-buoyctl discover /opt/stacks --depth 2
-
-# Unlimited depth
-buoyctl discover /opt/stacks --depth -1
-
-# Custom glob pattern for compose files
-buoyctl discover /opt/stacks --pattern "stack.*.yml"
-
-# JSON output
-buoyctl discover . --json
-
-# Resolve ${VAR} and ${VAR:-default} from .env and the environment
-buoyctl discover /opt/stacks --resolve-env
-```
-
-**Flags:**
-
-| Flag            | Default                            | Description                                                                      |
-| --------------- | ---------------------------------- | -------------------------------------------------------------------------------- |
-| `--json`        | `false`                            | Output as JSON                                                                   |
-| `--depth`       | `-1`                               | Maximum directory depth (`-1` for unlimited)                                     |
-| `--pattern`     | `compose.y*ml,docker-compose.y*ml` | Comma-separated glob patterns for compose file names                             |
-| `--resolve-env` | `false`                            | Resolve `${VAR}` and `${VAR:-default}` from `.env` files and process environment |
-
-**Respects buoy labels.** The `buoy.enabled`, `buoy.include`/`buoy.exclude`
-labels defined in compose files are honored, including both map and list
-syntax:
-
-```yaml
-labels:
-  buoy.enabled: "true"         # map syntax
-  buoy.backup.tags: "production"
-
-labels:
-  - "buoy.enabled=true"        # list syntax
-  - "traefik.enable=true"
-```
-
-- Services with `buoy.enabled: "true"` show `[green]yes[/green]` in the table;
-  disabled or unlabeled services show `[red]no[/red]`.
-- `buoy.include` / `buoy.exclude` filter mounts by volume name, source path,
-  or destination path. `include` supports optional `name=value` syntax for
-  per-mount backup overrides (e.g. `src=/app/code`).
-- Bind mounts from enabled services are highlighted `[bold green]` — these are
-  the ones that need to be added to buoy's compose service. Built-in mounts
-  (`/var/run/docker.sock`, `/var/lib/docker/volumes`) are never highlighted.
-
-**Output sections:**
-
-1. **Per-file table** — each compose file gets a green title and a table with
-   service, enabled state, type, source (original compose path), destination,
-   and read/write mode. With `--resolve-env`, `${VAR:-default}` syntax is
-   resolved from `.env` files and the process environment. Without the flag,
-   variables appear as-is.
-2. **YAML snippet** — ready-to-paste `volumes:` block for buoy's compose
-   service, using resolved absolute paths and `:ro` mode.
-
-**Example output:**
-
-```
-       /opt/stacks/webapp/compose.yaml
-
-  Service  Enabled  Type    Source            Destination     Mode
- ───────────────────────────────────────────────────────────────────────
-  db       yes      volume  db_data           /var/lib/mysql   rw
-  db       yes      bind    /srv/backups      /backups         rw
-  api      yes      bind    /var/run/docker…  /var/run/docker… ro
-  web      no       bind    ./html            /usr/share/nginx ro
-
-       /opt/stacks/worker/compose.yaml
-
-  Service  Enabled  Type    Source     Destination  Mode
- ───────────────────────────────────────────────────────────────────────
-  worker   yes      bind    ./jobs     /jobs        rw
-
-
-Add to buoy's compose service volumes:
-volumes:
-  - /opt/stacks/webapp/backups:/opt/stacks/webapp/backups:ro
-  - /opt/stacks/worker/jobs:/opt/stacks/worker/jobs:ro
-  - /var/run/docker.sock:/var/run/docker.sock:ro
-  - /var/lib/docker/volumes:/var/lib/docker/volumes:ro
-```
+See the full **[CLI Reference](docs/cli.md)** for all subcommands, flags, and examples.
 
 ## Repository Layout
 
@@ -850,122 +448,6 @@ For standalone containers, the URL is `<repo>/<container_name>`.
 Repos are initialized automatically at backup time.
 
 Snapshots use clean relative paths: buoy changes into each mount's source directory and backs up individual entries, so snapshots contain `file.db`, `logs/` instead of `/var/lib/docker/volumes/<name>/_data/file.db`. Mounts are tagged (`mount:<name>`) for correct parent snapshot selection.
-
-## Deployment
-
-### As a Docker container (recommended)
-
-Two image variants are available:
-
-- **`ghcr.io/depado/buoy:latest`** — distroless (~15 MB), no shell or SSH client. Use for
-  all backends except SFTP.
-- **`ghcr.io/depado/buoy:latest-alpine`** — Alpine (~20 MB), includes `openssh-client` for
-  the SFTP backend. Also works with all other backends.
-
-```yaml
-services:
-  buoy:
-    image: ghcr.io/depado/buoy:latest
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /var/lib/docker/volumes:/var/lib/docker/volumes:ro
-      - /srv/app-data:/srv/app-data:ro # each bind mount explicitly
-      - buoy_data:/data # state persistence
-    environment:
-      - TZ=Europe/Paris
-      - BUOY_RESTIC_REPO_LOCAL_URL=/backup
-      - BUOY_RESTIC_REPO_LOCAL_PASSWORD=${RESTIC_PASSWORD:?required}
-      # - BUOY_NOTIFY_URLS=slack://tokenA/tokenB/tokenC
-      # - BUOY_NOTIFY_LEVEL=error
-    restart: unless-stopped
-
-volumes:
-  buoy_data:
-```
-
-Each path buoy needs to read must be mounted explicitly:
-
-- **Named/anonymous volumes:** Mount `/var/lib/docker/volumes:/var/lib/docker/volumes:ro` (or your Docker data root). Covers all Docker-managed volumes.
-- **Bind mounts:** Mount each host source path at the same location inside buoy. For example, if a container bind-mounts `/srv/app-data:/app/data`, mount `/srv/app-data:/srv/app-data:ro` in buoy's compose file.
-
-If a mount source doesn't exist inside buoy, it's skipped with a warning.
-
-### Timezone
-
-Cron schedules respect the `TZ` environment variable. Set it to your local
-timezone so `30 6 * * *` runs at 6:30 AM local time, not UTC.
-
-```yaml
-environment:
-  - TZ=Europe/Paris
-```
-
-Without `TZ`, schedules run on UTC.
-
-### Restart policy caveat
-
-> [!WARNING]
-> Containers with `buoy.stop-before=true` **must not** have `restart: always` (or similar). If they do, Docker restarts them immediately after buoy stops them, causing a race with the backup. Use `restart: "no"` or omit the restart policy on containers that buoy stops.
-
-### Signal handling
-
-On Unix systems, pressing Ctrl+C sends SIGINT to the entire foreground process group, which includes restic child processes. buoy prevents this by placing restic in its own process group (`Setpgid`). This means backups complete cleanly even when buoy receives a shutdown signal.
-
-When building from source on Windows, this protection is not applied. If you encounter partial backups during shutdown on Windows, consider running buoy inside the Linux container image instead.
-
-## Restoring
-
-buoy does not have a built-in restore command. Use restic directly:
-
-```bash
-# List snapshots
-restic -r /backup/myapp/postgres snapshots
-
-# Restore a specific snapshot
-restic -r /backup/myapp/postgres restore <snapshot-id> --target /tmp/restore
-
-# Restore the latest snapshot
-restic -r /backup/myapp/postgres restore latest --target /tmp/restore
-```
-
-Since buoy uses clean relative paths, restored files go directly into the target directory without the full host path prefix.
-
-For cloud backends, include the relevant credentials:
-
-```bash
-export RESTIC_PASSWORD=your-password
-export AWS_ACCESS_KEY_ID=...
-export AWS_SECRET_ACCESS_KEY=...
-restic -r s3:s3.amazonaws.com/my-bucket/myapp/postgres restore latest --target /tmp/restore
-```
-
-## Backends
-
-buoy supports all [restic backends](https://restic.readthedocs.io/en/stable/030_preparing_a_new_repo.html):
-
-- Local filesystem: `/backup`
-- Amazon S3: `s3:s3.amazonaws.com/bucket`
-- Backblaze B2: `b2:bucketname:/path`
-- Azure Blob: `azure:container:/path`
-- Google Cloud: `gs:bucket:/path`
-- SFTP: `sftp:user@host:/path`
-- REST server: `rest:https://host:8000/`
-- rclone: `rclone:remote:path`
-
-Configure one or more repos for 3-2-1 backup strategy. Each container backs up to all repos simultaneously. Cloud credentials are passed via standard restic environment variables.
-
-```yaml
-restic:
-  repos:
-    local:
-      url: /backup
-    s3:
-      url: s3:s3.amazonaws.com/my-bucket
-      password: "s3-specific-password"
-    b2:
-      url: b2:my-bucket:/buoy
-      password: "b2-specific-password"
-```
 
 ## Development
 
@@ -983,3 +465,12 @@ Run with debug logging:
 # Buoyctl commands talk to the running daemon
 ./buoyctl repo list --all
 ```
+
+## Docs
+
+- **[Configuration](docs/configuration.md)** — password levels, notifications, HTTP API, default config file
+- **[OpenTelemetry](docs/otel.md)** — traces, metrics, and logs with OTLP
+- **[CLI Reference](docs/cli.md)** — all `buoyctl` subcommands, flags, and examples
+- **[Deployment](docs/deployment.md)** — image variants, timezone, restart policies, signal handling
+- **[Restoring](docs/restoring.md)** — how to restore backups with restic
+- **[Backends](docs/backends.md)** — restic backend URL formats (S3, B2, SFTP, etc.)
