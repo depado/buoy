@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,7 +18,7 @@ func newTestRegistry(t *testing.T) *Registry {
 	r, err := Open(path, []config.NamedRepo{
 		{Name: "local", URL: "/backup"},
 		{Name: "s3", URL: "s3:https://bucket"},
-	})
+	}, slog.Default())
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -322,7 +323,7 @@ func TestOpen_NonExistentDir(t *testing.T) {
 
 	r, err := Open(path, []config.NamedRepo{
 		{Name: "local", URL: "/backup"},
-	})
+	}, slog.Default())
 	if err != nil {
 		t.Fatalf("Open should create parent dirs: %v", err)
 	}

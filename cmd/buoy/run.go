@@ -52,7 +52,7 @@ var RunCmd = &cobra.Command{
 			"db_path", conf.Daemon.DBPath,
 		)
 
-		reg, err := registry.Open(conf.Daemon.DBPath, repoRefs)
+		reg, err := registry.Open(conf.Daemon.DBPath, repoRefs, logger)
 		if err != nil {
 			return fmt.Errorf("open registry: %w", err)
 		}
@@ -69,7 +69,7 @@ var RunCmd = &cobra.Command{
 		}
 
 		resticClient := restic.New(conf.Restic.BinaryPath, conf.Restic.Password, conf.Restic.Compression)
-		hookExec := hook.New(dockerClient)
+		hookExec := hook.New(dockerClient, logger)
 		notifier, err := notify.New(conf.Notify.Urls, notify.ParseLevel(conf.Notify.Level), logger)
 		if err != nil {
 			return fmt.Errorf("notify: %w", err)
@@ -124,7 +124,7 @@ var RunCmd = &cobra.Command{
 			ctr := &containers[i]
 
 			if err := sched.AddContainer(ctr); err != nil {
-				logger.Warn("failed to schedule container", "container", ctr.Name, "error", err)
+				logger.Warn("failed to schedule container", "container", ctr.Name, "container_id", ctr.ID, "error", err)
 			} else {
 				scheduled++
 			}
@@ -173,7 +173,7 @@ var RunCmd = &cobra.Command{
 						continue
 					}
 					if err := sched.AddContainer(ctr); err != nil {
-						logger.Warn("failed to schedule on event", "container", ctr.Name, "error", err)
+						logger.Warn("failed to schedule on event", "container", ctr.Name, "container_id", ctr.ID, "error", err)
 					}
 				case docker.EventDie, docker.EventDestroy:
 					sched.RemoveContainer(evt.ID)

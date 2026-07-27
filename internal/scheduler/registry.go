@@ -54,16 +54,16 @@ func (r *containerRegistry) register(ctr *docker.Container, key, schedule string
 	return nil
 }
 
-func (r *containerRegistry) unregister(containerID string) {
+func (r *containerRegistry) unregister(containerID string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.unregisterLocked(containerID)
+	return r.unregisterLocked(containerID)
 }
 
-func (r *containerRegistry) unregisterLocked(containerID string) {
+func (r *containerRegistry) unregisterLocked(containerID string) bool {
 	groupKey, ok := r.index[containerID]
 	if !ok {
-		return
+		return false
 	}
 	delete(r.index, containerID)
 
@@ -82,6 +82,7 @@ func (r *containerRegistry) unregisterLocked(containerID string) {
 			delete(r.cronIDs, groupKey)
 		}
 	}
+	return true
 }
 
 func (r *containerRegistry) getGroup(key string) []*docker.Container {

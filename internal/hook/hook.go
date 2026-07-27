@@ -3,34 +3,34 @@ package hook
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os/exec"
 
 	"github.com/depado/buoy/internal/docker"
 )
 
-// Executor runs pre- and post-backup hooks, either on the host or inside containers.
 type Executor struct {
 	docker *docker.Client
+	logger *slog.Logger
 }
 
-// New creates a new Executor.
-func New(docker *docker.Client) *Executor {
-	return &Executor{docker: docker}
+func New(docker *docker.Client, logger *slog.Logger) *Executor {
+	return &Executor{docker: docker, logger: logger}
 }
 
-// ExecOnHost runs a shell command on the host using /bin/sh -c.
 func (e *Executor) ExecOnHost(ctx context.Context, command string) error {
+	e.logger.Debug("executing host command", "command", command)
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("host command failed: %w\n%s", err, string(out))
 	}
+	e.logger.Debug("host command completed")
 	return nil
 }
 
-// ExecInContainer runs a command inside a container via docker exec.
-// Returns an error if the command exits with a non-zero code.
 func (e *Executor) ExecInContainer(ctx context.Context, containerID, command string) error {
+	e.logger.Debug("executing command in container", "container_id", containerID, "command", command)
 	exitCode, err := e.docker.ExecInContainer(ctx, containerID, command)
 	if err != nil {
 		return fmt.Errorf("exec in container: %w", err)
@@ -38,5 +38,6 @@ func (e *Executor) ExecInContainer(ctx context.Context, containerID, command str
 	if exitCode != 0 {
 		return fmt.Errorf("exec exited with code %d", exitCode)
 	}
+	e.logger.Debug("command in container completed")
 	return nil
 }

@@ -98,7 +98,8 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
 
 	r.runPreHooks(ctx, fresh, cfg, l)
 
-	l.Info("starting backup", "stop", cfg.StopBefore)
+	l.Info("backup started", "stop", cfg.StopBefore, "mounts", len(fresh.Mounts), "repos", len(repos))
+	l.Debug("pre-hooks complete, proceeding with backup")
 	wasRunning := false
 	if cfg.StopBefore {
 		r.ignore(fresh.ID)
@@ -110,13 +111,15 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
 		}
 	}
 
+	l.Debug("backing up mounts", "repos", len(repos))
 	backupErr := r.backupMounts(ctx, fresh, cfg, repos, l)
 
 	if wasRunning {
 		r.startContainer(ctx, fresh, l)
-		r.waitRunning(ctx, fresh)
+		r.waitRunning(ctx, fresh, l)
 	}
 
+	l.Debug("running post-backup hooks")
 	r.runPostHooks(ctx, fresh, cfg, l)
 
 	var issues []string
@@ -127,7 +130,7 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
 	}
 
 	if len(issues) > 0 {
-		l.Error("backup completed with failures")
+		l.Warn("backup completed with failures", "issues", len(issues))
 		msg := strings.Join(issues, "\n")
 		r.notifier.SendBackupError(ctr.Name, msg)
 		if backupErr != nil {
@@ -149,6 +152,7 @@ func (r *Runner) stopContainer(ctx context.Context, ctr *docker.Container, cfg d
 	if err := r.docker.StopContainer(ctx, ctr.ID, cfg.StopTimeout); err != nil {
 		return false, fmt.Errorf("stop container: %w", err)
 	}
+	l.Debug("waiting for container to stop", "timeout", cfg.StopTimeout)
 	if err := r.docker.ContainerWait(ctx, ctr.ID, container.WaitConditionNotRunning); err != nil {
 		l.Warn("container did not stop in time, aborting backup", "error", err)
 		if startErr := r.docker.StartContainer(ctx, ctr.ID); startErr != nil {
@@ -171,15 +175,21 @@ func (r *Runner) startContainer(ctx context.Context, ctr *docker.Container, l *s
 
 func (r *Runner) runPreHooks(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) {
 	if cfg.HookPreCmd != "" {
+		l.Info("running pre-backup host command")
 		if err := r.hook.ExecOnHost(ctx, cfg.HookPreCmd); err != nil {
 			l.Warn("pre-backup host command failed", "error", err)
+		} else {
+			l.Info("pre-backup host command completed")
 		}
 	}
 	if cfg.HookPreExec != "" {
 		execCtx, cancel := context.WithTimeout(ctx, r.execTimeout)
 		defer cancel()
+		l.Info("running pre-backup exec command")
 		if err := r.hook.ExecInContainer(execCtx, ctr.ID, cfg.HookPreExec); err != nil {
 			l.Warn("pre-backup exec failed", "error", err)
+		} else {
+			l.Info("pre-backup exec command completed")
 		}
 	}
 }
@@ -188,13 +198,19 @@ func (r *Runner) runPostHooks(ctx context.Context, ctr *docker.Container, cfg do
 	if cfg.HookPostExec != "" {
 		execCtx, cancel := context.WithTimeout(ctx, r.execTimeout)
 		defer cancel()
+		l.Info("running post-backup exec command")
 		if err := r.hook.ExecInContainer(execCtx, ctr.ID, cfg.HookPostExec); err != nil {
 			l.Warn("post-backup exec failed", "error", err)
+		} else {
+			l.Info("post-backup exec command completed")
 		}
 	}
 	if cfg.HookPostCmd != "" {
+		l.Info("running post-backup host command")
 		if err := r.hook.ExecOnHost(ctx, cfg.HookPostCmd); err != nil {
 			l.Warn("post-backup host command failed", "error", err)
+		} else {
+			l.Info("post-backup host command completed")
 		}
 	}
 }
@@ -241,7 +257,7 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, cfg do
 	}
 
 	if mountCount == 0 {
-		logger.Warn("container has no backup-eligible mounts")
+		logger.Warn("container has no backup-eligible mounts", "mounts", len(ctr.Mounts), "include", len(cfg.Include), "exclude", len(cfg.Exclude))
 	}
 
 	return summarizeFailures(failures, mountCount, len(repos))
@@ -385,11 +401,7 @@ func (r *Runner) applyRetention(ctx context.Context, ctr *docker.Container, cfg 
 	for _, ref := range repos {
 		ctx := restic.WithPassword(ctx, r.effectivePassword(cfg, ref.Name))
 
-		l := logger
-		if ctr.ComposeService != "" {
-			l = logger.With("service", ctr.ComposeService)
-		}
-		l = l.With("repo", ref.URL)
+		l := logger.With("repo", ref.URL)
 
 		start := time.Now()
 		if err := r.restic.Forget(ctx, ref.URL, policy, ctr.Name); err != nil {
@@ -405,7 +417,8 @@ func (r *Runner) applyRetention(ctx context.Context, ctr *docker.Container, cfg 
 	return issues
 }
 
-func (r *Runner) waitRunning(ctx context.Context, ctr *docker.Container) {
+func (r *Runner) waitRunning(ctx context.Context, ctr *docker.Container, l *slog.Logger) {
+	l.Debug("waiting for container to reach running state", "timeout", r.healthWaitTimeout)
 	ctx, cancel := context.WithTimeout(ctx, r.healthWaitTimeout)
 	defer cancel()
 

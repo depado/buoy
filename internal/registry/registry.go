@@ -41,11 +41,12 @@ type RepoRef struct {
 }
 
 type Registry struct {
-	db    *bolt.DB
-	repos []config.NamedRepo
+	db     *bolt.DB
+	repos  []config.NamedRepo
+	logger *slog.Logger
 }
 
-func Open(path string, baseRepos []config.NamedRepo) (*Registry, error) {
+func Open(path string, baseRepos []config.NamedRepo, logger *slog.Logger) (*Registry, error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("create registry directory %s: %w", dir, err)
@@ -65,7 +66,8 @@ func Open(path string, baseRepos []config.NamedRepo) (*Registry, error) {
 		db.Close()
 		return nil, err
 	}
-	return &Registry{db: db, repos: baseRepos}, nil
+	logger.Debug("opened registry", "path", path)
+	return &Registry{db: db, repos: baseRepos, logger: logger}, nil
 }
 
 func (r *Registry) Close() error {
@@ -115,8 +117,10 @@ func (r *Registry) upsertRepoEntry(b *bolt.Bucket, ref RepoRef, ctr *docker.Cont
 			entry.ComposeProject == ctr.ComposeProject &&
 			entry.ComposeService == ctr.ComposeService &&
 			!entry.Orphaned {
+			r.logger.Debug("repo entry unchanged", "repo", ref.URL, "container", ctr.Name)
 			return nil
 		}
+		r.logger.Debug("updating repo entry", "repo", ref.URL, "container", ctr.Name)
 		entry.ContainerID = ctr.ID
 		entry.ContainerName = ctr.Name
 		entry.ComposeProject = ctr.ComposeProject
@@ -124,6 +128,7 @@ func (r *Registry) upsertRepoEntry(b *bolt.Bucket, ref RepoRef, ctr *docker.Cont
 		entry.RepoName = ref.Name
 		entry.Orphaned = false
 	} else {
+		r.logger.Debug("creating repo entry", "repo", ref.URL, "container", ctr.Name)
 		entry = RepoEntry{
 			URL:            ref.URL,
 			RepoName:       ref.Name,
@@ -143,6 +148,7 @@ func (r *Registry) upsertRepoEntry(b *bolt.Bucket, ref RepoRef, ctr *docker.Cont
 }
 
 func (r *Registry) MarkBackupComplete(repo string, ok bool) error {
+	r.logger.Debug("marking backup complete", "repo", repo, "ok", ok)
 	return r.updateRepoMeta(repo, func(entry *RepoEntry) {
 		entry.LastBackupAt = time.Now()
 		entry.LastBackupOK = ok
@@ -177,7 +183,8 @@ func (r *Registry) updateRepoMeta(repo string, fn func(*RepoEntry)) error {
 }
 
 func (r *Registry) MarkOrphaned(containerID string) error {
-	return r.db.Update(func(tx *bolt.Tx) error {
+	var count int
+	err := r.db.Update(func(tx *bolt.Tx) error {
 		rb := tx.Bucket(reposBucket)
 		cb := tx.Bucket(containerReposBucket)
 
@@ -208,10 +215,15 @@ func (r *Registry) MarkOrphaned(containerID string) error {
 			if err := rb.Put([]byte(repo), nd); err != nil {
 				return fmt.Errorf("put repo entry %s: %w", repo, err)
 			}
+			count++
 		}
 
 		return cb.Delete([]byte(containerID))
 	})
+	if err == nil && count > 0 {
+		r.logger.Debug("marked repos orphaned", "container_id", containerID, "count", count)
+	}
+	return err
 }
 
 type ListOption func(*listConfig)
@@ -276,7 +288,7 @@ func (r *Registry) resolveRepos(ctr *docker.Container, cfg docker.BackupConfig) 
 		for _, name := range cfg.ReposOverride {
 			nr, ok := repoMap[name]
 			if !ok {
-				slog.Warn("unknown repo name in buoy.repos label, skipping", "repo_name", name, "container", ctr.Name)
+				r.logger.Warn("unknown repo name in buoy.repos label, skipping", "repo_name", name, "container", ctr.Name)
 				continue
 			}
 			refs = append(refs, RepoRef{Name: nr.Name, URL: nr.URL})

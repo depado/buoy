@@ -37,26 +37,31 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 
 	containerCfg, containerRepos := r.resolveStackConfigs(fresh, l)
 
+	l.Debug("running pre-backup hooks", "services", len(fresh))
 	r.runParallelPreHooks(ctx, fresh, containerCfg, l)
 
 	stopSvc := stopSet(fresh, all)
-	l.Info("starting stack backup", "services", len(fresh), "stop_set", mapKeys(stopSvc))
+	l.Info("stack backup started", "services", len(fresh), "stop_set", mapKeys(stopSvc))
 	services := serviceContainers(all)
 	deps := serviceDeps(all)
 
+	l.Debug("stopping stack services", "count", len(stopSvc))
 	wasStopped, stopFailed, ignored := r.stopStackServices(ctx, services, stopSvc, deps, project, l)
 	defer r.releaseBatch(ignored)
 
+	l.Debug("backing up stack services", "count", len(fresh))
 	backupErrors, allIssues := r.backupStackServices(ctx, fresh, containerCfg, containerRepos, stopFailed, l)
 
+	l.Debug("starting stack services")
 	r.startStackServices(ctx, services, deps, all, wasStopped, l)
 
 	for _, ctr := range all {
 		if wasStopped[ctr.ID] {
-			r.waitRunning(ctx, ctr)
+			r.waitRunning(ctx, ctr, l.With(ctr.LogAttrs()...))
 		}
 	}
 
+	l.Debug("running post-backup hooks and retention")
 	r.runPostHooksAndRetention(ctx, fresh, containerCfg, containerRepos, backupErrors, &allIssues, l)
 
 	l.Info("stack backup complete", "services", len(fresh)-len(backupErrors), "failed", len(backupErrors))
@@ -118,7 +123,7 @@ func (r *Runner) stopStackServices(
 	ignored = make(map[string]bool)
 
 	stopOrder := orderForStopFromDeps(deps, func(svc string) {
-		l.Warn("dependency cycle detected", "service", svc, "project", project)
+		l.Warn("dependency cycle detected", "service", svc)
 	})
 
 	ordered := make(map[string]bool, len(stopOrder))
@@ -142,7 +147,7 @@ func (r *Runner) stopStackServices(
 			sl := l.With(ctr.LogAttrs()...)
 			r.ignore(ctr.ID)
 			ignored[ctr.ID] = true
-			sl.Info("stopping container")
+			sl.Debug("stopping container")
 			cfg := r.parseConfig(ctr.Labels)
 			if err := r.docker.StopContainer(ctx, ctr.ID, cfg.StopTimeout); err != nil {
 				sl.Warn("failed to stop container", "error", err)
@@ -221,7 +226,7 @@ func (r *Runner) startStackServices(
 				continue
 			}
 			cl := l.With(ctr.LogAttrs()...)
-			cl.Info("starting container")
+			cl.Debug("starting container")
 			if err := r.docker.StartContainer(ctx, ctr.ID); err != nil {
 				cl.Warn("failed to start container", "error", err)
 			} else {
@@ -242,9 +247,9 @@ func (r *Runner) runPostHooksAndRetention(
 ) {
 	for _, ctr := range fresh {
 		cfg := cfgs[ctr.ID]
-		r.runPostHooks(ctx, ctr, cfg, l)
+		r.runPostHooks(ctx, ctr, cfg, l.With(ctr.LogAttrs()...))
 		if _, failed := backupErrors[ctr.ComposeService]; !failed {
-			for _, ri := range r.applyRetention(ctx, ctr, cfg, repos[ctr.ID], l) {
+			for _, ri := range r.applyRetention(ctx, ctr, cfg, repos[ctr.ID], l.With(ctr.LogAttrs()...)) {
 				*allIssues = append(*allIssues, fmt.Sprintf("%s: %s", ctr.ComposeService, ri))
 			}
 		}

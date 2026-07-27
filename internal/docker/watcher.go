@@ -78,6 +78,7 @@ func (w *Watcher) loop(ctx context.Context, eventsCh chan<- Event, errCh chan<- 
 
 		select {
 		case <-time.After(backoff):
+			w.logger.Debug("reconnecting to Docker events", "backoff", backoff)
 			backoff *= 2
 			if backoff > 30*time.Second {
 				backoff = 30 * time.Second
@@ -102,6 +103,7 @@ func (w *Watcher) streamEvents(
 		select {
 		case msg, ok := <-msgs:
 			if !ok {
+				w.logger.Debug("docker event stream closed, reconnecting")
 				return true
 			}
 			eventsCh <- Event{
@@ -111,6 +113,7 @@ func (w *Watcher) streamEvents(
 			}
 		case err, ok := <-errs:
 			if !ok {
+				w.logger.Debug("docker event error stream closed, reconnecting")
 				return true
 			}
 			if err != nil {

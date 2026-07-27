@@ -89,6 +89,7 @@ func (s *Scheduler) Stop() context.Context {
 func (s *Scheduler) AddContainer(ctr *docker.Container) error {
 	cfg := docker.ParseBackupConfig(ctr.Labels, s.defaultSchedule, s.defaultRetention)
 	if !cfg.Enabled {
+		s.logger.Debug("container not enabled, skipping", ctr.LogAttrs()...)
 		return nil
 	}
 	if cfg.Schedule == "" {
@@ -109,7 +110,9 @@ func (s *Scheduler) AddContainer(ctr *docker.Container) error {
 }
 
 func (s *Scheduler) RemoveContainer(containerID string) {
-	s.containerReg.unregister(containerID)
+	if !s.containerReg.unregister(containerID) {
+		return
+	}
 	if err := s.repoReg.MarkOrphaned(containerID); err != nil {
 		s.logger.Warn("failed to mark container repos as orphaned", "container_id", containerID, "error", err)
 	}
