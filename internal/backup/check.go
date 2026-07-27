@@ -18,6 +18,9 @@ func (r *Runner) passwordForEntry(entry registry.RepoEntry) string {
 }
 
 func (r *Runner) CheckKnownRepos(ctx context.Context) {
+	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.check")
+	defer span.End()
+
 	l := r.logger.With("component", "check")
 
 	entries, err := r.repoReg.ListRepos(registry.ExcludeOrphaned())

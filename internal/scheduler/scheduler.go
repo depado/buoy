@@ -9,6 +9,10 @@ import (
 	"time"
 
 	"github.com/robfig/cron/v3"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/depado/buoy/client"
 	"github.com/depado/buoy/internal/backup"
@@ -31,6 +35,7 @@ type Scheduler struct {
 	defaultSchedule  string
 	defaultRetention string
 	backupTimeout    time.Duration
+	tracer           trace.Tracer
 }
 
 type Config struct {
@@ -42,6 +47,7 @@ type Config struct {
 	DefaultRetention string
 	BackupTimeout    time.Duration
 	Logger           *slog.Logger
+	Tracer           trace.Tracer
 }
 
 func New(cfg *Config) *Scheduler {
@@ -56,6 +62,10 @@ func New(cfg *Config) *Scheduler {
 		),
 	)
 
+	tracer := cfg.Tracer
+	if tracer == nil {
+		tracer = noop.NewTracerProvider().Tracer("buoy")
+	}
 	return &Scheduler{
 		cron:             c,
 		docker:           cfg.Docker,
@@ -68,6 +78,7 @@ func New(cfg *Config) *Scheduler {
 		defaultSchedule:  cfg.DefaultSchedule,
 		defaultRetention: cfg.DefaultRetention,
 		backupTimeout:    cfg.BackupTimeout,
+		tracer:           tracer,
 	}
 }
 
@@ -198,11 +209,16 @@ func (s *Scheduler) ScheduleCheck(schedule string) error {
 }
 
 func (s *Scheduler) Resync(ctx context.Context) {
+	ctx, span := s.tracer.Start(ctx, "buoy.resync")
+	defer span.End()
+
 	containers, err := s.docker.ListBackupContainers(ctx)
 	if err != nil {
 		s.logger.Error("resync: failed to list containers", "error", err)
+		span.SetStatus(codes.Error, err.Error())
 		return
 	}
+	span.SetAttributes(attribute.Int("containers", len(containers)))
 	s.logger.Debug("resync scan", "found", len(containers))
 
 	active := make(map[string]bool)
@@ -239,12 +255,13 @@ func (s *Scheduler) runScheduleGroup(key, project string) {
 				defer s.wg.Done()
 				defer func() { <-s.sem }()
 				defer s.active.Add(-1)
-				ctx, cancel := context.WithTimeout(context.Background(), s.backupTimeout)
+				ctx, span := s.tracer.Start(context.Background(), "buoy.schedule.run")
+				defer span.End()
+				ctx, cancel := context.WithTimeout(ctx, s.backupTimeout)
 				defer cancel()
 				if err := s.backup.Run(ctx, c); err != nil {
 					s.logger.Error("backup failed", append(c.LogAttrs(), "error", err)...)
 				}
-				s.pruneDead(c)
 			}(ctr)
 		}
 		return
@@ -300,14 +317,16 @@ func (s *Scheduler) enqueueBatch(project string, batch []*docker.Container) {
 		}
 		s.logger.Debug("processing stack batch", "project", project, "containers", names)
 
-		ctx, cancel := context.WithTimeout(context.Background(), s.backupTimeout)
+		ctx, span := s.tracer.Start(context.Background(), "buoy.schedule.run",
+			trace.WithAttributes(
+				attribute.String("project", project),
+			),
+		)
+		defer span.End()
+		ctx, cancel := context.WithTimeout(ctx, s.backupTimeout)
+		defer cancel()
 		if err := s.backup.RunStackBatch(ctx, project, batch); err != nil {
 			s.logger.Error("stack batch backup failed", "project", project, "error", err)
-		}
-		cancel()
-
-		for _, ctr := range batch {
-			s.pruneDead(ctr)
 		}
 	}
 }
@@ -321,16 +340,6 @@ func (s *Scheduler) getStackQueue(project string) *stackQueue {
 		s.stacks[project] = q
 	}
 	return q
-}
-
-func (s *Scheduler) pruneDead(ctr *docker.Container) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_, err := s.docker.InspectContainer(ctx, ctr.ID)
-	if err != nil {
-		s.logger.Debug("container no longer exists, removing from schedule", append(ctr.LogAttrs(), "error", err)...)
-		s.RemoveContainer(ctr.ID)
-	}
 }
 
 func (s *Scheduler) TriggerBackup(ctx context.Context, identifier string) error {
@@ -351,11 +360,12 @@ func (s *Scheduler) TriggerBackup(ctx context.Context, identifier string) error 
 	defer s.active.Add(-1)
 	defer s.wg.Done()
 
+	ctx, span := s.tracer.Start(ctx, "buoy.schedule.run")
+	defer span.End()
 	if err := s.backup.Run(ctx, ctr); err != nil {
 		s.logger.Error("triggered backup failed", append(ctr.LogAttrs(), "error", err)...)
 		return err
 	}
-	s.pruneDead(ctr)
 	return nil
 }
 

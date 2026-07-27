@@ -10,6 +10,10 @@ import (
 	"time"
 
 	"github.com/moby/moby/api/types/container"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/depado/buoy/internal/config"
 	"github.com/depado/buoy/internal/docker"
@@ -17,6 +21,7 @@ import (
 	"github.com/depado/buoy/internal/notify"
 	"github.com/depado/buoy/internal/registry"
 	"github.com/depado/buoy/internal/restic"
+	"github.com/depado/buoy/internal/telemetry"
 )
 
 type Runner struct {
@@ -33,6 +38,8 @@ type Runner struct {
 	execTimeout       time.Duration
 	healthWaitTimeout time.Duration
 	backupTimeout     time.Duration
+	meters            telemetry.MeterSet
+	tracers           telemetry.TracerSet
 }
 
 type RunnerConfig struct {
@@ -49,6 +56,8 @@ type RunnerConfig struct {
 	ExecTimeout       time.Duration
 	HealthWaitTimeout time.Duration
 	BackupTimeout     time.Duration
+	Meters            telemetry.MeterSet
+	Tracers           telemetry.TracerSet
 }
 
 func New(cfg *RunnerConfig) *Runner {
@@ -66,6 +75,8 @@ func New(cfg *RunnerConfig) *Runner {
 		execTimeout:       cfg.ExecTimeout,
 		healthWaitTimeout: cfg.HealthWaitTimeout,
 		backupTimeout:     cfg.BackupTimeout,
+		meters:            cfg.Meters,
+		tracers:           cfg.Tracers,
 	}
 }
 
@@ -73,7 +84,20 @@ func (r *Runner) parseConfig(labels map[string]string) docker.BackupConfig {
 	return docker.ParseBackupConfig(labels, r.defaultSchedule, r.defaultRetention)
 }
 
-func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
+func (r *Runner) Run(ctx context.Context, ctr *docker.Container) (runErr error) {
+	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.backup",
+		trace.WithAttributes(
+			attribute.String("container.name", ctr.Name),
+			attribute.String("container.id", ctr.ID),
+		),
+	)
+	defer func() {
+		if runErr != nil {
+			span.SetStatus(codes.Error, runErr.Error())
+		}
+		span.End()
+	}()
+
 	l := r.logger.With(ctr.LogAttrs()...)
 
 	fresh, err := r.docker.InspectContainer(ctx, ctr.ID)
@@ -116,7 +140,6 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
 
 	if wasRunning {
 		r.startContainer(ctx, fresh, l)
-		r.waitRunning(ctx, fresh, l)
 	}
 
 	l.Debug("running post-backup hooks")
@@ -147,7 +170,26 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) error {
 	return nil
 }
 
-func (r *Runner) stopContainer(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) (bool, error) {
+func (r *Runner) stopContainer(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) (stopped bool, stopErr error) {
+	stopStart := time.Now()
+	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.container.stop",
+		trace.WithAttributes(
+			attribute.String("container.name", ctr.Name),
+		),
+	)
+	defer func() {
+		d := time.Since(stopStart).Seconds()
+		result := "ok"
+		if stopErr != nil {
+			span.SetStatus(codes.Error, stopErr.Error())
+			result = "timeout"
+		}
+		r.meters.ContainerStopDur.Record(ctx, d,
+			metric.WithAttributes(attribute.String("result", result)),
+		)
+		span.End()
+	}()
+
 	l.Debug("stopping container")
 	if err := r.docker.StopContainer(ctx, ctr.ID, cfg.StopTimeout); err != nil {
 		return false, fmt.Errorf("stop container: %w", err)
@@ -165,32 +207,75 @@ func (r *Runner) stopContainer(ctx context.Context, ctr *docker.Container, cfg d
 }
 
 func (r *Runner) startContainer(ctx context.Context, ctr *docker.Container, l *slog.Logger) {
+	startTime := time.Now()
+	result := "ok"
+	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.container.start",
+		trace.WithAttributes(
+			attribute.String("container.name", ctr.Name),
+		),
+	)
+	defer func() {
+		r.meters.ContainerStartDur.Record(ctx, time.Since(startTime).Seconds(),
+			metric.WithAttributes(attribute.String("result", result)),
+		)
+		span.End()
+	}()
+
 	l.Debug("starting container")
 	if err := r.docker.StartContainer(ctx, ctr.ID); err != nil {
 		l.Error("start container failed", "error", err)
+		span.SetStatus(codes.Error, err.Error())
+		result = "fail"
 		return
 	}
 	l.Info("container started")
+	r.waitRunning(ctx, ctr, l)
 }
 
 func (r *Runner) runPreHooks(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) {
 	if cfg.HookPreCmd != "" {
+		ctx, span := r.tracers.Tracer.Start(ctx, "buoy.hook.pre.host")
+		start := time.Now()
+		status := "ok"
 		l.Info("running pre-backup host command")
 		if err := r.hook.ExecOnHost(ctx, cfg.HookPreCmd); err != nil {
 			l.Warn("pre-backup host command failed", "error", err)
+			status = "fail"
+			span.SetStatus(codes.Error, err.Error())
 		} else {
 			l.Info("pre-backup host command completed")
 		}
+		r.meters.HookDuration.Record(ctx, time.Since(start).Seconds(),
+			metric.WithAttributes(
+				attribute.String("type", "pre"),
+				attribute.String("target", "host"),
+				attribute.String("status", status),
+			),
+		)
+		span.End()
 	}
 	if cfg.HookPreExec != "" {
 		execCtx, cancel := context.WithTimeout(ctx, r.execTimeout)
 		defer cancel()
+		ctx, span := r.tracers.Tracer.Start(execCtx, "buoy.hook.pre.exec")
+		start := time.Now()
+		status := "ok"
 		l.Info("running pre-backup exec command")
-		if err := r.hook.ExecInContainer(execCtx, ctr.ID, cfg.HookPreExec); err != nil {
+		if err := r.hook.ExecInContainer(ctx, ctr.ID, cfg.HookPreExec); err != nil {
 			l.Warn("pre-backup exec failed", "error", err)
+			status = "fail"
+			span.SetStatus(codes.Error, err.Error())
 		} else {
 			l.Info("pre-backup exec command completed")
 		}
+		r.meters.HookDuration.Record(ctx, time.Since(start).Seconds(),
+			metric.WithAttributes(
+				attribute.String("type", "pre"),
+				attribute.String("target", "container"),
+				attribute.String("status", status),
+			),
+		)
+		span.End()
 	}
 }
 
@@ -198,20 +283,46 @@ func (r *Runner) runPostHooks(ctx context.Context, ctr *docker.Container, cfg do
 	if cfg.HookPostExec != "" {
 		execCtx, cancel := context.WithTimeout(ctx, r.execTimeout)
 		defer cancel()
+		ctx, span := r.tracers.Tracer.Start(execCtx, "buoy.hook.post.exec")
+		start := time.Now()
+		status := "ok"
 		l.Info("running post-backup exec command")
-		if err := r.hook.ExecInContainer(execCtx, ctr.ID, cfg.HookPostExec); err != nil {
+		if err := r.hook.ExecInContainer(ctx, ctr.ID, cfg.HookPostExec); err != nil {
 			l.Warn("post-backup exec failed", "error", err)
+			status = "fail"
+			span.SetStatus(codes.Error, err.Error())
 		} else {
 			l.Info("post-backup exec command completed")
 		}
+		r.meters.HookDuration.Record(ctx, time.Since(start).Seconds(),
+			metric.WithAttributes(
+				attribute.String("type", "post"),
+				attribute.String("target", "container"),
+				attribute.String("status", status),
+			),
+		)
+		span.End()
 	}
 	if cfg.HookPostCmd != "" {
+		ctx, span := r.tracers.Tracer.Start(ctx, "buoy.hook.post.host")
+		start := time.Now()
+		status := "ok"
 		l.Info("running post-backup host command")
 		if err := r.hook.ExecOnHost(ctx, cfg.HookPostCmd); err != nil {
 			l.Warn("post-backup host command failed", "error", err)
+			status = "fail"
+			span.SetStatus(codes.Error, err.Error())
 		} else {
 			l.Info("post-backup host command completed")
 		}
+		r.meters.HookDuration.Record(ctx, time.Since(start).Seconds(),
+			metric.WithAttributes(
+				attribute.String("type", "post"),
+				attribute.String("target", "host"),
+				attribute.String("status", status),
+			),
+		)
+		span.End()
 	}
 }
 
@@ -234,6 +345,7 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, cfg do
 
 		l := logger.With("repo", ref.URL)
 		repoOK := true
+		repoMounts := 0
 
 		for _, m := range ctr.Mounts {
 			if m.Type == "tmpfs" {
@@ -246,6 +358,7 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, cfg do
 			}
 
 			mountCount++
+			repoMounts++
 			if repoErr := r.backupSingleMount(ctx, ref.URL, ctr.Name, m, matchedName, cfg, l); repoErr != nil {
 				failures = append(failures, *repoErr)
 				repoOK = false
@@ -254,6 +367,9 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, cfg do
 		if err := r.repoReg.MarkBackupComplete(ref.URL, repoOK); err != nil {
 			logger.Warn("failed to persist backup status", "repo", ref.URL, "error", err)
 		}
+		r.meters.BackupMountCount.Record(ctx, int64(repoMounts),
+			metric.WithAttributes(attribute.String("repo", ref.URL)),
+		)
 	}
 
 	if mountCount == 0 {
@@ -310,7 +426,7 @@ func (r *Runner) backupSingleMount(
 	matchedName string,
 	cfg docker.BackupConfig,
 	l *slog.Logger,
-) *mountError {
+) (mountErr *mountError) {
 	source := m.Source
 	if _, err := os.Stat(source); os.IsNotExist(err) {
 		l.Warn("mount source does not exist, skipping", "source", source, "type", m.Type)
@@ -349,7 +465,39 @@ func (r *Runner) backupSingleMount(
 		}
 	}
 
+	start := time.Now()
+
+	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.restic.backup",
+		trace.WithAttributes(
+			attribute.String("repo", repo),
+			attribute.String("mount.source", source),
+			attribute.String("mount.type", m.Type),
+		),
+	)
+	defer span.End()
+
 	result, err := r.restic.Backup(ctx, repo, paths, opts)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+	} else if result != nil {
+		span.SetAttributes(attribute.String("snapshot.id", result.SnapshotID))
+	}
+
+	status := "success"
+	if err != nil {
+		status = "fail"
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String("repo", repo),
+		attribute.String("mount", source),
+		attribute.String("status", status),
+	}
+	r.meters.BackupDuration.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(attrs...))
+	r.meters.BackupsTotal.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("repo", repo),
+		attribute.String("status", status),
+	))
+
 	if err != nil {
 		if result != nil {
 			l.Error("backup completed with errors",
@@ -413,6 +561,9 @@ func (r *Runner) applyRetention(ctx context.Context, ctr *docker.Container, cfg 
 			issues = append(issues, fmt.Sprintf("prune on %s: %s", ref.URL, err.Error()))
 		}
 		l.Info("retention complete", slog.Duration("duration", time.Since(start)))
+		r.meters.RetentionDuration.Record(ctx, time.Since(start).Seconds(),
+			metric.WithAttributes(attribute.String("repo", ref.URL)),
+		)
 	}
 	return issues
 }

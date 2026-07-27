@@ -6,23 +6,35 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/moby/moby/api/types/container"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/depado/buoy/internal/docker"
 	"github.com/depado/buoy/internal/registry"
 )
 
-func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*docker.Container) error {
+func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*docker.Container) (batchErr error) {
+	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.stack.backup",
+		trace.WithAttributes(
+			attribute.String("project", project),
+			attribute.Int("services", len(batch)),
+		),
+	)
+	defer func() {
+		if batchErr != nil {
+			span.SetStatus(codes.Error, batchErr.Error())
+		}
+		span.End()
+	}()
+
 	l := r.logger.With("project", project)
 
-	summaries, err := r.docker.ListContainersByProject(ctx, project)
-	if err != nil {
-		return fmt.Errorf("list stack containers: %w", err)
-	}
-	l.Debug("listed stack containers", "count", len(summaries))
-
-	all, byID := r.inspectStackContainers(ctx, summaries, l)
+	all, byID := r.discoverStackContainers(ctx, project, l)
 
 	fresh := make([]*docker.Container, 0, len(batch))
 	for _, ctr := range batch {
@@ -46,7 +58,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 	deps := serviceDeps(all)
 
 	l.Debug("stopping stack services", "count", len(stopSvc))
-	wasStopped, stopFailed, ignored := r.stopStackServices(ctx, services, stopSvc, deps, project, l)
+	wasStopped, stopFailed, ignored := r.stopStackServices(ctx, services, stopSvc, deps, l)
 	defer r.releaseBatch(ignored)
 
 	l.Debug("backing up stack services", "count", len(fresh))
@@ -55,17 +67,27 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 	l.Debug("starting stack services")
 	r.startStackServices(ctx, services, deps, all, wasStopped, l)
 
-	for _, ctr := range all {
-		if wasStopped[ctr.ID] {
-			r.waitRunning(ctx, ctr, l.With(ctr.LogAttrs()...))
-		}
-	}
-
 	l.Debug("running post-backup hooks and retention")
 	r.runPostHooksAndRetention(ctx, fresh, containerCfg, containerRepos, backupErrors, &allIssues, l)
 
 	l.Info("stack backup complete", "services", len(fresh)-len(backupErrors), "failed", len(backupErrors))
 	return r.finalizeStackBackup(project, len(fresh), len(backupErrors), allIssues)
+}
+
+func (r *Runner) discoverStackContainers(ctx context.Context, project string, l *slog.Logger) ([]*docker.Container, map[string]*docker.Container) {
+	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.stack.discover")
+	defer span.End()
+
+	summaries, err := r.docker.ListContainersByProject(ctx, project)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		l.Warn("failed to list stack containers", "error", err)
+		return nil, nil
+	}
+	l.Debug("listed stack containers", "count", len(summaries))
+	all, byID := r.inspectStackContainers(ctx, summaries, l)
+	span.SetAttributes(attribute.Int("containers", len(all)))
+	return all, byID
 }
 
 func (r *Runner) inspectStackContainers(ctx context.Context, summaries []docker.Container, l *slog.Logger) ([]*docker.Container, map[string]*docker.Container) {
@@ -115,7 +137,6 @@ func (r *Runner) stopStackServices(
 	services map[string][]*docker.Container,
 	stopSvc map[string]bool,
 	deps map[string][]depInfo,
-	project string,
 	l *slog.Logger,
 ) (wasStopped, stopFailed, ignored map[string]bool) {
 	wasStopped = make(map[string]bool)
@@ -149,16 +170,38 @@ func (r *Runner) stopStackServices(
 			ignored[ctr.ID] = true
 			sl.Debug("stopping container")
 			cfg := r.parseConfig(ctr.Labels)
-			if err := r.docker.StopContainer(ctx, ctr.ID, cfg.StopTimeout); err != nil {
+
+			stopCtx, stopSpan := r.tracers.Tracer.Start(ctx, "buoy.container.stop",
+				trace.WithAttributes(
+					attribute.String("container.name", ctr.Name),
+				),
+			)
+			startStop := time.Now()
+			if err := r.docker.StopContainer(stopCtx, ctr.ID, cfg.StopTimeout); err != nil {
 				sl.Warn("failed to stop container", "error", err)
 				stopFailed[ctr.ID] = true
+				stopSpan.SetStatus(codes.Error, err.Error())
+				r.meters.ContainerStopDur.Record(ctx, time.Since(startStop).Seconds(),
+					metric.WithAttributes(attribute.String("result", "fail")),
+				)
+				stopSpan.End()
 				r.release(ctr.ID)
 				delete(ignored, ctr.ID)
 				continue
 			}
-			if err := r.docker.ContainerWait(ctx, ctr.ID, container.WaitConditionNotRunning); err != nil {
-				sl.Warn("failed to wait for container stop", "error", err)
+			waitErr := r.docker.ContainerWait(stopCtx, ctr.ID, container.WaitConditionNotRunning)
+			if waitErr != nil {
+				sl.Warn("failed to wait for container stop", "error", waitErr)
+				stopSpan.SetStatus(codes.Error, waitErr.Error())
 			}
+			result := "ok"
+			if waitErr != nil {
+				result = "fail"
+			}
+			r.meters.ContainerStopDur.Record(ctx, time.Since(startStop).Seconds(),
+				metric.WithAttributes(attribute.String("result", result)),
+			)
+			stopSpan.End()
 			sl.Info("container stopped")
 			wasStopped[ctr.ID] = true
 		}
@@ -227,11 +270,29 @@ func (r *Runner) startStackServices(
 			}
 			cl := l.With(ctr.LogAttrs()...)
 			cl.Debug("starting container")
-			if err := r.docker.StartContainer(ctx, ctr.ID); err != nil {
-				cl.Warn("failed to start container", "error", err)
+
+			startCtx, startSpan := r.tracers.Tracer.Start(ctx, "buoy.container.start",
+				trace.WithAttributes(
+					attribute.String("container.name", ctr.Name),
+				),
+			)
+			startTime := time.Now()
+			startErr := r.docker.StartContainer(startCtx, ctr.ID)
+			if startErr != nil {
+				cl.Warn("failed to start container", "error", startErr)
+				startSpan.SetStatus(codes.Error, startErr.Error())
 			} else {
 				cl.Info("container started")
+				r.waitRunning(startCtx, ctr, cl)
 			}
+			result := "ok"
+			if startErr != nil {
+				result = "fail"
+			}
+			r.meters.ContainerStartDur.Record(ctx, time.Since(startTime).Seconds(),
+				metric.WithAttributes(attribute.String("result", result)),
+			)
+			startSpan.End()
 		}
 	}
 }
@@ -307,6 +368,14 @@ func (r *Runner) waitForEvent(
 	eventTypes []string,
 	check func(*docker.Container) (bool, error),
 ) error {
+	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.container.wait",
+		trace.WithAttributes(
+			attribute.String("container.name", ctr.Name),
+			attribute.StringSlice("event_types", eventTypes),
+		),
+	)
+	defer span.End()
+
 	fresh, err := r.docker.InspectContainer(ctx, ctr.ID)
 	if err != nil {
 		return err

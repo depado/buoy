@@ -13,6 +13,9 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/depado/buoy/internal/api"
 	"github.com/depado/buoy/internal/backup"
@@ -23,6 +26,7 @@ import (
 	"github.com/depado/buoy/internal/registry"
 	"github.com/depado/buoy/internal/restic"
 	"github.com/depado/buoy/internal/scheduler"
+	"github.com/depado/buoy/internal/telemetry"
 	"github.com/depado/buoy/internal/version"
 )
 
@@ -51,6 +55,21 @@ var RunCmd = &cobra.Command{
 			"notify_level", conf.Notify.Level,
 			"db_path", conf.Daemon.DBPath,
 		)
+
+		tel, telErr := telemetry.New(&conf, logger)
+		if telErr != nil {
+			logger.Warn("telemetry setup failed, continuing without", "error", telErr)
+		}
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := tel.Shutdown(shutdownCtx); err != nil {
+				logger.Warn("telemetry shutdown error", "error", err)
+			}
+		}()
+
+		logger = slog.New(tel.LoggerHandler(logger.Handler()))
+		slog.SetDefault(logger)
 
 		reg, err := registry.Open(conf.Daemon.DBPath, repoRefs, logger)
 		if err != nil {
@@ -93,6 +112,8 @@ var RunCmd = &cobra.Command{
 			ExecTimeout:       execTimeout,
 			HealthWaitTimeout: healthWaitTimeout,
 			BackupTimeout:     backupTimeout,
+			Meters:            tel.Meters(),
+			Tracers:           tel.Tracers(),
 		})
 		sched := scheduler.New(&scheduler.Config{
 			Docker:           dockerClient,
@@ -103,6 +124,7 @@ var RunCmd = &cobra.Command{
 			DefaultRetention: conf.Daemon.DefaultRetention,
 			BackupTimeout:    backupTimeout,
 			Logger:           logger,
+			Tracer:           tel.Tracers().Tracer,
 		})
 
 		var apiSrv *api.Server
@@ -115,21 +137,28 @@ var RunCmd = &cobra.Command{
 			}()
 		}
 
-		containers, err := dockerClient.ListBackupContainers(context.Background())
-		if err != nil {
+		if err := func() error {
+			ctx, span := tel.Tracers().Tracer.Start(context.Background(), "buoy.startup_scan")
+			defer span.End()
+			containers, scanErr := dockerClient.ListBackupContainers(ctx)
+			if scanErr != nil {
+				return scanErr
+			}
+			scheduled := 0
+			for i := range containers {
+				ctr := &containers[i]
+
+				if err := sched.AddContainer(ctr); err != nil {
+					logger.Warn("failed to schedule container", "container", ctr.Name, "container_id", ctr.ID, "error", err)
+				} else {
+					scheduled++
+				}
+			}
+			logger.Info("startup scan complete", "containers", len(containers), "scheduled", scheduled, "stacks", countStacks(containers))
+			return nil
+		}(); err != nil {
 			return err
 		}
-		scheduled := 0
-		for i := range containers {
-			ctr := &containers[i]
-
-			if err := sched.AddContainer(ctr); err != nil {
-				logger.Warn("failed to schedule container", "container", ctr.Name, "container_id", ctr.ID, "error", err)
-			} else {
-				scheduled++
-			}
-		}
-		logger.Info("startup scan complete", "containers", len(containers), "scheduled", scheduled, "stacks", countStacks(containers))
 
 		watcher := docker.NewWatcher(dockerClient, logger)
 		ctx, cancel := context.WithCancel(context.Background())
@@ -167,14 +196,22 @@ var RunCmd = &cobra.Command{
 				logger.Debug("received event", "type", evt.Type, "name", evt.ActorName)
 				switch evt.Type {
 				case docker.EventStart:
-					ctr, err := dockerClient.InspectContainer(context.Background(), evt.ID)
+					ctx, span := tel.Tracers().Tracer.Start(context.Background(), "buoy.container.detected",
+						trace.WithAttributes(
+							attribute.String("container.name", evt.ActorName),
+						),
+					)
+					ctr, err := dockerClient.InspectContainer(ctx, evt.ID)
 					if err != nil {
 						logger.Warn("failed to inspect on event", "id", evt.ID, "error", err)
+						span.SetStatus(codes.Error, err.Error())
+						span.End()
 						continue
 					}
 					if err := sched.AddContainer(ctr); err != nil {
 						logger.Warn("failed to schedule on event", "container", ctr.Name, "container_id", ctr.ID, "error", err)
 					}
+					span.End()
 				case docker.EventDie, docker.EventDestroy:
 					sched.RemoveContainer(evt.ID)
 				}
