@@ -23,7 +23,6 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 
-	"github.com/depado/buoy/internal/config"
 	"github.com/depado/buoy/internal/version"
 )
 
@@ -34,8 +33,8 @@ type Telemetry struct {
 	enabled bool
 }
 
-func New(conf *config.Conf, logger *slog.Logger) (*Telemetry, error) {
-	if !conf.Otel.Enabled {
+func New(logger *slog.Logger) (*Telemetry, error) {
+	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") == "" {
 		return &Telemetry{}, nil
 	}
 
@@ -56,20 +55,20 @@ func New(conf *config.Conf, logger *slog.Logger) (*Telemetry, error) {
 		res = sdkresource.Empty()
 	}
 
-	opts := exporterOpts(conf)
+	useHTTP := os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL") == "http/protobuf"
 
 	t := &Telemetry{enabled: true}
 	var joinErr error
 
-	if err := t.setupTraces(context.Background(), res, conf.Otel.Protocol == "http", opts); err != nil {
+	if err := t.setupTraces(context.Background(), res, useHTTP); err != nil {
 		logger.Warn("failed to setup otel traces, continuing without", "error", err)
 		joinErr = errors.Join(joinErr, err)
 	}
-	if err := t.setupMetrics(context.Background(), res, conf.Otel.Protocol == "http", opts); err != nil {
+	if err := t.setupMetrics(context.Background(), res, useHTTP); err != nil {
 		logger.Warn("failed to setup otel metrics, continuing without", "error", err)
 		joinErr = errors.Join(joinErr, err)
 	}
-	if err := t.setupLogs(context.Background(), res, conf.Otel.Protocol == "http", opts); err != nil {
+	if err := t.setupLogs(context.Background(), res, useHTTP); err != nil {
 		logger.Warn("failed to setup otel logs, continuing without", "error", err)
 		joinErr = errors.Join(joinErr, err)
 	}
@@ -79,48 +78,21 @@ func New(conf *config.Conf, logger *slog.Logger) (*Telemetry, error) {
 		propagation.Baggage{},
 	))
 
+	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	logger.Info("telemetry initialized",
-		"protocol", conf.Otel.Protocol,
-		"endpoint", conf.Otel.Endpoint,
+		"protocol", map[bool]string{true: "http", false: "grpc"}[useHTTP],
+		"endpoint", endpoint,
 	)
 	return t, joinErr
 }
 
-// exporterOpts returns configured overrides. Most settings are read automatically
-// by the OTel SDK from environment variables (OTEL_EXPORTER_OTLP_*).
-func exporterOpts(conf *config.Conf) exporterOptions {
-	return exporterOptions{
-		endpoint: conf.Otel.Endpoint,
-		insecure: conf.Otel.Insecure,
-	}
-}
-
-type exporterOptions struct {
-	endpoint string
-	insecure bool
-}
-
-func (t *Telemetry) setupTraces(ctx context.Context, res *sdkresource.Resource, useHTTP bool, opts exporterOptions) error {
+func (t *Telemetry) setupTraces(ctx context.Context, res *sdkresource.Resource, useHTTP bool) error {
 	var exp sdktrace.SpanExporter
 	var err error
 	if useHTTP {
-		var o []otlptracehttp.Option
-		if opts.endpoint != "" {
-			o = append(o, otlptracehttp.WithEndpoint(opts.endpoint))
-		}
-		if opts.insecure {
-			o = append(o, otlptracehttp.WithInsecure())
-		}
-		exp, err = otlptracehttp.New(ctx, o...)
+		exp, err = otlptracehttp.New(ctx)
 	} else {
-		var o []otlptracegrpc.Option
-		if opts.endpoint != "" {
-			o = append(o, otlptracegrpc.WithEndpoint(opts.endpoint))
-		}
-		if opts.insecure {
-			o = append(o, otlptracegrpc.WithInsecure())
-		}
-		exp, err = otlptracegrpc.New(ctx, o...)
+		exp, err = otlptracegrpc.New(ctx)
 	}
 	if err != nil {
 		return fmt.Errorf("create trace exporter: %w", err)
@@ -134,16 +106,9 @@ func (t *Telemetry) setupTraces(ctx context.Context, res *sdkresource.Resource, 
 	return nil
 }
 
-func (t *Telemetry) setupMetrics(ctx context.Context, res *sdkresource.Resource, useHTTP bool, opts exporterOptions) error {
+func (t *Telemetry) setupMetrics(ctx context.Context, res *sdkresource.Resource, useHTTP bool) error {
 	if useHTTP {
-		var o []otlpmetrichttp.Option
-		if opts.endpoint != "" {
-			o = append(o, otlpmetrichttp.WithEndpoint(opts.endpoint))
-		}
-		if opts.insecure {
-			o = append(o, otlpmetrichttp.WithInsecure())
-		}
-		exp, err := otlpmetrichttp.New(ctx, o...)
+		exp, err := otlpmetrichttp.New(ctx)
 		if err != nil {
 			return fmt.Errorf("create metric exporter: %w", err)
 		}
@@ -157,14 +122,7 @@ func (t *Telemetry) setupMetrics(ctx context.Context, res *sdkresource.Resource,
 		runtime.Start(runtime.WithMeterProvider(mp)) //nolint:errcheck
 		return nil
 	}
-	var o []otlpmetricgrpc.Option
-	if opts.endpoint != "" {
-		o = append(o, otlpmetricgrpc.WithEndpoint(opts.endpoint))
-	}
-	if opts.insecure {
-		o = append(o, otlpmetricgrpc.WithInsecure())
-	}
-	exp, err := otlpmetricgrpc.New(ctx, o...)
+	exp, err := otlpmetricgrpc.New(ctx)
 	if err != nil {
 		return fmt.Errorf("create metric exporter: %w", err)
 	}
@@ -179,16 +137,9 @@ func (t *Telemetry) setupMetrics(ctx context.Context, res *sdkresource.Resource,
 	return nil
 }
 
-func (t *Telemetry) setupLogs(ctx context.Context, res *sdkresource.Resource, useHTTP bool, opts exporterOptions) error {
+func (t *Telemetry) setupLogs(ctx context.Context, res *sdkresource.Resource, useHTTP bool) error {
 	if useHTTP {
-		var o []otlploghttp.Option
-		if opts.endpoint != "" {
-			o = append(o, otlploghttp.WithEndpoint(opts.endpoint))
-		}
-		if opts.insecure {
-			o = append(o, otlploghttp.WithInsecure())
-		}
-		exp, err := otlploghttp.New(ctx, o...)
+		exp, err := otlploghttp.New(ctx)
 		if err != nil {
 			return fmt.Errorf("create log exporter: %w", err)
 		}
@@ -198,14 +149,7 @@ func (t *Telemetry) setupLogs(ctx context.Context, res *sdkresource.Resource, us
 		)
 		return nil
 	}
-	var o []otlploggrpc.Option
-	if opts.endpoint != "" {
-		o = append(o, otlploggrpc.WithEndpoint(opts.endpoint))
-	}
-	if opts.insecure {
-		o = append(o, otlploggrpc.WithInsecure())
-	}
-	exp, err := otlploggrpc.New(ctx, o...)
+	exp, err := otlploggrpc.New(ctx)
 	if err != nil {
 		return fmt.Errorf("create log exporter: %w", err)
 	}

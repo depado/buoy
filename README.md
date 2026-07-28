@@ -407,10 +407,6 @@ When a container label refers to a global value (`buoy.schedule` →
 | `restic.password`            | _(optional)_                                                             | `BUOY_RESTIC_PASSWORD` / `--restic.password`                       |
 | `restic.compression`         | `auto`                                                                   | `BUOY_RESTIC_COMPRESSION` / `--restic.compression`                 |
 | `restic.repos`               | _(none)_                                                                 | See [Configuration](docs/configuration.md#password) for env var format. |
-| `otel.enabled`               | `false`                                                                  | `BUOY_OTEL_ENABLED` / `--otel.enabled`                               |
-| `otel.protocol`              | `grpc`                                                                   | `BUOY_OTEL_PROTOCOL` / `--otel.protocol`                            |
-| `otel.endpoint`              | _(empty)_                                                                | `BUOY_OTEL_ENDPOINT` / `--otel.endpoint`                            |
-| `otel.insecure`              | `false`                                                                  | `BUOY_OTEL_INSECURE` / `--otel.insecure`                            |
 | `api.enabled`                | `true`                                                                   | `BUOY_API_ENABLED` / `--api.enabled`                               |
 | `api.host`                   | `0.0.0.0`                                                                | `BUOY_API_HOST` / `--api.host`                                     |
 | `api.port`                   | `8080`                                                                   | `BUOY_API_PORT` / `--api.port`                                     |

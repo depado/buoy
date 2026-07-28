@@ -56,7 +56,7 @@ var RunCmd = &cobra.Command{
 			"db_path", conf.Daemon.DBPath,
 		)
 
-		tel, telErr := telemetry.New(&conf, logger)
+		tel, telErr := telemetry.New(logger)
 		if telErr != nil {
 			logger.Warn("telemetry setup failed, continuing without", "error", telErr)
 		}

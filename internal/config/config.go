@@ -80,13 +80,6 @@ type APIConf struct {
 	Token   string `mapstructure:"token"`
 }
 
-type OtelConf struct {
-	Enabled  bool   `mapstructure:"enabled"`
-	Endpoint string `mapstructure:"endpoint"`
-	Protocol string `mapstructure:"protocol"`
-	Insecure bool   `mapstructure:"insecure"` // skip TLS, default false
-}
-
 type Conf struct {
 	Log    LogConf    `mapstructure:"log"`
 	Daemon DaemonConf `mapstructure:"daemon"`
@@ -94,7 +87,6 @@ type Conf struct {
 	Restic ResticConf `mapstructure:"restic"`
 	Notify NotifyConf `mapstructure:"notify"`
 	API    APIConf    `mapstructure:"api"`
-	Otel   OtelConf   `mapstructure:"otel"`
 }
 
 func NewLogger(c *Conf) *slog.Logger {
