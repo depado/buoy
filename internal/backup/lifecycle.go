@@ -22,14 +22,16 @@ func (r *Runner) stopContainer(ctx context.Context, ctr *docker.Container, cfg d
 			attribute.String("container.name", ctr.Name),
 		),
 	)
+	recordCtx := context.WithoutCancel(ctx)
 	defer func() {
 		d := time.Since(stopStart).Seconds()
 		result := "ok"
 		if stopErr != nil {
+			span.RecordError(stopErr)
 			span.SetStatus(codes.Error, stopErr.Error())
 			result = "timeout"
 		}
-		r.meters.ContainerStopDur.Record(ctx, d,
+		r.meters.ContainerStopDur.Record(recordCtx, d,
 			metric.WithAttributes(attribute.String("result", result)),
 		)
 		span.End()
@@ -59,8 +61,9 @@ func (r *Runner) startContainer(ctx context.Context, ctr *docker.Container, l *s
 			attribute.String("container.name", ctr.Name),
 		),
 	)
+	recordCtx := context.WithoutCancel(ctx)
 	defer func() {
-		r.meters.ContainerStartDur.Record(ctx, time.Since(startTime).Seconds(),
+		r.meters.ContainerStartDur.Record(recordCtx, time.Since(startTime).Seconds(),
 			metric.WithAttributes(attribute.String("result", result)),
 		)
 		span.End()
@@ -69,6 +72,7 @@ func (r *Runner) startContainer(ctx context.Context, ctr *docker.Container, l *s
 	l.Debug("starting container")
 	if err := r.docker.StartContainer(ctx, ctr.ID); err != nil {
 		l.Error("start container failed", "error", err)
+		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		result = "fail"
 		return

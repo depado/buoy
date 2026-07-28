@@ -203,6 +203,7 @@ var RunCmd = &cobra.Command{
 					ctr, err := dockerClient.InspectContainer(ctx, evt.ID)
 					if err != nil {
 						logger.Warn("failed to inspect on event", "id", evt.ID, "error", err)
+						span.RecordError(err)
 						span.SetStatus(codes.Error, err.Error())
 						span.End()
 						continue

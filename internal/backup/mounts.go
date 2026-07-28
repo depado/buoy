@@ -156,6 +156,7 @@ func (r *Runner) backupSingleMount(
 
 	result, err := r.restic.Backup(ctx, repo, paths, opts)
 	if err != nil {
+		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 	} else if result != nil {
 		span.SetAttributes(attribute.String("snapshot.id", result.SnapshotID))

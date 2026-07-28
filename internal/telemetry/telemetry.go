@@ -222,6 +222,7 @@ func (t *Telemetry) Shutdown(ctx context.Context) error {
 	}
 	var errs error
 	if t.tp != nil {
+		errs = errors.Join(errs, t.tp.ForceFlush(ctx))
 		errs = errors.Join(errs, t.tp.Shutdown(ctx))
 	}
 	if t.mp != nil {

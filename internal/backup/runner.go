@@ -87,6 +87,7 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) (runErr error) 
 	)
 	defer func() {
 		if runErr != nil {
+			span.RecordError(runErr)
 			span.SetStatus(codes.Error, runErr.Error())
 		}
 		span.End()

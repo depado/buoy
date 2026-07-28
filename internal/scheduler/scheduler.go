@@ -215,6 +215,7 @@ func (s *Scheduler) Resync(ctx context.Context) {
 	containers, err := s.docker.ListBackupContainers(ctx)
 	if err != nil {
 		s.logger.Error("resync: failed to list containers", "error", err)
+		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return
 	}

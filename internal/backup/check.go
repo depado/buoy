@@ -5,6 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/depado/buoy/internal/registry"
 	"github.com/depado/buoy/internal/restic"
@@ -12,14 +17,26 @@ import (
 )
 
 func (r *Runner) CheckKnownRepos(ctx context.Context) {
+	start := time.Now()
 	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.check")
+	var checkErr error
 	defer span.End()
+	defer func() {
+		if checkErr != nil {
+			span.RecordError(checkErr)
+			span.SetStatus(codes.Error, checkErr.Error())
+		}
+		r.meters.CheckDuration.Record(ctx, time.Since(start).Seconds(),
+			metric.WithAttributes(attribute.String("repo", "all")),
+		)
+	}()
 
 	l := r.logger.With("component", "check")
 
 	entries, err := r.repoReg.ListRepos(registry.ExcludeOrphaned())
 	if err != nil {
 		l.Error("check: failed to list repos from registry", "error", err)
+		checkErr = err
 		return
 	}
 	var failures []string
@@ -29,6 +46,7 @@ func (r *Runner) CheckKnownRepos(ctx context.Context) {
 		containers, err := r.docker.ListBackupContainers(ctx)
 		if err != nil {
 			l.Error("check: failed to list containers", "error", err)
+			checkErr = err
 			return
 		}
 

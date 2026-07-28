@@ -27,6 +27,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 	)
 	defer func() {
 		if batchErr != nil {
+			span.RecordError(batchErr)
 			span.SetStatus(codes.Error, batchErr.Error())
 		}
 		span.End()
@@ -80,6 +81,7 @@ func (r *Runner) discoverStackContainers(ctx context.Context, project string, l 
 
 	summaries, err := r.docker.ListContainersByProject(ctx, project)
 	if err != nil {
+		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		l.Warn("failed to list stack containers", "error", err)
 		return nil, nil
@@ -180,6 +182,7 @@ func (r *Runner) stopStackServices(
 			if err := r.docker.StopContainer(stopCtx, ctr.ID, cfg.StopTimeout); err != nil {
 				sl.Warn("failed to stop container", "error", err)
 				stopFailed[ctr.ID] = true
+				stopSpan.RecordError(err)
 				stopSpan.SetStatus(codes.Error, err.Error())
 				r.meters.ContainerStopDur.Record(ctx, time.Since(startStop).Seconds(),
 					metric.WithAttributes(attribute.String("result", "fail")),
@@ -192,6 +195,7 @@ func (r *Runner) stopStackServices(
 			waitErr := r.docker.ContainerWait(stopCtx, ctr.ID, container.WaitConditionNotRunning)
 			if waitErr != nil {
 				sl.Warn("failed to wait for container stop", "error", waitErr)
+				stopSpan.RecordError(waitErr)
 				stopSpan.SetStatus(codes.Error, waitErr.Error())
 			}
 			result := "ok"
@@ -280,6 +284,7 @@ func (r *Runner) startStackServices(
 			startErr := r.docker.StartContainer(startCtx, ctr.ID)
 			if startErr != nil {
 				cl.Warn("failed to start container", "error", startErr)
+				startSpan.RecordError(startErr)
 				startSpan.SetStatus(codes.Error, startErr.Error())
 			} else {
 				cl.Info("container started")
@@ -367,14 +372,20 @@ func (r *Runner) waitForEvent(
 	ctr *docker.Container,
 	eventTypes []string,
 	check func(*docker.Container) (bool, error),
-) error {
+) (waitErr error) {
 	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.container.wait",
 		trace.WithAttributes(
 			attribute.String("container.name", ctr.Name),
 			attribute.StringSlice("event_types", eventTypes),
 		),
 	)
-	defer span.End()
+	defer func() {
+		if waitErr != nil {
+			span.RecordError(waitErr)
+			span.SetStatus(codes.Error, waitErr.Error())
+		}
+		span.End()
+	}()
 
 	fresh, err := r.docker.InspectContainer(ctx, ctr.ID)
 	if err != nil {
