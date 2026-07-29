@@ -27,6 +27,7 @@ jobs:
     with:
       platforms: linux/amd64,linux/arm64
       target: distroless
+      enable-cleanup: false
 
   docker-alpine:
     name: Docker (alpine)
@@ -40,3 +41,12 @@ jobs:
       platforms: linux/amd64,linux/arm64
       target: alpine
       tag-suffix: "-alpine"
+      enable-cleanup: false
+
+  container-retention-policy:
+    name: Container Retention Policy
+    if: github.event_name != 'pull_request'
+    needs: [docker, docker-alpine]
+    permissions:
+      packages: write
+    uses: depado/github-actions/.github/workflows/container-retention-policy.yml@main
