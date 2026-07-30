@@ -348,3 +348,37 @@ func (r *Registry) GetContainerRepos(containerID string) ([]types.RepoEntry, err
 	})
 	return entries, err
 }
+
+type LastSuccessEntry struct {
+	ContainerName  string
+	ComposeProject string
+	ComposeService string
+	Timestamp      int64
+}
+
+func (r *Registry) LastSuccessTimestamps() ([]LastSuccessEntry, error) {
+	entries, err := r.ListRepos(ExcludeOrphaned())
+	if err != nil {
+		return nil, err
+	}
+	best := make(map[string]LastSuccessEntry)
+	for _, e := range entries {
+		if !e.LastBackupOK {
+			continue
+		}
+		ts := e.LastBackupAt.Unix()
+		if existing, ok := best[e.ContainerName]; !ok || ts > existing.Timestamp {
+			best[e.ContainerName] = LastSuccessEntry{
+				ContainerName:  e.ContainerName,
+				ComposeProject: e.ComposeProject,
+				ComposeService: e.ComposeService,
+				Timestamp:      ts,
+			}
+		}
+	}
+	result := make([]LastSuccessEntry, 0, len(best))
+	for _, v := range best {
+		result = append(result, v)
+	}
+	return result, nil
+}

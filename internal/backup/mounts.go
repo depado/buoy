@@ -44,7 +44,7 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, cfg do
 
 			mountCount++
 			repoMounts++
-			if repoErr := r.backupSingleMount(ctx, ref.URL, ctr.Name, m, matchedName, cfg, l); repoErr != nil {
+			if repoErr := r.backupSingleMount(ctx, ref.URL, ctr, m, matchedName, cfg, l); repoErr != nil {
 				failures = append(failures, *repoErr)
 				repoOK = false
 			}
@@ -52,9 +52,6 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, cfg do
 		if err := r.repoReg.MarkBackupComplete(ref.URL, repoOK); err != nil {
 			logger.Warn("failed to persist backup status", "repo", ref.URL, "error", err)
 		}
-		r.meters.BackupMountCount.Record(ctx, int64(repoMounts),
-			metric.WithAttributes(attribute.String("repo", ref.URL)),
-		)
 	}
 
 	if mountCount == 0 {
@@ -99,7 +96,7 @@ func (r *Runner) ensureRepo(ctx context.Context, repo string, logger *slog.Logge
 func (r *Runner) backupSingleMount(
 	ctx context.Context,
 	repo string,
-	hostname string,
+	ctr *docker.Container,
 	m docker.Mount,
 	matchedName string,
 	cfg docker.BackupConfig,
@@ -122,7 +119,7 @@ func (r *Runner) backupSingleMount(
 		Tags:     append(tags, "mount:"+mountTag),
 		Excludes: excludes,
 		Files:    files,
-		Hostname: hostname,
+		Hostname: ctr.Name,
 		WorkDir:  source,
 	}
 
@@ -162,38 +159,31 @@ func (r *Runner) backupSingleMount(
 		span.SetAttributes(attribute.String("snapshot.id", result.SnapshotID))
 	}
 
-	status := "success"
-	if err != nil {
-		status = "fail"
-	}
-	attrs := []attribute.KeyValue{
-		attribute.String("repo", repo),
-		attribute.String("mount", source),
-		attribute.String("status", status),
-	}
-	r.meters.BackupDuration.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(attrs...))
-	r.meters.BackupsTotal.Add(ctx, 1, metric.WithAttributes(
-		attribute.String("repo", repo),
-		attribute.String("status", status),
-	))
+	r.meters.BackupDuration.Record(ctx, time.Since(start).Seconds(),
+		metric.WithAttributes(containerAttrs(ctr,
+			attribute.String("repo", repo),
+			attribute.String("mount", source),
+			attribute.Bool("success", err == nil),
+		)...),
+	)
 
 	if err != nil {
 		if result != nil {
 			l.Error("backup completed with errors",
-				"repo", repo, "mount", source,
+				"mount", source,
 				"snapshot", result.SnapshotID, "error", err,
 			)
 		} else {
-			l.Error("backup failed", "repo", repo, "mount", source, "error", err)
+			l.Error("backup failed", "mount", source, "error", err)
 		}
 		return &mountError{mount: source, repo: repo, err: err}
 	}
 	if result == nil {
-		l.Error("backup produced no summary", "repo", repo, "mount", source)
+		l.Error("backup produced no summary", "mount", source)
 		return &mountError{mount: source, repo: repo, err: fmt.Errorf("no summary")}
 	}
-	l.Info("backup complete",
-		"repo", repo, "mount", source,
+	l.Info("backup completed",
+		"mount", source,
 		"snapshot", result.SnapshotID,
 		slog.Duration("duration", time.Duration(result.TotalDuration*float64(time.Second))),
 	)

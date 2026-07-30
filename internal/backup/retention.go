@@ -33,9 +33,9 @@ func (r *Runner) applyRetention(ctx context.Context, ctr *docker.Container, cfg 
 			l.Warn("prune failed", "error", err)
 			issues = append(issues, fmt.Sprintf("prune on %s: %s", ref.URL, err.Error()))
 		}
-		l.Info("retention complete", slog.Duration("duration", time.Since(start)))
+		l.Info("retention applied", slog.Duration("duration", time.Since(start)))
 		r.meters.RetentionDuration.Record(ctx, time.Since(start).Seconds(),
-			metric.WithAttributes(attribute.String("repo", ref.URL)),
+			metric.WithAttributes(containerAttrs(ctr, attribute.String("repo", ref.URL))...),
 		)
 	}
 	return issues

@@ -57,6 +57,10 @@ func New(logger *slog.Logger) (*Telemetry, error) {
 
 	useHTTP := os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL") == "http/protobuf"
 
+	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
+		logger.Warn("otel internal error", "error", err)
+	}))
+
 	t := &Telemetry{enabled: true}
 	var joinErr error
 

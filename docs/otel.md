@@ -26,8 +26,104 @@ That's it. buoy automatically initializes traces, metrics, and logs when `OTEL_E
 > The OTel SDK auto-reads all `OTEL_*` env vars. Endpoint, TLS, headers, compression, timeouts - everything is configured the standard way. See the [OTel SDK docs](https://opentelemetry.io/docs/languages/sdk-configuration/otlp-exporter/) for the full list.
 
 - **Traces** - every backup cycle is a trace with child spans for each phase: container stop, restic backup (per mount), container start, hooks, retention, dependency waits.
-- **Metrics** - `buoy.backup.duration`, `buoy.backups.total`, `buoy.container.stop.duration`, `buoy.container.start.duration`, `buoy.hook.duration`, `buoy.retention.duration`. Go runtime metrics (GC, memory) included automatically.
+- **Metrics** - all metrics below. Go runtime metrics (GC, memory) included automatically.
 - **Log correlation** - existing slog output is bridged to OTLP. Every log line inside a span gets `trace_id` and `span_id`. Click a span in Tempo → see the logs.
+
+## Metrics
+
+All metrics share the instrumentation scope `buoy`. When ingested by Prometheus via remote write, dots become underscores and units are appended as suffixes.
+
+### `buoy.backup.duration`
+
+| Field | Value |
+|---|---|
+| Type | Float64Histogram |
+| Unit | `s` |
+| Buckets | 1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600 |
+| Description | Duration of restic backup per mount |
+
+**Attributes:** `container` (string), `service` (string), `project` (string), `repo` (string), `mount` (string), `success` (bool)
+
+### `buoy.backup.runs`
+
+| Field | Value |
+|---|---|
+| Type | Int64Counter |
+| Unit | `{run}` |
+| Description | Total number of completed backup runs (one per container per cycle) |
+
+**Attributes:** `container` (string), `service` (string), `project` (string), `mounts` (int), `success` (bool)
+
+### `buoy.backup.last_success`
+
+| Field | Value |
+|---|---|
+| Type | Int64ObservableGauge |
+| Unit | `s` |
+| Description | Unix timestamp of last successful backup per container |
+
+**Attributes:** `container` (string), `service` (string), `project` (string)
+
+### `buoy.containers.active`
+
+| Field | Value |
+|---|---|
+| Type | Int64ObservableGauge |
+| Unit | `{container}` |
+| Description | Number of containers currently discovered and scheduled for backup |
+
+### `buoy.container.stop.duration`
+
+| Field | Value |
+|---|---|
+| Type | Float64Histogram |
+| Unit | `s` |
+| Buckets | 0.1, 0.5, 1, 2, 5, 10, 30, 60, 120 |
+| Description | Duration of container stop operations |
+
+**Attributes:** `container` (string), `service` (string), `project` (string), `success` (bool)
+
+### `buoy.container.start.duration`
+
+| Field | Value |
+|---|---|
+| Type | Float64Histogram |
+| Unit | `s` |
+| Buckets | 0.1, 0.5, 1, 2, 5, 10, 30, 60, 120 |
+| Description | Duration of container start operations |
+
+**Attributes:** `container` (string), `service` (string), `project` (string), `success` (bool)
+
+### `buoy.hook.duration`
+
+| Field | Value |
+|---|---|
+| Type | Float64Histogram |
+| Unit | `s` |
+| Buckets | 0.1, 0.5, 1, 2, 5, 10, 30, 60, 120 |
+| Description | Duration of hook command execution |
+
+**Attributes:** `container` (string), `service` (string), `project` (string), `type` (`pre` / `post`), `target` (`host` / `container`), `success` (bool)
+
+### `buoy.retention.duration`
+
+| Field | Value |
+|---|---|
+| Type | Float64Histogram |
+| Unit | `s` |
+| Buckets | 1, 5, 10, 30, 60, 120, 300, 600, 1800 |
+| Description | Duration of retention operations (forget/prune) |
+
+**Attributes:** `container` (string), `service` (string), `project` (string), `repo` (string)
+
+### `buoy.check.duration`
+
+| Field | Value |
+|---|---|
+| Type | Float64Histogram |
+| Unit | `s` |
+| Buckets | 1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600 |
+| Description | Duration of restic repository check operations |
 
 ## Local development
 
@@ -190,13 +286,26 @@ Add Tempo (`http://tempo:3200`), Loki (`http://loki:3100`), and Prometheus (`htt
 
 Hooks only appear when configured - no empty spans when no labels are set.
 
-## Grafana dashboard
+## PromQL examples
 
-| Panel              | PromQL                                                                                          |
-| ------------------ | ----------------------------------------------------------------------------------------------- |
-| Backup failures    | `rate(buoy_backups_total{status="fail"}[10m]) > 0`                                              |
-| Duration p95       | `histogram_quantile(0.95, rate(buoy_backup_duration_seconds_bucket[1h]))`                       |
-| Start latency      | `histogram_quantile(0.50, rate(buoy_container_start_duration_seconds_bucket[1h]))`              |
+All metric names use underscores in Prometheus (OTel dots → underscores, unit suffix appended).
+
+| Panel | PromQL |
+|---|---|
+| Containers discovered | `buoy_containers_active` |
+| Successful runs (24h) | `round(sum(increase(buoy_backup_runs_total{success="true"}[24h]))) or vector(0)` |
+| Failed runs (24h) | `round(sum(increase(buoy_backup_runs_total{success="false"}[24h]))) or vector(0)` |
+| Error rate (1h) | `sum(rate(buoy_backup_runs_total{success="false"}[1h])) / clamp_min(sum(rate(buoy_backup_runs_total[1h])), 1)` |
+| Missed backup alert | `time() \- buoy_backup_last_success \> 86400` |
+| Run rate by container | `sum by(service, container)(rate(buoy_backup_runs_total[1h]))` |
+| Backup duration p95 | `histogram_quantile(0.95, sum by(le)(rate(buoy_backup_duration_seconds_bucket[1h])))` |
+| Backup duration p95 by container | `histogram_quantile(0.95, sum by(container, le)(rate(buoy_backup_duration_seconds_bucket[1h])))` |
+| Container stop p95 | `histogram_quantile(0.95, sum by(le)(rate(buoy_container_stop_duration_seconds_bucket[1h])))` |
+| Container start p95 | `histogram_quantile(0.95, sum by(le)(rate(buoy_container_start_duration_seconds_bucket[1h])))` |
+| Hook duration p95 | `histogram_quantile(0.95, sum by(le)(rate(buoy_hook_duration_seconds_bucket[1h])))` |
+| Check duration | `histogram_quantile(0.95, sum by(le)(rate(buoy_check_duration_seconds_bucket[1h])))` |
+| Retention duration | `histogram_quantile(0.95, sum by(le)(rate(buoy_retention_duration_seconds_bucket[1h])))` |
+| Errors & warnings (Loki) | `{service_name="buoy"} \| severity_text=~"ERROR\|WARN"` |
 
 > [!NOTE]
 > **Graceful degradation.** Each signal initializes independently. An unreachable collector at startup disables only that signal (logged as a warning). The daemon always starts. When no OTLP endpoint is set, all spans and metrics are no-op - zero overhead.

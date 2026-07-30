@@ -60,13 +60,6 @@ var RunCmd = &cobra.Command{
 		if telErr != nil {
 			logger.Warn("telemetry setup failed, continuing without", "error", telErr)
 		}
-		defer func() {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := tel.Shutdown(shutdownCtx); err != nil {
-				logger.Warn("telemetry shutdown error", "error", err)
-			}
-		}()
 
 		logger = slog.New(tel.LoggerHandler(logger.Handler()))
 		slog.SetDefault(logger)
@@ -88,7 +81,7 @@ var RunCmd = &cobra.Command{
 		}
 
 		resticClient := restic.New(conf.Restic.BinaryPath, conf.Restic.Password, conf.Restic.Compression)
-		hookExec := hook.New(dockerClient, logger)
+		hookExec := hook.New(dockerClient)
 		notifier, err := notify.New(conf.Notify.Urls, notify.ParseLevel(conf.Notify.Level), logger)
 		if err != nil {
 			return fmt.Errorf("notify: %w", err)
@@ -97,6 +90,8 @@ var RunCmd = &cobra.Command{
 		execTimeout := parseDurationOrDefault(conf.Daemon.ExecTimeout, 5*time.Minute)
 		healthWaitTimeout := parseDurationOrDefault(conf.Daemon.HealthWaitTimeout, 5*time.Minute)
 		ignoredIDs := &sync.Map{}
+
+		meters := tel.Meters()
 
 		runner := backup.New(&backup.RunnerConfig{
 			Docker:            dockerClient,
@@ -111,9 +106,42 @@ var RunCmd = &cobra.Command{
 			Logger:            logger,
 			ExecTimeout:       execTimeout,
 			HealthWaitTimeout: healthWaitTimeout,
-			Meters:            tel.Meters(),
+			Meters:            meters,
 			Tracers:           tel.Tracers(),
 		})
+
+		meters.RegisterCallbacks(
+			func(ctx context.Context) (int64, error) {
+				containers, err := dockerClient.ListBackupContainers(ctx)
+				if err != nil {
+					return 0, nil
+				}
+				return int64(len(containers)), nil
+			},
+			func(ctx context.Context) ([]telemetry.LastSuccessPoint, error) {
+				entries, err := reg.LastSuccessTimestamps()
+				if err != nil {
+					return nil, nil
+				}
+				points := make([]telemetry.LastSuccessPoint, len(entries))
+				for i, e := range entries {
+					points[i] = telemetry.LastSuccessPoint{
+						ContainerName: e.ContainerName,
+						Project:       e.ComposeProject,
+						Service:       e.ComposeService,
+						Timestamp:     e.Timestamp,
+					}
+				}
+				return points, nil
+			},
+		)
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := tel.Shutdown(shutdownCtx); err != nil {
+				logger.Debug("telemetry shutdown error", "error", err)
+			}
+		}()
 		sched := scheduler.New(&scheduler.Config{
 			Docker:           dockerClient,
 			Runner:           runner,
@@ -197,7 +225,7 @@ var RunCmd = &cobra.Command{
 				case docker.EventStart:
 					ctx, span := tel.Tracers().Tracer.Start(context.Background(), "buoy.container.detected",
 						trace.WithAttributes(
-							attribute.String("container.name", evt.ActorName),
+							attribute.String("container", evt.ActorName),
 						),
 					)
 					ctr, err := dockerClient.InspectContainer(ctx, evt.ID)
@@ -220,21 +248,28 @@ var RunCmd = &cobra.Command{
 			case <-resyncTicker:
 				sched.Resync(ctx)
 			case sig := <-sigs:
-				if sched.Running() {
-					logger.Warn("received signal, backup in progress - waiting for completion", "signal", sig)
-				} else {
+				if !sched.Running() {
 					logger.Info("received signal, shutting down", "signal", sig)
+					cancel()
+					if apiSrv != nil {
+						shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+						defer shutdownCancel()
+						if err := apiSrv.Shutdown(shutdownCtx); err != nil {
+							logger.Warn("api server shutdown error", "error", err)
+						}
+					}
+					done := sched.Stop()
+					<-done.Done()
+					return nil
+				}
+				logger.Warn("received signal, backup in progress - waiting for completion, send again to force-stop (may corrupt repository)", "signal", sig, "timeout", backupTimeout)
+				done := sched.Stop()
+				select {
+				case <-done.Done():
+				case sig := <-sigs:
+					logger.Error("force-stopping, repositories may be left locked", "signal", sig)
 				}
 				cancel()
-				if apiSrv != nil {
-					shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-					defer shutdownCancel()
-					if err := apiSrv.Shutdown(shutdownCtx); err != nil {
-						logger.Warn("api server shutdown error", "error", err)
-					}
-				}
-				done := sched.Stop()
-				<-done.Done()
 				return nil
 			}
 		}

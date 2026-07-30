@@ -10,6 +10,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/depado/buoy/internal/config"
@@ -80,10 +81,7 @@ func (r *Runner) parseConfig(labels map[string]string) docker.BackupConfig {
 
 func (r *Runner) Run(ctx context.Context, ctr *docker.Container) (runErr error) {
 	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.backup",
-		trace.WithAttributes(
-			attribute.String("container.name", ctr.Name),
-			attribute.String("container.id", ctr.ID),
-		),
+		trace.WithAttributes(containerAttrs(ctr)...),
 	)
 	defer func() {
 		if runErr != nil {
@@ -115,10 +113,12 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) (runErr error) 
 		return fmt.Errorf("no repos resolved for container %s", ctr.Name)
 	}
 
+	eligibleMounts := countEligibleMounts(fresh, cfg)
+
 	r.runPreHooks(ctx, fresh, cfg, l)
 
 	l.Info("backup started", "stop", cfg.StopBefore, "mounts", len(fresh.Mounts), "repos", len(repos))
-	l.Debug("pre-hooks complete, proceeding with backup")
+	l.Debug("pre-hooks completed, proceeding with backup")
 	wasRunning := false
 	if cfg.StopBefore {
 		r.ignore(fresh.ID)
@@ -126,12 +126,25 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) (runErr error) 
 		var err error
 		wasRunning, err = r.stopContainer(ctx, fresh, cfg, l)
 		if err != nil {
+			r.meters.BackupsTotal.Add(ctx, 1,
+				metric.WithAttributes(containerAttrs(fresh,
+					attribute.Int("mounts", eligibleMounts),
+					attribute.Bool("success", false),
+				)...),
+			)
 			return err
 		}
 	}
 
 	l.Debug("backing up mounts", "repos", len(repos))
 	backupErr := r.backupMounts(ctx, fresh, cfg, repos, l)
+
+	r.meters.BackupsTotal.Add(ctx, 1,
+		metric.WithAttributes(containerAttrs(fresh,
+			attribute.Int("mounts", eligibleMounts),
+			attribute.Bool("success", backupErr == nil),
+		)...),
+	)
 
 	if wasRunning {
 		r.startContainer(ctx, fresh, l)
@@ -157,7 +170,7 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) (runErr error) 
 		return nil
 	}
 
-	l.Info("backup complete")
+	l.Info("backup completed")
 	r.notifier.SendInfo(
 		fmt.Sprintf("buoy backup complete: %s", ctr.Name),
 		fmt.Sprintf("Backup completed for container %s", ctr.Name),
@@ -174,6 +187,28 @@ func (r *Runner) effectivePassword(cfg docker.BackupConfig, repoName string) str
 
 func (r *Runner) ignore(id string)  { r.ignoredIDs.Store(id, true) }
 func (r *Runner) release(id string) { r.ignoredIDs.Delete(id) }
+
+func countEligibleMounts(ctr *docker.Container, cfg docker.BackupConfig) int {
+	n := 0
+	for _, m := range ctr.Mounts {
+		if m.Type == "tmpfs" {
+			continue
+		}
+		if _, ok := docker.MountMatches(m, cfg.Include, cfg.Exclude); ok {
+			n++
+		}
+	}
+	return n
+}
+
+func containerAttrs(ctr *docker.Container, extra ...attribute.KeyValue) []attribute.KeyValue {
+	base := []attribute.KeyValue{
+		attribute.String("container", ctr.Name),
+		attribute.String("service", ctr.ComposeService),
+		attribute.String("project", ctr.ComposeProject),
+	}
+	return append(base, extra...)
+}
 
 type mountError struct {
 	mount string

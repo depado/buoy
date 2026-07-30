@@ -15,26 +15,26 @@ import (
 
 func (r *Runner) runPreHooks(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) {
 	if cfg.HookPreCmd != "" {
-		r.runHook(ctx, "buoy.hook.pre.host", "pre", "host",
-			func(ctx context.Context) error { return r.hook.ExecOnHost(ctx, cfg.HookPreCmd) },
+		r.runHook(ctx, "buoy.hook.pre.host", ctr, "pre", "host",
+			func(ctx context.Context) error { return r.hook.ExecOnHost(ctx, cfg.HookPreCmd, l) },
 			l)
 	}
 	if cfg.HookPreExec != "" {
-		r.runHook(ctx, "buoy.hook.pre.exec", "pre", "container",
-			func(ctx context.Context) error { return r.hook.ExecInContainer(ctx, ctr.ID, cfg.HookPreExec) },
+		r.runHook(ctx, "buoy.hook.pre.exec", ctr, "pre", "container",
+			func(ctx context.Context) error { return r.hook.ExecInContainer(ctx, ctr.ID, cfg.HookPreExec, l) },
 			l)
 	}
 }
 
 func (r *Runner) runPostHooks(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) {
 	if cfg.HookPostExec != "" {
-		r.runHook(ctx, "buoy.hook.post.exec", "post", "container",
-			func(ctx context.Context) error { return r.hook.ExecInContainer(ctx, ctr.ID, cfg.HookPostExec) },
+		r.runHook(ctx, "buoy.hook.post.exec", ctr, "post", "container",
+			func(ctx context.Context) error { return r.hook.ExecInContainer(ctx, ctr.ID, cfg.HookPostExec, l) },
 			l)
 	}
 	if cfg.HookPostCmd != "" {
-		r.runHook(ctx, "buoy.hook.post.host", "post", "host",
-			func(ctx context.Context) error { return r.hook.ExecOnHost(ctx, cfg.HookPostCmd) },
+		r.runHook(ctx, "buoy.hook.post.host", ctr, "post", "host",
+			func(ctx context.Context) error { return r.hook.ExecOnHost(ctx, cfg.HookPostCmd, l) },
 			l)
 	}
 }
@@ -42,6 +42,7 @@ func (r *Runner) runPostHooks(ctx context.Context, ctr *docker.Container, cfg do
 func (r *Runner) runHook(
 	ctx context.Context,
 	spanName string,
+	ctr *docker.Container,
 	hookType, hookTarget string,
 	fn func(context.Context) error,
 	l *slog.Logger,
@@ -63,11 +64,11 @@ func (r *Runner) runHook(
 	}
 	label := hookType + "-backup " + target
 
-	status := "ok"
+	ok := true
 	start := time.Now()
 	if err := fn(execCtx); err != nil {
 		l.Warn(label+" failed", "error", err)
-		status = "fail"
+		ok = false
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 	} else {
@@ -75,10 +76,10 @@ func (r *Runner) runHook(
 	}
 
 	r.meters.HookDuration.Record(ctx, time.Since(start).Seconds(),
-		metric.WithAttributes(
+		metric.WithAttributes(containerAttrs(ctr,
 			attribute.String("type", hookType),
 			attribute.String("target", hookTarget),
-			attribute.String("status", status),
-		),
+			attribute.Bool("success", ok),
+		)...),
 	)
 }

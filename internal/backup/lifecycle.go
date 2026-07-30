@@ -18,21 +18,17 @@ import (
 func (r *Runner) stopContainer(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) (stopped bool, stopErr error) {
 	stopStart := time.Now()
 	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.container.stop",
-		trace.WithAttributes(
-			attribute.String("container.name", ctr.Name),
-		),
+		trace.WithAttributes(containerAttrs(ctr)...),
 	)
 	recordCtx := context.WithoutCancel(ctx)
 	defer func() {
 		d := time.Since(stopStart).Seconds()
-		result := "ok"
 		if stopErr != nil {
 			span.RecordError(stopErr)
 			span.SetStatus(codes.Error, stopErr.Error())
-			result = "timeout"
 		}
 		r.meters.ContainerStopDur.Record(recordCtx, d,
-			metric.WithAttributes(attribute.String("result", result)),
+			metric.WithAttributes(containerAttrs(ctr, attribute.Bool("success", stopErr == nil))...),
 		)
 		span.End()
 	}()
@@ -55,26 +51,24 @@ func (r *Runner) stopContainer(ctx context.Context, ctr *docker.Container, cfg d
 
 func (r *Runner) startContainer(ctx context.Context, ctr *docker.Container, l *slog.Logger) {
 	startTime := time.Now()
-	result := "ok"
+	startErr := error(nil)
 	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.container.start",
-		trace.WithAttributes(
-			attribute.String("container.name", ctr.Name),
-		),
+		trace.WithAttributes(containerAttrs(ctr)...),
 	)
 	recordCtx := context.WithoutCancel(ctx)
 	defer func() {
 		r.meters.ContainerStartDur.Record(recordCtx, time.Since(startTime).Seconds(),
-			metric.WithAttributes(attribute.String("result", result)),
+			metric.WithAttributes(containerAttrs(ctr, attribute.Bool("success", startErr == nil))...),
 		)
 		span.End()
 	}()
 
 	l.Debug("starting container")
-	if err := r.docker.StartContainer(ctx, ctr.ID); err != nil {
-		l.Error("start container failed", "error", err)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		result = "fail"
+	startErr = r.docker.StartContainer(ctx, ctr.ID)
+	if startErr != nil {
+		l.Error("start container failed", "error", startErr)
+		span.RecordError(startErr)
+		span.SetStatus(codes.Error, startErr.Error())
 		return
 	}
 	l.Info("container started")
@@ -82,7 +76,7 @@ func (r *Runner) startContainer(ctx context.Context, ctr *docker.Container, l *s
 }
 
 func (r *Runner) waitRunning(ctx context.Context, ctr *docker.Container, l *slog.Logger) {
-	l.Debug("waiting for container to reach running state", "timeout", r.healthWaitTimeout)
+	l.Debug("waiting for container to be running", "timeout", r.healthWaitTimeout)
 	ctx, cancel := context.WithTimeout(ctx, r.healthWaitTimeout)
 	defer cancel()
 
@@ -92,5 +86,7 @@ func (r *Runner) waitRunning(ctx context.Context, ctr *docker.Container, l *slog
 			return c.State == "running" || c.State == "exited", nil
 		}); err != nil {
 		l.Warn("container did not reach running state", "error", err)
+		return
 	}
+	l.Info("container running")
 }

@@ -326,9 +326,7 @@ func (s *Scheduler) enqueueBatch(project string, batch []*docker.Container) {
 		defer span.End()
 		ctx, cancel := context.WithTimeout(ctx, s.backupTimeout)
 		defer cancel()
-		if err := s.backup.RunStackBatch(ctx, project, batch); err != nil {
-			s.logger.Error("stack batch backup failed", "project", project, "error", err)
-		}
+		s.backup.RunStackBatch(ctx, project, batch) //nolint:errcheck
 	}
 }
 

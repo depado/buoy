@@ -7,9 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/metric"
 
 	"github.com/depado/buoy/internal/registry"
 	"github.com/depado/buoy/internal/restic"
@@ -26,9 +24,7 @@ func (r *Runner) CheckKnownRepos(ctx context.Context) {
 			span.RecordError(checkErr)
 			span.SetStatus(codes.Error, checkErr.Error())
 		}
-		r.meters.CheckDuration.Record(ctx, time.Since(start).Seconds(),
-			metric.WithAttributes(attribute.String("repo", "all")),
-		)
+		r.meters.CheckDuration.Record(ctx, time.Since(start).Seconds())
 	}()
 
 	l := r.logger.With("component", "check")
