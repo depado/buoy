@@ -202,11 +202,12 @@ func countEligibleMounts(ctr *docker.Container, cfg docker.BackupConfig) int {
 }
 
 func containerAttrs(ctr *docker.Container, extra ...attribute.KeyValue) []attribute.KeyValue {
-	base := []attribute.KeyValue{
+	base := make([]attribute.KeyValue, 0, 3+len(extra))
+	base = append(base,
 		attribute.String("container", ctr.Name),
 		attribute.String("service", ctr.ComposeService),
 		attribute.String("project", ctr.ComposeProject),
-	}
+	)
 	return append(base, extra...)
 }
 

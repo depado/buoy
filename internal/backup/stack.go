@@ -73,7 +73,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 	} else {
 		l.Info("stack backup finished", "total", len(fresh), "ok", ok)
 	}
-	r.finalizeStackBackup(project, len(fresh), len(backupErrors), allIssues)
+	r.finalizeStackBackup(project, len(fresh), allIssues)
 }
 
 func (r *Runner) discoverStackContainers(ctx context.Context, project string, l *slog.Logger) ([]*docker.Container, map[string]*docker.Container) {
@@ -333,19 +333,15 @@ func (r *Runner) releaseBatch(ignored map[string]bool) {
 	}
 }
 
-func (r *Runner) finalizeStackBackup(project string, total, failed int, allIssues []string) error {
+func (r *Runner) finalizeStackBackup(project string, total int, allIssues []string) {
 	if len(allIssues) == 0 {
 		r.notifier.SendInfo(
 			fmt.Sprintf("buoy stack backup complete: %s", project),
 			fmt.Sprintf("Backup completed for project %s (%d services)", project, total),
 		)
-		return nil
+		return
 	}
 	r.notifier.SendBackupError(project, strings.Join(allIssues, "\n"))
-	if failed > 0 {
-		return fmt.Errorf("stack backup: %d/%d services failed", failed, total)
-	}
-	return nil
 }
 
 func (r *Runner) waitForDeps(ctx context.Context, deps map[string][]depInfo, ctrs []*docker.Container, serviceName string, logger *slog.Logger) error {
