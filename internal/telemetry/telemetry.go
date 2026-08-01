@@ -16,7 +16,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdkresource "go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 
 	"github.com/depado/buoy/internal/version"
 )
@@ -33,10 +33,10 @@ func New(logger *slog.Logger) (*Telemetry, error) {
 		return &Telemetry{}, nil
 	}
 
-	res, err := sdkresource.Merge(
-		sdkresource.Default(),
-		sdkresource.NewWithAttributes(
-			semconv.SchemaURL,
+	res, err := sdkresource.New(context.Background(),
+		sdkresource.WithFromEnv(),
+		sdkresource.WithTelemetrySDK(),
+		sdkresource.WithAttributes(
 			semconv.ServiceName("buoy"),
 			semconv.ServiceVersion(version.Version),
 		),
