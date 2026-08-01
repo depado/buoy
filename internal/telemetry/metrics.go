@@ -7,8 +7,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
-
-	"github.com/depado/buoy/internal/version"
 )
 
 type MeterSet struct {
@@ -54,9 +52,7 @@ func (t *Telemetry) Meters() MeterSet {
 	if t.mp == nil {
 		return newMeterSet()
 	}
-	return newMeter(t.mp.Meter(instrumentName,
-		metric.WithInstrumentationVersion(version.Version),
-	))
+	return newMeter(t.mp.Meter(instrumentName))
 }
 
 func (ms MeterSet) RegisterCallbacks(active ActiveCallback, lastSuccess LastSuccessCallback) {

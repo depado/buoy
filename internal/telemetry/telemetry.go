@@ -38,13 +38,10 @@ func New(logger *slog.Logger) (*Telemetry, error) {
 		return &Telemetry{}, nil
 	}
 
-	hostname, _ := os.Hostname()
-
 	res, err := sdkresource.New(context.Background(),
 		sdkresource.WithAttributes(
 			semconv.ServiceName("buoy"),
 			semconv.ServiceVersion(version.Version),
-			semconv.HostName(hostname),
 		),
 		sdkresource.WithFromEnv(),
 	)

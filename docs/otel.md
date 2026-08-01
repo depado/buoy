@@ -19,8 +19,8 @@ That's it. buoy automatically initializes traces, metrics, and logs when `OTEL_E
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | _(empty)_ | OTLP collector address. When set, telemetry is enabled. |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `grpc` | Transport: `grpc` or `http/protobuf` |
 | `OTEL_EXPORTER_OTLP_INSECURE` | `false` | Set to `true` to skip TLS |
-| `OTEL_SERVICE_NAME` | `buoy` | Override service name |
-| `OTEL_RESOURCE_ATTRIBUTES` | - | Additional resource attributes |
+| `OTEL_SERVICE_NAME` | _(auto)_ | Override `service.name` resource attribute (defaults to `buoy` from code) |
+| `OTEL_RESOURCE_ATTRIBUTES` | - | Additional resource attributes. Recommended in Docker: set `host.name=<host>` so each deployment is identifiable. |
 
 > [!NOTE]
 > The OTel SDK auto-reads all `OTEL_*` env vars. Endpoint, TLS, headers, compression, timeouts - everything is configured the standard way. See the [OTel SDK docs](https://opentelemetry.io/docs/languages/sdk-configuration/otlp-exporter/) for the full list.
@@ -245,6 +245,8 @@ exporters:
     endpoint: http://loki:3100/loki/api/v1/push
   prometheusremotewrite:
     endpoint: http://prometheus:9090/api/v1/write
+    resource_to_telemetry_conversion:
+      enabled: true
 
 service:
   pipelines:
@@ -288,23 +290,25 @@ Hooks only appear when configured - no empty spans when no labels are set.
 
 ## PromQL examples
 
-All metric names use underscores in Prometheus (OTel dots → underscores, unit suffix appended).
+All metric names use underscores in Prometheus (OTel dots → underscores, unit suffix appended). Use `sum by(container)`, `sum by(project)`, or `sum by(repo)` to slice per entity. For counters (backup runs), use `offset 24h` subtraction instead of `increase` -- it works instantly without extrapolation on fresh data.
 
 | Panel | PromQL |
 |---|---|
-| Containers discovered | `buoy_containers_active` |
-| Successful runs (24h) | `round(sum(increase(buoy_backup_runs_total{success="true"}[24h]))) or vector(0)` |
-| Failed runs (24h) | `round(sum(increase(buoy_backup_runs_total{success="false"}[24h]))) or vector(0)` |
+| Containers active | `buoy_containers_active` |
+| Successful runs (24h) | `sum(buoy_backup_runs_total{success="true"}) - sum(buoy_backup_runs_total{success="true"} offset 24h or vector(0))` |
+| Failed runs (24h) | `sum(buoy_backup_runs_total{success="false"}) - sum(buoy_backup_runs_total{success="false"} offset 24h or vector(0))` |
 | Error rate (1h) | `sum(rate(buoy_backup_runs_total{success="false"}[1h])) / clamp_min(sum(rate(buoy_backup_runs_total[1h])), 1)` |
-| Missed backup alert | `time() \- buoy_backup_last_success \> 86400` |
-| Run rate by container | `sum by(service, container)(rate(buoy_backup_runs_total[1h]))` |
-| Backup duration p95 | `histogram_quantile(0.95, sum by(le)(rate(buoy_backup_duration_seconds_bucket[1h])))` |
-| Backup duration p95 by container | `histogram_quantile(0.95, sum by(container, le)(rate(buoy_backup_duration_seconds_bucket[1h])))` |
-| Container stop p95 | `histogram_quantile(0.95, sum by(le)(rate(buoy_container_stop_duration_seconds_bucket[1h])))` |
-| Container start p95 | `histogram_quantile(0.95, sum by(le)(rate(buoy_container_start_duration_seconds_bucket[1h])))` |
-| Hook duration p95 | `histogram_quantile(0.95, sum by(le)(rate(buoy_hook_duration_seconds_bucket[1h])))` |
-| Check duration | `histogram_quantile(0.95, sum by(le)(rate(buoy_check_duration_seconds_bucket[1h])))` |
-| Retention duration | `histogram_quantile(0.95, sum by(le)(rate(buoy_retention_duration_seconds_bucket[1h])))` |
+| Healthy containers | `count(buoy_backup_last_success_seconds > (time() - 86400))` |
+| Stale containers | `count(buoy_backup_last_success_seconds < (time() - 86400))` |
+| Backup duration by container | `sum by(container)(buoy_backup_duration_seconds_sum) / sum by(container)(buoy_backup_duration_seconds_count)` |
+| Backup duration by project | `sum by(project)(buoy_backup_duration_seconds_sum) - sum by(project)(buoy_backup_duration_seconds_sum offset 24h or vector(0))` |
+| Backup duration by repo | `sum by(repo)(buoy_backup_duration_seconds_sum) / sum by(repo)(buoy_backup_duration_seconds_count)` |
+| Container stop by container | `sum by(container)(buoy_container_stop_duration_seconds_sum) / sum by(container)(buoy_container_stop_duration_seconds_count)` |
+| Container start by container | `sum by(container)(buoy_container_start_duration_seconds_sum) / sum by(container)(buoy_container_start_duration_seconds_count)` |
+| Hook duration p95 | `histogram_quantile(0.95, sum by(type, le)(rate(buoy_hook_duration_seconds_bucket[$__rate_interval])))` |
+| Retention duration p95 | `histogram_quantile(0.95, sum by(le)(rate(buoy_retention_duration_seconds_bucket[$__rate_interval])))` |
+| Check duration p95 | `histogram_quantile(0.95, sum by(le)(rate(buoy_check_duration_seconds_bucket[$__rate_interval])))` |
+| Last backup age | `time() - buoy_backup_last_success_seconds` |
 | Errors & warnings (Loki) | `{service_name="buoy"} \| severity_text=~"ERROR\|WARN"` |
 
 > [!NOTE]
