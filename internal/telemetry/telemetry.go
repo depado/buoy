@@ -8,14 +8,9 @@ import (
 	"os"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
+	"go.opentelemetry.io/contrib/exporters/autoexport"
 	"go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
-	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -38,12 +33,13 @@ func New(logger *slog.Logger) (*Telemetry, error) {
 		return &Telemetry{}, nil
 	}
 
-	res, err := sdkresource.New(context.Background(),
-		sdkresource.WithAttributes(
+	res, err := sdkresource.Merge(
+		sdkresource.Default(),
+		sdkresource.NewWithAttributes(
+			semconv.SchemaURL,
 			semconv.ServiceName("buoy"),
 			semconv.ServiceVersion(version.Version),
 		),
-		sdkresource.WithFromEnv(),
 	)
 	if err != nil {
 		logger.Warn("failed to create otel resource", "error", err)
@@ -52,8 +48,6 @@ func New(logger *slog.Logger) (*Telemetry, error) {
 		res = sdkresource.Empty()
 	}
 
-	useHTTP := os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL") == "http/protobuf"
-
 	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
 		logger.Warn("otel internal error", "error", err)
 	}))
@@ -61,15 +55,15 @@ func New(logger *slog.Logger) (*Telemetry, error) {
 	t := &Telemetry{enabled: true}
 	var joinErr error
 
-	if err := t.setupTraces(context.Background(), res, useHTTP); err != nil {
+	if err := t.setupTraces(context.Background(), res); err != nil {
 		logger.Warn("failed to setup otel traces, continuing without", "error", err)
 		joinErr = errors.Join(joinErr, err)
 	}
-	if err := t.setupMetrics(context.Background(), res, useHTTP); err != nil {
+	if err := t.setupMetrics(context.Background(), res); err != nil {
 		logger.Warn("failed to setup otel metrics, continuing without", "error", err)
 		joinErr = errors.Join(joinErr, err)
 	}
-	if err := t.setupLogs(context.Background(), res, useHTTP); err != nil {
+	if err := t.setupLogs(context.Background(), res); err != nil {
 		logger.Warn("failed to setup otel logs, continuing without", "error", err)
 		joinErr = errors.Join(joinErr, err)
 	}
@@ -79,22 +73,12 @@ func New(logger *slog.Logger) (*Telemetry, error) {
 		propagation.Baggage{},
 	))
 
-	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-	logger.Info("telemetry initialized",
-		"protocol", map[bool]string{true: "http", false: "grpc"}[useHTTP],
-		"endpoint", endpoint,
-	)
+	logger.Info("telemetry initialized", "endpoint", os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
 	return t, joinErr
 }
 
-func (t *Telemetry) setupTraces(ctx context.Context, res *sdkresource.Resource, useHTTP bool) error {
-	var exp sdktrace.SpanExporter
-	var err error
-	if useHTTP {
-		exp, err = otlptracehttp.New(ctx)
-	} else {
-		exp, err = otlptracegrpc.New(ctx)
-	}
+func (t *Telemetry) setupTraces(ctx context.Context, res *sdkresource.Resource) error {
+	exp, err := autoexport.NewSpanExporter(ctx)
 	if err != nil {
 		return fmt.Errorf("create trace exporter: %w", err)
 	}
@@ -107,27 +91,11 @@ func (t *Telemetry) setupTraces(ctx context.Context, res *sdkresource.Resource, 
 	return nil
 }
 
-func (t *Telemetry) setupMetrics(ctx context.Context, res *sdkresource.Resource, useHTTP bool) error {
-	if useHTTP {
-		exp, err := otlpmetrichttp.New(ctx)
-		if err != nil {
-			return fmt.Errorf("create metric exporter: %w", err)
-		}
-		reader := sdkmetric.NewPeriodicReader(exp)
-		mp := sdkmetric.NewMeterProvider(
-			sdkmetric.WithReader(reader),
-			sdkmetric.WithResource(res),
-		)
-		otel.SetMeterProvider(mp)
-		t.mp = mp
-		runtime.Start(runtime.WithMeterProvider(mp)) //nolint:errcheck
-		return nil
-	}
-	exp, err := otlpmetricgrpc.New(ctx)
+func (t *Telemetry) setupMetrics(ctx context.Context, res *sdkresource.Resource) error {
+	reader, err := autoexport.NewMetricReader(ctx)
 	if err != nil {
 		return fmt.Errorf("create metric exporter: %w", err)
 	}
-	reader := sdkmetric.NewPeriodicReader(exp)
 	mp := sdkmetric.NewMeterProvider(
 		sdkmetric.WithReader(reader),
 		sdkmetric.WithResource(res),
@@ -138,19 +106,8 @@ func (t *Telemetry) setupMetrics(ctx context.Context, res *sdkresource.Resource,
 	return nil
 }
 
-func (t *Telemetry) setupLogs(ctx context.Context, res *sdkresource.Resource, useHTTP bool) error {
-	if useHTTP {
-		exp, err := otlploghttp.New(ctx)
-		if err != nil {
-			return fmt.Errorf("create log exporter: %w", err)
-		}
-		t.lp = sdklog.NewLoggerProvider(
-			sdklog.WithProcessor(sdklog.NewBatchProcessor(exp)),
-			sdklog.WithResource(res),
-		)
-		return nil
-	}
-	exp, err := otlploggrpc.New(ctx)
+func (t *Telemetry) setupLogs(ctx context.Context, res *sdkresource.Resource) error {
+	exp, err := autoexport.NewLogExporter(ctx)
 	if err != nil {
 		return fmt.Errorf("create log exporter: %w", err)
 	}
@@ -171,9 +128,11 @@ func (t *Telemetry) Shutdown(ctx context.Context) error {
 		errs = errors.Join(errs, t.tp.Shutdown(ctx))
 	}
 	if t.mp != nil {
+		errs = errors.Join(errs, t.mp.ForceFlush(ctx))
 		errs = errors.Join(errs, t.mp.Shutdown(ctx))
 	}
 	if t.lp != nil {
+		errs = errors.Join(errs, t.lp.ForceFlush(ctx))
 		errs = errors.Join(errs, t.lp.Shutdown(ctx))
 	}
 	return errs
