@@ -365,6 +365,8 @@ func (s *Scheduler) TriggerBackup(ctx context.Context, identifier string) error 
 
 	ctx, span := s.tracer.Start(ctx, "buoy.schedule.run")
 	defer span.End()
+	ctx, cancel := context.WithTimeout(ctx, s.backupTimeout)
+	defer cancel()
 	if err := s.backup.Run(ctx, ctr); err != nil {
 		s.logger.Error("triggered backup failed", append(ctr.LogAttrs(), "error", err)...)
 		return err
