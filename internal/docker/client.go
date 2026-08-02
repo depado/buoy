@@ -155,16 +155,30 @@ func (c *Client) ExecInContainer(ctx context.Context, containerID, command strin
 		close(done)
 	}()
 
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
 	for {
-		inspect, err := c.api.ExecInspect(ctx, execResp.ID, client.ExecInspectOptions{})
-		if err != nil {
-			return -1, fmt.Errorf("exec inspect: %w", err)
-		}
-		if !inspect.Running {
-			<-done
+		select {
+		case <-done:
+			inspect, err := c.api.ExecInspect(ctx, execResp.ID, client.ExecInspectOptions{})
+			if err != nil {
+				return -1, fmt.Errorf("exec inspect: %w", err)
+			}
 			return inspect.ExitCode, nil
+		case <-ticker.C:
+			// ponytail: safety fallback in case Docker stream never closes
+			inspect, err := c.api.ExecInspect(ctx, execResp.ID, client.ExecInspectOptions{})
+			if err != nil {
+				return -1, fmt.Errorf("exec inspect: %w", err)
+			}
+			if !inspect.Running {
+				<-done
+				return inspect.ExitCode, nil
+			}
+		case <-ctx.Done():
+			return -1, ctx.Err()
 		}
-		time.Sleep(500 * time.Millisecond)
 	}
 }
 
