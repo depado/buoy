@@ -59,10 +59,10 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*typ
 	l.Debug("running pre-backup hooks", "services", len(fresh))
 	r.runParallelPreHooks(ctx, fresh, containerCfg, l)
 
-	stopSvc := stopSet(fresh, all)
+	deps := serviceDeps(all)
+	stopSvc := stopSet(fresh, deps)
 	l.Info("stack backup started", "services", len(fresh), "stop_set", slices.Collect(maps.Keys(stopSvc)))
 	services := serviceContainers(all)
-	deps := serviceDeps(all)
 
 	l.Debug("stopping stack services", "count", len(stopSvc))
 	wasStopped, stopFailed, ignored := r.stopStackServices(ctx, services, stopSvc, deps, l)

@@ -2,6 +2,7 @@ package backup
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/depado/buoy/internal/types"
@@ -155,15 +156,14 @@ func serviceContainers(ctrs []*types.Container) map[string][]*types.Container {
 }
 
 // stopSet returns the set of service names that must be stopped.
-// Only batch containers contribute to the stop decision via stop_before_backup.
-// The dependency graph is built from all containers so cascade works correctly.
-func stopSet(batch []*types.Container, all []*types.Container) map[string]bool {
-	dependents := buildDependents(all)
+// deps must be the pre-computed dependency graph from serviceDeps(all).
+func stopSet(batch []*types.Container, deps map[string][]depInfo) map[string]bool {
+	dependents := buildDependents(deps)
 	stop := make(map[string]bool)
 
 	for _, ctr := range batch {
-		cfg := types.ParseBackupConfig(ctr.Labels, "", "") // only StopBefore is used; defaults irrelevant
-		if !cfg.StopBefore {
+		stopBefore, _ := strconv.ParseBool(ctr.Labels["buoy.stop-before"])
+		if !stopBefore {
 			continue
 		}
 		svc := ctr.ComposeService
@@ -177,9 +177,8 @@ func stopSet(batch []*types.Container, all []*types.Container) map[string]bool {
 }
 
 // buildDependents builds a reverse dependency map: service → services that depend on it.
-func buildDependents(ctrs []*types.Container) map[string][]string {
+func buildDependents(deps map[string][]depInfo) map[string][]string {
 	dependents := make(map[string][]string)
-	deps := serviceDeps(ctrs)
 
 	for svc, depInfos := range deps {
 		for _, info := range depInfos {
