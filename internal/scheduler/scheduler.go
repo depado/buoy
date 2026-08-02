@@ -294,12 +294,6 @@ func (s *Scheduler) enqueueBatch(project string, batch []*types.Container) (queu
 	s.wg.Add(1)
 	s.sem <- struct{}{}
 
-	defer func() {
-		q.mu.Lock()
-		q.active = false
-		q.mu.Unlock()
-	}()
-
 	defer func() { <-s.sem }()
 	defer s.active.Add(-1)
 	defer s.wg.Done()
@@ -307,12 +301,13 @@ func (s *Scheduler) enqueueBatch(project string, batch []*types.Container) (queu
 	for {
 		q.mu.Lock()
 		batch := q.pending
-		q.pending = nil
-		q.mu.Unlock()
-
 		if len(batch) == 0 {
+			q.active = false
+			q.mu.Unlock()
 			return false
 		}
+		q.pending = nil
+		q.mu.Unlock()
 
 		names := make([]string, len(batch))
 		for i, c := range batch {
@@ -408,7 +403,7 @@ func (s *Scheduler) TriggerProjectBackup(ctx context.Context, project string, se
 type stackQueue struct {
 	mu      sync.Mutex
 	pending []*types.Container
-	active  bool
+	active  bool // mutated only inside mu lock
 }
 
 type cronLogger struct {
