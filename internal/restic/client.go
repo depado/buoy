@@ -314,6 +314,11 @@ func writeTempFile(pattern, content string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("create temp file %q: %w", pattern, err)
 	}
+	if err := f.Chmod(0600); err != nil {
+		f.Close()
+		os.Remove(f.Name()) //nolint:errcheck
+		return "", fmt.Errorf("chmod temp file %q: %w", pattern, err)
+	}
 	defer f.Close()
 	if _, err := f.WriteString(content); err != nil {
 		os.Remove(f.Name()) //nolint:errcheck
