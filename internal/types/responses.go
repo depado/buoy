@@ -55,5 +55,6 @@ type ScheduledRepo struct {
 type BackupResult struct {
 	Container string `json:"container"`
 	OK        bool   `json:"ok"`
+	Queued    bool   `json:"queued,omitempty"`
 	Error     string `json:"error,omitempty"`
 }

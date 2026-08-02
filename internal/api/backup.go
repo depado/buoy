@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/depado/buoy/internal/types"
@@ -47,7 +48,11 @@ func (s *Server) handleTriggerBackup(w http.ResponseWriter, r *http.Request) {
 		go func(idx int, name string) {
 			defer wg.Done()
 			err := s.scheduler.TriggerBackup(r.Context(), name)
-			results[idx] = types.BackupResult{Container: name, OK: err == nil}
+			results[idx] = types.BackupResult{
+				Container: name,
+				OK:        err == nil,
+				Queued:    err != nil && strings.Contains(err.Error(), "queued"),
+			}
 			if err != nil {
 				results[idx].Error = err.Error()
 			}

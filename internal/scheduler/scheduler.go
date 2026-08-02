@@ -20,6 +20,8 @@ import (
 	"github.com/depado/buoy/internal/types"
 )
 
+var ErrQueued = fmt.Errorf("backup queued")
+
 type Scheduler struct {
 	cron             *cron.Cron
 	docker           *docker.Client
@@ -275,7 +277,7 @@ func (s *Scheduler) runScheduleGroup(key, project string) {
 	s.enqueueBatch(project, ctrs)
 }
 
-func (s *Scheduler) enqueueBatch(project string, batch []*types.Container) {
+func (s *Scheduler) enqueueBatch(project string, batch []*types.Container) (queued bool) {
 	q := s.getStackQueue(project)
 
 	q.mu.Lock()
@@ -283,7 +285,7 @@ func (s *Scheduler) enqueueBatch(project string, batch []*types.Container) {
 	if q.active {
 		s.logger.Debug("stack queue busy, batch queued", "project", project, "count", len(batch))
 		q.mu.Unlock()
-		return
+		return true
 	}
 	q.active = true
 	q.mu.Unlock()
@@ -309,7 +311,7 @@ func (s *Scheduler) enqueueBatch(project string, batch []*types.Container) {
 		q.mu.Unlock()
 
 		if len(batch) == 0 {
-			return
+			return false
 		}
 
 		names := make([]string, len(batch))
@@ -352,7 +354,9 @@ func (s *Scheduler) TriggerBackup(ctx context.Context, identifier string) error 
 	}
 
 	if ctr.ComposeProject != "" {
-		s.enqueueBatch(ctr.ComposeProject, []*types.Container{ctr})
+		if s.enqueueBatch(ctr.ComposeProject, []*types.Container{ctr}) {
+			return fmt.Errorf("%w for project %s", ErrQueued, ctr.ComposeProject)
+		}
 		return nil
 	}
 
