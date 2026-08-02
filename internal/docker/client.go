@@ -10,6 +10,8 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/client"
+
+	"github.com/depado/buoy/internal/types"
 )
 
 // Client wraps the Docker Engine API client.
@@ -40,7 +42,7 @@ func (c *Client) Close() error {
 }
 
 // ListBackupContainers returns all running containers that have buoy.enabled=true.
-func (c *Client) ListBackupContainers(ctx context.Context) ([]Container, error) {
+func (c *Client) ListBackupContainers(ctx context.Context) ([]types.Container, error) {
 	f := client.Filters{}
 	f.Add("label", "buoy.enabled=true")
 	f.Add("status", "running")
@@ -53,7 +55,7 @@ func (c *Client) ListBackupContainers(ctx context.Context) ([]Container, error) 
 		return nil, fmt.Errorf("list containers: %w", err)
 	}
 
-	containers := make([]Container, 0, len(result.Items))
+	containers := make([]types.Container, 0, len(result.Items))
 	for _, s := range result.Items {
 		containers = append(containers, containerFromSummary(s))
 	}
@@ -61,7 +63,7 @@ func (c *Client) ListBackupContainers(ctx context.Context) ([]Container, error) 
 }
 
 // ListContainersByProject returns all containers belonging to the given compose project.
-func (c *Client) ListContainersByProject(ctx context.Context, project string) ([]Container, error) {
+func (c *Client) ListContainersByProject(ctx context.Context, project string) ([]types.Container, error) {
 	f := client.Filters{}
 	f.Add("label", "com.docker.compose.project="+project)
 
@@ -73,7 +75,7 @@ func (c *Client) ListContainersByProject(ctx context.Context, project string) ([
 		return nil, fmt.Errorf("list containers by project: %w", err)
 	}
 
-	containers := make([]Container, 0, len(result.Items))
+	containers := make([]types.Container, 0, len(result.Items))
 	for _, s := range result.Items {
 		containers = append(containers, containerFromSummary(s))
 	}
@@ -81,7 +83,7 @@ func (c *Client) ListContainersByProject(ctx context.Context, project string) ([
 }
 
 // InspectContainer returns detailed information about a container, including mounts.
-func (c *Client) InspectContainer(ctx context.Context, id string) (*Container, error) {
+func (c *Client) InspectContainer(ctx context.Context, id string) (*types.Container, error) {
 	result, err := c.api.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("inspect container %s: %w", id, err)
@@ -184,8 +186,8 @@ func (c *Client) WatchContainer(ctx context.Context, containerID string, eventTy
 	return c.Events(ctx, f)
 }
 
-func containerFromSummary(s container.Summary) Container {
-	ctr := Container{
+func containerFromSummary(s container.Summary) types.Container {
+	ctr := types.Container{
 		ID:             s.ID,
 		Image:          s.Image,
 		Labels:         s.Labels,
@@ -199,8 +201,8 @@ func containerFromSummary(s container.Summary) Container {
 	return ctr
 }
 
-func containerFromInspect(c container.InspectResponse) *Container {
-	ctr := &Container{
+func containerFromInspect(c container.InspectResponse) *types.Container {
+	ctr := &types.Container{
 		ID:             c.ID,
 		Name:           strings.TrimPrefix(c.Name, "/"),
 		Image:          c.Image,
@@ -212,7 +214,7 @@ func containerFromInspect(c container.InspectResponse) *Container {
 		ComposeService: c.Config.Labels["com.docker.compose.service"],
 	}
 	for _, m := range c.Mounts {
-		ctr.Mounts = append(ctr.Mounts, Mount{
+		ctr.Mounts = append(ctr.Mounts, types.Mount{
 			Type:        string(m.Type),
 			Name:        m.Name,
 			Source:      m.Source,

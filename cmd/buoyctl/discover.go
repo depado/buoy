@@ -14,7 +14,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/depado/buoy/internal/compose"
-	"github.com/depado/buoy/internal/docker"
 	"github.com/depado/buoy/internal/types"
 )
 
@@ -75,11 +74,11 @@ host paths and YAML sections.`,
 			var stackEmpty []string
 
 			for _, s := range stack.Services {
-				cfg := docker.ParseBackupConfig(s.Labels, "", "")
+				cfg := types.ParseBackupConfig(s.Labels, "", "")
 
 				volumeCount := 0
 				for _, e := range s.Volumes {
-					if _, ok := docker.MountMatches(docker.Mount{Source: e.Source, Destination: e.Destination}, cfg.Include, cfg.Exclude); !ok {
+					if _, ok := types.MountMatches(types.Mount{Source: e.Source, Destination: e.Destination}, cfg.Include, cfg.Exclude); !ok {
 						continue
 					}
 					volumeCount++

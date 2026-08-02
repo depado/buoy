@@ -17,7 +17,7 @@ var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List currently scheduled backups",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		entries, err := withSpinner(cmd, "Fetching scheduled backups...", func() ([]types.APIScheduledEntry, error) {
+		entries, err := withSpinner(cmd, "Fetching scheduled backups...", func() ([]types.ScheduledResponse, error) {
 			return clientAPI().ListScheduled()
 		})
 		if err != nil {

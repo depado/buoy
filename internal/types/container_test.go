@@ -1,10 +1,8 @@
-package docker
+package types
 
 import (
 	"testing"
 	"time"
-
-	"github.com/depado/buoy/internal/types"
 )
 
 func TestSplitAndTrim(t *testing.T) {
@@ -25,7 +23,7 @@ func TestSplitAndTrim(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := types.SplitTrim(tt.input)
+			got := SplitTrim(tt.input)
 			if len(got) != len(tt.want) {
 				t.Fatalf("len mismatch: got %d, want %d", len(got), len(tt.want))
 			}
@@ -43,58 +41,58 @@ func TestParseRetention(t *testing.T) {
 		name             string
 		labels           map[string]string
 		defaultRetention string
-		want             types.RetentionPolicy
+		want             RetentionPolicy
 	}{
 		{
 			name:   "empty label, empty default",
 			labels: map[string]string{},
-			want:   types.RetentionPolicy{},
+			want:   RetentionPolicy{},
 		},
 		{
 			name:             "empty label, default set",
 			labels:           map[string]string{},
 			defaultRetention: "keep-daily:14",
-			want:             types.RetentionPolicy{KeepDaily: 14},
+			want:             RetentionPolicy{KeepDaily: 14},
 		},
 		{
 			name:   "label set with all keys",
 			labels: map[string]string{"buoy.retention": "keep-daily:30,keep-weekly:4,keep-monthly:12,keep-yearly:2"},
-			want:   types.RetentionPolicy{KeepDaily: 30, KeepWeekly: 4, KeepMonthly: 12, KeepYearly: 2},
+			want:   RetentionPolicy{KeepDaily: 30, KeepWeekly: 4, KeepMonthly: 12, KeepYearly: 2},
 		},
 		{
 			name:   "keep-within string value",
 			labels: map[string]string{"buoy.retention": "keep-within:7d"},
-			want:   types.RetentionPolicy{KeepWithin: "7d"},
+			want:   RetentionPolicy{KeepWithin: "7d"},
 		},
 		{
 			name:   "malformed key:value silently skipped",
 			labels: map[string]string{"buoy.retention": "bad_entry"},
-			want:   types.RetentionPolicy{},
+			want:   RetentionPolicy{},
 		},
 		{
 			name:   "mixed valid and invalid entries",
 			labels: map[string]string{"buoy.retention": "keep-daily:10,bad_entry,keep-weekly:3"},
-			want:   types.RetentionPolicy{KeepDaily: 10, KeepWeekly: 3},
+			want:   RetentionPolicy{KeepDaily: 10, KeepWeekly: 3},
 		},
 		{
 			name:   "keep-within with spaces",
 			labels: map[string]string{"buoy.retention": "keep-within: 7d  , keep-daily : 5"},
-			want:   types.RetentionPolicy{KeepDaily: 5, KeepWithin: "7d"},
+			want:   RetentionPolicy{KeepDaily: 5, KeepWithin: "7d"},
 		},
 		{
 			name:   "keep-last",
 			labels: map[string]string{"buoy.retention": "keep-last:10"},
-			want:   types.RetentionPolicy{KeepLast: 10},
+			want:   RetentionPolicy{KeepLast: 10},
 		},
 		{
 			name:   "keep-hourly",
 			labels: map[string]string{"buoy.retention": "keep-hourly:24"},
-			want:   types.RetentionPolicy{KeepHourly: 24},
+			want:   RetentionPolicy{KeepHourly: 24},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rc := &types.RetentionPolicy{}
+			rc := &RetentionPolicy{}
 			parseRetention(tt.labels, tt.defaultRetention, rc)
 			if rc.KeepLast != tt.want.KeepLast {
 				t.Errorf("KeepLast: got %d, want %d", rc.KeepLast, tt.want.KeepLast)
@@ -222,7 +220,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				Enabled:     true,
 				StopTimeout: 30 * time.Second,
-				Retention:   types.RetentionPolicy{},
+				Retention:   RetentionPolicy{},
 				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
@@ -231,7 +229,7 @@ func TestParseBackupConfig(t *testing.T) {
 			labels: map[string]string{},
 			want: BackupConfig{
 				StopTimeout: 30 * time.Second,
-				Retention:   types.RetentionPolicy{},
+				Retention:   RetentionPolicy{},
 				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
@@ -243,7 +241,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				Enabled:     true,
 				StopTimeout: 30 * time.Second,
-				Retention:   types.RetentionPolicy{},
+				Retention:   RetentionPolicy{},
 				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
@@ -255,7 +253,7 @@ func TestParseBackupConfig(t *testing.T) {
 				Enabled:     true,
 				Schedule:    "@daily",
 				StopTimeout: 30 * time.Second,
-				Retention:   types.RetentionPolicy{},
+				Retention:   RetentionPolicy{},
 				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
@@ -264,7 +262,7 @@ func TestParseBackupConfig(t *testing.T) {
 			labels: map[string]string{"buoy.stop-timeout": "5m"},
 			want: BackupConfig{
 				StopTimeout: 5 * time.Minute,
-				Retention:   types.RetentionPolicy{},
+				Retention:   RetentionPolicy{},
 				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
@@ -273,7 +271,7 @@ func TestParseBackupConfig(t *testing.T) {
 			labels: map[string]string{"buoy.stop-timeout": "not_a_duration"},
 			want: BackupConfig{
 				StopTimeout: 30 * time.Second,
-				Retention:   types.RetentionPolicy{},
+				Retention:   RetentionPolicy{},
 				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
@@ -283,7 +281,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				Include:     []MountEntry{{Key: "vol1"}, {Key: "/data"}},
 				StopTimeout: 30 * time.Second,
-				Retention:   types.RetentionPolicy{},
+				Retention:   RetentionPolicy{},
 				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
@@ -296,7 +294,7 @@ func TestParseBackupConfig(t *testing.T) {
 					{Name: "data", Key: "/app/data"},
 				},
 				StopTimeout: 30 * time.Second,
-				Retention:   types.RetentionPolicy{},
+				Retention:   RetentionPolicy{},
 				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
@@ -309,7 +307,7 @@ func TestParseBackupConfig(t *testing.T) {
 					{Key: "/tmp/scratch"},
 				},
 				StopTimeout: 30 * time.Second,
-				Retention:   types.RetentionPolicy{},
+				Retention:   RetentionPolicy{},
 				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
@@ -319,7 +317,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				Include:     []MountEntry{{Key: "/data"}},
 				StopTimeout: 30 * time.Second,
-				Retention:   types.RetentionPolicy{},
+				Retention:   RetentionPolicy{},
 				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
@@ -329,7 +327,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				Include:     []MountEntry{{Name: "src", Key: "/app"}},
 				StopTimeout: 30 * time.Second,
-				Retention:   types.RetentionPolicy{},
+				Retention:   RetentionPolicy{},
 				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
@@ -339,7 +337,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				Exclude:     []string{"/data", "vol1"},
 				StopTimeout: 30 * time.Second,
-				Retention:   types.RetentionPolicy{},
+				Retention:   RetentionPolicy{},
 				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
@@ -349,7 +347,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				BackupTags:  []string{"foo", "bar"},
 				StopTimeout: 30 * time.Second,
-				Retention:   types.RetentionPolicy{},
+				Retention:   RetentionPolicy{},
 				MountOpts:   make(map[string]mountBackupOpts),
 			},
 		},
@@ -359,7 +357,7 @@ func TestParseBackupConfig(t *testing.T) {
 			want: BackupConfig{
 				BackupExclude: []string{"*.log", "*.tmp"},
 				StopTimeout:   30 * time.Second,
-				Retention:     types.RetentionPolicy{},
+				Retention:     RetentionPolicy{},
 				MountOpts:     make(map[string]mountBackupOpts),
 			},
 		},
@@ -377,7 +375,7 @@ func TestParseBackupConfig(t *testing.T) {
 				HookPreExec:  "echo pre exec",
 				HookPostExec: "echo post exec",
 				StopTimeout:  30 * time.Second,
-				Retention:    types.RetentionPolicy{},
+				Retention:    RetentionPolicy{},
 				MountOpts:    make(map[string]mountBackupOpts),
 			},
 		},
@@ -391,7 +389,7 @@ func TestParseBackupConfig(t *testing.T) {
 			},
 			want: BackupConfig{
 				StopTimeout: 30 * time.Second,
-				Retention:   types.RetentionPolicy{},
+				Retention:   RetentionPolicy{},
 				MountOpts: map[string]mountBackupOpts{
 					"src":  {Files: []string{"*.go", "*.ts"}, Exclude: []string{"*.tmp"}, Tags: []string{"source", "critical"}},
 					"data": {Files: []string{"*.sql"}},
@@ -429,7 +427,7 @@ func TestParseBackupConfig(t *testing.T) {
 				BackupTags:    []string{"critical", "db"},
 				HookPreCmd:    "pg_dump > /backup/dump.sql",
 				HookPostExec:  "echo done",
-				Retention:     types.RetentionPolicy{KeepDaily: 30, KeepWeekly: 4},
+				Retention:     RetentionPolicy{KeepDaily: 30, KeepWeekly: 4},
 				MountOpts:     make(map[string]mountBackupOpts),
 			},
 		},

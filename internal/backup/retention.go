@@ -9,12 +9,11 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/depado/buoy/internal/docker"
 	"github.com/depado/buoy/internal/restic"
 	"github.com/depado/buoy/internal/types"
 )
 
-func (r *Runner) applyRetention(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, repos []types.RepoRef, logger *slog.Logger) []string {
+func (r *Runner) applyRetention(ctx context.Context, ctr *types.Container, cfg types.BackupConfig, repos []types.RepoRef, logger *slog.Logger) []string {
 	logger.Debug("applying retention", "policy", cfg.Retention, "repos", len(repos))
 	policy := cfg.Retention
 

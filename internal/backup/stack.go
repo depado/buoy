@@ -15,11 +15,10 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/depado/buoy/internal/docker"
 	"github.com/depado/buoy/internal/types"
 )
 
-func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*docker.Container) {
+func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*types.Container) {
 	start := time.Now()
 	var backupErrors map[string]error
 	var allIssues []string
@@ -44,7 +43,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 
 	all, byID := r.discoverStackContainers(ctx, project, l)
 
-	fresh := make([]*docker.Container, 0, len(batch))
+	fresh := make([]*types.Container, 0, len(batch))
 	for _, ctr := range batch {
 		inspected, ok := byID[ctr.ID]
 		if !ok {
@@ -89,7 +88,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 	r.finalizeStackBackup(project, len(fresh), allIssues)
 }
 
-func (r *Runner) discoverStackContainers(ctx context.Context, project string, l *slog.Logger) ([]*docker.Container, map[string]*docker.Container) {
+func (r *Runner) discoverStackContainers(ctx context.Context, project string, l *slog.Logger) ([]*types.Container, map[string]*types.Container) {
 	ctx, span := r.tracer.Start(ctx, "buoy.stack.discover")
 	defer span.End()
 
@@ -106,9 +105,9 @@ func (r *Runner) discoverStackContainers(ctx context.Context, project string, l 
 	return all, byID
 }
 
-func (r *Runner) inspectStackContainers(ctx context.Context, summaries []docker.Container, l *slog.Logger) ([]*docker.Container, map[string]*docker.Container) {
-	all := make([]*docker.Container, 0, len(summaries))
-	byID := make(map[string]*docker.Container, len(summaries))
+func (r *Runner) inspectStackContainers(ctx context.Context, summaries []types.Container, l *slog.Logger) ([]*types.Container, map[string]*types.Container) {
+	all := make([]*types.Container, 0, len(summaries))
+	byID := make(map[string]*types.Container, len(summaries))
 	for i := range summaries {
 		ctr, err := r.docker.InspectContainer(ctx, summaries[i].ID)
 		if err != nil {
@@ -121,8 +120,8 @@ func (r *Runner) inspectStackContainers(ctx context.Context, summaries []docker.
 	return all, byID
 }
 
-func (r *Runner) resolveStackConfigs(fresh []*docker.Container, l *slog.Logger) (map[string]docker.BackupConfig, map[string][]types.RepoRef) {
-	cfgs := make(map[string]docker.BackupConfig, len(fresh))
+func (r *Runner) resolveStackConfigs(fresh []*types.Container, l *slog.Logger) (map[string]types.BackupConfig, map[string][]types.RepoRef) {
+	cfgs := make(map[string]types.BackupConfig, len(fresh))
 	repos := make(map[string][]types.RepoRef, len(fresh))
 	for _, ctr := range fresh {
 		cfg := r.parseConfig(ctr.Labels)
@@ -136,11 +135,11 @@ func (r *Runner) resolveStackConfigs(fresh []*docker.Container, l *slog.Logger) 
 	return cfgs, repos
 }
 
-func (r *Runner) runParallelPreHooks(ctx context.Context, fresh []*docker.Container, cfgs map[string]docker.BackupConfig, l *slog.Logger) {
+func (r *Runner) runParallelPreHooks(ctx context.Context, fresh []*types.Container, cfgs map[string]types.BackupConfig, l *slog.Logger) {
 	var wg sync.WaitGroup
 	for _, ctr := range fresh {
 		wg.Add(1)
-		go func(c *docker.Container) {
+		go func(c *types.Container) {
 			defer wg.Done()
 			r.runPreHooks(ctx, c, cfgs[c.ID], l.With("service", c.ComposeService))
 		}(ctr)
@@ -150,7 +149,7 @@ func (r *Runner) runParallelPreHooks(ctx context.Context, fresh []*docker.Contai
 
 func (r *Runner) stopStackServices(
 	ctx context.Context,
-	services map[string][]*docker.Container,
+	services map[string][]*types.Container,
 	stopSvc map[string]bool,
 	deps map[string][]depInfo,
 	l *slog.Logger,
@@ -203,8 +202,8 @@ func (r *Runner) stopStackServices(
 
 func (r *Runner) backupStackServices(
 	ctx context.Context,
-	fresh []*docker.Container,
-	cfgs map[string]docker.BackupConfig,
+	fresh []*types.Container,
+	cfgs map[string]types.BackupConfig,
 	repos map[string][]types.RepoRef,
 	stopFailed map[string]bool,
 	l *slog.Logger,
@@ -245,9 +244,9 @@ func (r *Runner) backupStackServices(
 
 func (r *Runner) startStackServices(
 	ctx context.Context,
-	services map[string][]*docker.Container,
+	services map[string][]*types.Container,
 	deps map[string][]depInfo,
-	all []*docker.Container,
+	all []*types.Container,
 	wasStopped map[string]bool,
 	l *slog.Logger,
 ) {
@@ -284,8 +283,8 @@ func (r *Runner) startStackServices(
 
 func (r *Runner) runPostHooksAndRetention(
 	ctx context.Context,
-	fresh []*docker.Container,
-	cfgs map[string]docker.BackupConfig,
+	fresh []*types.Container,
+	cfgs map[string]types.BackupConfig,
 	repos map[string][]types.RepoRef,
 	backupErrors map[string]error,
 	allIssues *[]string,
@@ -319,7 +318,7 @@ func (r *Runner) finalizeStackBackup(project string, total int, allIssues []stri
 	r.notifier.SendBackupError(project, strings.Join(allIssues, "\n"))
 }
 
-func (r *Runner) waitForDeps(ctx context.Context, deps map[string][]depInfo, ctrs []*docker.Container, serviceName string, logger *slog.Logger) error {
+func (r *Runner) waitForDeps(ctx context.Context, deps map[string][]depInfo, ctrs []*types.Container, serviceName string, logger *slog.Logger) error {
 	svcMap := serviceContainers(ctrs)
 
 	for _, dep := range depConditionsFrom(deps, serviceName) {
@@ -345,9 +344,9 @@ func (r *Runner) waitForDeps(ctx context.Context, deps map[string][]depInfo, ctr
 
 func (r *Runner) waitForEvent(
 	ctx context.Context,
-	ctr *docker.Container,
+	ctr *types.Container,
 	eventTypes []string,
-	check func(*docker.Container) (bool, error),
+	check func(*types.Container) (bool, error),
 ) (waitErr error) {
 	ctx, span := r.tracer.Start(ctx, "buoy.container.wait",
 		trace.WithAttributes(containerAttrs(ctr, attribute.StringSlice("event_types", eventTypes))...),
@@ -412,7 +411,7 @@ func eventsForCondition(c depCondition) []string {
 	return nil
 }
 
-func (r *Runner) waitForCondition(ctx context.Context, ctr *docker.Container, condition depCondition) error {
+func (r *Runner) waitForCondition(ctx context.Context, ctr *types.Container, condition depCondition) error {
 	ctx, cancel := context.WithTimeout(ctx, r.healthWaitTimeout)
 	defer cancel()
 
@@ -421,7 +420,7 @@ func (r *Runner) waitForCondition(ctx context.Context, ctr *docker.Container, co
 		return fmt.Errorf("unknown dependency condition: %s", condition)
 	}
 
-	return r.waitForEvent(ctx, ctr, eventTypes, func(c *docker.Container) (bool, error) {
+	return r.waitForEvent(ctx, ctr, eventTypes, func(c *types.Container) (bool, error) {
 		switch condition {
 		case serviceHealthy:
 			if c.Health == nil {
@@ -446,9 +445,9 @@ func (r *Runner) waitForCondition(ctx context.Context, ctr *docker.Container, co
 	})
 }
 
-func deduplicateByService(ctrs []*docker.Container) []*docker.Container {
+func deduplicateByService(ctrs []*types.Container) []*types.Container {
 	seen := make(map[string]bool)
-	out := make([]*docker.Container, 0, len(ctrs))
+	out := make([]*types.Container, 0, len(ctrs))
 	for _, c := range ctrs {
 		svc := c.ComposeService
 		if svc == "" {

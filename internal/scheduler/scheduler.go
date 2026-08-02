@@ -97,8 +97,8 @@ func (s *Scheduler) Stop() context.Context {
 	return ctx
 }
 
-func (s *Scheduler) AddContainer(ctr *docker.Container) error {
-	cfg := docker.ParseBackupConfig(ctr.Labels, s.defaultSchedule, s.defaultRetention)
+func (s *Scheduler) AddContainer(ctr *types.Container) error {
+	cfg := types.ParseBackupConfig(ctr.Labels, s.defaultSchedule, s.defaultRetention)
 	if !cfg.Enabled {
 		s.logger.Debug("container not enabled, skipping", ctr.LogAttrs()...)
 		return nil
@@ -138,20 +138,20 @@ func (s *Scheduler) Running() bool {
 	return s.active.Load() > 0
 }
 
-func (s *Scheduler) ListScheduled() []types.APIScheduledEntry {
+func (s *Scheduler) ListScheduled() []types.ScheduledResponse {
 	infos := s.containerReg.listAll()
-	entries := make([]types.APIScheduledEntry, 0, len(infos))
+	entries := make([]types.ScheduledResponse, 0, len(infos))
 	for _, info := range infos {
 		ctr := info.ctr
-		cfg := docker.ParseBackupConfig(ctr.Labels, s.defaultSchedule, s.defaultRetention)
+		cfg := types.ParseBackupConfig(ctr.Labels, s.defaultSchedule, s.defaultRetention)
 
 		repoEntries, _ := s.repoReg.GetContainerRepos(ctr.ID)
 
-		var repoList []types.APIScheduledRepo
+		var repoList []types.ScheduledRepo
 		if len(repoEntries) > 0 {
-			repoList = make([]types.APIScheduledRepo, 0, len(repoEntries))
+			repoList = make([]types.ScheduledRepo, 0, len(repoEntries))
 			for _, re := range repoEntries {
-				repoList = append(repoList, types.APIScheduledRepo{
+				repoList = append(repoList, types.ScheduledRepo{
 					URL:          re.URL,
 					RepoName:     re.RepoName,
 					Created:      !re.CreatedAt.IsZero(),
@@ -165,13 +165,13 @@ func (s *Scheduler) ListScheduled() []types.APIScheduledEntry {
 				s.logger.Warn("failed to resolve repos for scheduled container", "container", ctr.Name, "error", err)
 				repoURLs = nil
 			}
-			repoList = make([]types.APIScheduledRepo, 0, len(repoURLs))
+			repoList = make([]types.ScheduledRepo, 0, len(repoURLs))
 			for _, ref := range repoURLs {
-				repoList = append(repoList, types.APIScheduledRepo{URL: ref.URL, RepoName: ref.Name})
+				repoList = append(repoList, types.ScheduledRepo{URL: ref.URL, RepoName: ref.Name})
 			}
 		}
 
-		entries = append(entries, types.APIScheduledEntry{
+		entries = append(entries, types.ScheduledResponse{
 			ContainerID:    ctr.ID,
 			ContainerName:  ctr.Name,
 			ComposeProject: ctr.ComposeProject,
@@ -256,7 +256,7 @@ func (s *Scheduler) runScheduleGroup(key, project string) {
 			s.active.Add(1)
 			s.wg.Add(1)
 			s.sem <- struct{}{}
-			go func(c *docker.Container) {
+			go func(c *types.Container) {
 				defer s.wg.Done()
 				defer func() { <-s.sem }()
 				defer s.active.Add(-1)
@@ -275,7 +275,7 @@ func (s *Scheduler) runScheduleGroup(key, project string) {
 	s.enqueueBatch(project, ctrs)
 }
 
-func (s *Scheduler) enqueueBatch(project string, batch []*docker.Container) {
+func (s *Scheduler) enqueueBatch(project string, batch []*types.Container) {
 	q := s.getStackQueue(project)
 
 	q.mu.Lock()
@@ -352,7 +352,7 @@ func (s *Scheduler) TriggerBackup(ctx context.Context, identifier string) error 
 	}
 
 	if ctr.ComposeProject != "" {
-		s.enqueueBatch(ctr.ComposeProject, []*docker.Container{ctr})
+		s.enqueueBatch(ctr.ComposeProject, []*types.Container{ctr})
 		return nil
 	}
 
@@ -401,7 +401,7 @@ func (s *Scheduler) TriggerProjectBackup(ctx context.Context, project string, se
 
 type stackQueue struct {
 	mu      sync.Mutex
-	pending []*docker.Container
+	pending []*types.Container
 	active  bool
 }
 

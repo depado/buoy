@@ -12,10 +12,10 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/depado/buoy/internal/docker"
+	"github.com/depado/buoy/internal/types"
 )
 
-func (r *Runner) stopContainer(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) (stopped bool, stopErr error) {
+func (r *Runner) stopContainer(ctx context.Context, ctr *types.Container, cfg types.BackupConfig, l *slog.Logger) (stopped bool, stopErr error) {
 	stopStart := time.Now()
 	ctx, span := r.tracer.Start(ctx, "buoy.container.stop",
 		trace.WithAttributes(containerAttrs(ctr)...),
@@ -49,7 +49,7 @@ func (r *Runner) stopContainer(ctx context.Context, ctr *docker.Container, cfg d
 	return true, nil
 }
 
-func (r *Runner) startContainer(ctx context.Context, ctr *docker.Container, l *slog.Logger) {
+func (r *Runner) startContainer(ctx context.Context, ctr *types.Container, l *slog.Logger) {
 	startTime := time.Now()
 	startErr := error(nil)
 	ctx, span := r.tracer.Start(ctx, "buoy.container.start",
@@ -75,14 +75,14 @@ func (r *Runner) startContainer(ctx context.Context, ctr *docker.Container, l *s
 	r.waitRunning(ctx, ctr, l)
 }
 
-func (r *Runner) waitRunning(ctx context.Context, ctr *docker.Container, l *slog.Logger) {
+func (r *Runner) waitRunning(ctx context.Context, ctr *types.Container, l *slog.Logger) {
 	l.Debug("waiting for container to be running", "timeout", r.healthWaitTimeout)
 	ctx, cancel := context.WithTimeout(ctx, r.healthWaitTimeout)
 	defer cancel()
 
 	if err := r.waitForEvent(ctx, ctr,
 		[]string{"start", "die"},
-		func(c *docker.Container) (bool, error) {
+		func(c *types.Container) (bool, error) {
 			return c.State == "running" || c.State == "exited", nil
 		}); err != nil {
 		l.Warn("container did not reach running state", "error", err)

@@ -26,6 +26,7 @@ import (
 	"github.com/depado/buoy/internal/restic"
 	"github.com/depado/buoy/internal/scheduler"
 	"github.com/depado/buoy/internal/telemetry"
+	"github.com/depado/buoy/internal/types"
 	"github.com/depado/buoy/internal/version"
 )
 
@@ -272,7 +273,7 @@ var RunCmd = &cobra.Command{
 	},
 }
 
-func countStacks(containers []docker.Container) int {
+func countStacks(containers []types.Container) int {
 	stacks := make(map[string]bool)
 	for _, c := range containers {
 		if c.ComposeProject != "" {

@@ -39,7 +39,7 @@ var backupCmd = &cobra.Command{
 }
 
 func runContainerBackup(cmd *cobra.Command, containers []string) error {
-	results, err := withSpinner(cmd, "Triggering backup...", func() ([]types.APIBackupResult, error) {
+	results, err := withSpinner(cmd, "Triggering backup...", func() ([]types.BackupResult, error) {
 		return clientAPI().TriggerBackup(containers)
 	})
 	if err != nil {
@@ -49,7 +49,7 @@ func runContainerBackup(cmd *cobra.Command, containers []string) error {
 }
 
 func runAllBackup(cmd *cobra.Command) error {
-	results, err := withSpinner(cmd, "Triggering backup for all containers...", func() ([]types.APIBackupResult, error) {
+	results, err := withSpinner(cmd, "Triggering backup for all containers...", func() ([]types.BackupResult, error) {
 		return clientAPI().TriggerBackupAll()
 	})
 	if err != nil {
@@ -59,16 +59,16 @@ func runAllBackup(cmd *cobra.Command) error {
 }
 
 func runProjectBackup(cmd *cobra.Command, project string, services []string) error {
-	result, err := withSpinner(cmd, "Triggering project backup...", func() (*types.APIBackupResult, error) {
+	result, err := withSpinner(cmd, "Triggering project backup...", func() (*types.BackupResult, error) {
 		return clientAPI().TriggerProjectBackup(project, services)
 	})
 	if err != nil {
 		return fmt.Errorf("trigger backup: %w", err)
 	}
-	return renderBackupResults(cmd, []types.APIBackupResult{*result})
+	return renderBackupResults(cmd, []types.BackupResult{*result})
 }
 
-func renderBackupResults(cmd *cobra.Command, results []types.APIBackupResult) error {
+func renderBackupResults(cmd *cobra.Command, results []types.BackupResult) error {
 	if len(results) == 0 {
 		fmt.Println("No containers backed up.")
 		return nil

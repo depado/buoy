@@ -35,26 +35,26 @@ func (s *Server) handleReposStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(entries) == 0 {
-		writeJSON(w, http.StatusOK, []types.APIRepoStats{})
+		writeJSON(w, http.StatusOK, []types.RepoStats{})
 		return
 	}
 
 	var total types.Stats
-	perRepo := make([]types.APIRepoStats, 0, len(entries))
+	perRepo := make([]types.RepoStats, 0, len(entries))
 	for _, entry := range entries {
 		st, err := s.restic.Stats(restic.WithPassword(r.Context(), s.resticConf.PasswordFor(entry.RepoName)), entry.URL)
 		if err != nil {
-			perRepo = append(perRepo, types.APIRepoStats{Repo: entry.URL, Error: err.Error()})
+			perRepo = append(perRepo, types.RepoStats{Repo: entry.URL, Error: err.Error()})
 			continue
 		}
-		perRepo = append(perRepo, types.APIRepoStats{Repo: entry.URL, Stats: st})
+		perRepo = append(perRepo, types.RepoStats{Repo: entry.URL, Stats: st})
 		total.TotalSize += st.TotalSize
 		total.TotalFileCount += st.TotalFileCount
 		total.TotalBlobCount += st.TotalBlobCount
 		total.SnapshotsCount += st.SnapshotsCount
 		total.TotalUncompressedSize += st.TotalUncompressedSize
 	}
-	writeJSON(w, http.StatusOK, types.APIStatsResponse{Total: &total, Repos: perRepo})
+	writeJSON(w, http.StatusOK, types.StatsResponse{Total: &total, Repos: perRepo})
 }
 
 func (s *Server) handleReposUnlock(w http.ResponseWriter, r *http.Request) {
@@ -103,15 +103,15 @@ func (s *Server) runRepoOp(
 		return
 	}
 	if len(entries) == 0 {
-		writeJSON(w, http.StatusOK, []types.APIResult{})
+		writeJSON(w, http.StatusOK, []types.RepoResult{})
 		return
 	}
 
-	results := make([]types.APIResult, 0, len(entries))
+	results := make([]types.RepoResult, 0, len(entries))
 	for _, entry := range entries {
 		ctx := restic.WithPassword(r.Context(), s.resticConf.PasswordFor(entry.RepoName))
 		ok, _ := fn(ctx, entry)
-		result := types.APIResult{Repo: entry.URL, OK: ok}
+		result := types.RepoResult{Repo: entry.URL, OK: ok}
 		if !ok {
 			result.Error = "operation failed"
 		}

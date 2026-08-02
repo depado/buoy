@@ -7,7 +7,7 @@ import (
 
 	"github.com/robfig/cron/v3"
 
-	"github.com/depado/buoy/internal/docker"
+	"github.com/depado/buoy/internal/types"
 )
 
 func newTestCron() *cron.Cron {
@@ -18,8 +18,8 @@ func newTestLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-func makeContainer(id, project, service string, labels map[string]string) *docker.Container {
-	return &docker.Container{
+func makeContainer(id, project, service string, labels map[string]string) *types.Container {
+	return &types.Container{
 		ID:             id,
 		Name:           id,
 		ComposeProject: project,
@@ -28,8 +28,8 @@ func makeContainer(id, project, service string, labels map[string]string) *docke
 	}
 }
 
-func makeNamedContainer(id, name, project, service string) *docker.Container {
-	return &docker.Container{
+func makeNamedContainer(id, name, project, service string) *types.Container {
+	return &types.Container{
 		ID:             id,
 		Name:           name,
 		ComposeProject: project,

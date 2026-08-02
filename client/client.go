@@ -14,14 +14,6 @@ import (
 
 const defaultTimeout = 5 * time.Minute
 
-type OrphanedFilter string
-
-const (
-	AllRepos    OrphanedFilter = ""
-	Orphaned    OrphanedFilter = "true"
-	NonOrphaned OrphanedFilter = "false"
-)
-
 type Client struct {
 	BaseURL string
 	Token   string
@@ -53,7 +45,7 @@ func (c *Client) doRequest(method, path string) (*http.Response, error) {
 	return resp, nil
 }
 
-func (c *Client) ListRepos(repo string, orphaned OrphanedFilter) ([]types.RepoEntry, error) {
+func (c *Client) ListRepos(repo string, orphaned types.OrphanedFilter) ([]types.RepoEntry, error) {
 	params := make(url.Values)
 	addQuery(params, repo, orphaned)
 	path := api.RouteRepos + queryString(params)
@@ -66,16 +58,16 @@ func (c *Client) ListRepos(repo string, orphaned OrphanedFilter) ([]types.RepoEn
 	return decodeJSON[[]types.RepoEntry](resp)
 }
 
-func (c *Client) ListScheduled() ([]types.APIScheduledEntry, error) {
+func (c *Client) ListScheduled() ([]types.ScheduledResponse, error) {
 	resp, err := c.doRequest("GET", api.RouteScheduled)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return decodeJSON[[]types.APIScheduledEntry](resp)
+	return decodeJSON[[]types.ScheduledResponse](resp)
 }
 
-func (c *Client) CheckRepos(repo string, readData bool, orphaned OrphanedFilter) ([]types.APIResult, error) {
+func (c *Client) CheckRepos(repo string, readData bool, orphaned types.OrphanedFilter) ([]types.RepoResult, error) {
 	params := make(url.Values)
 	addQuery(params, repo, orphaned)
 	if readData {
@@ -88,10 +80,10 @@ func (c *Client) CheckRepos(repo string, readData bool, orphaned OrphanedFilter)
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return decodeJSON[[]types.APIResult](resp)
+	return decodeJSON[[]types.RepoResult](resp)
 }
 
-func (c *Client) StatsRepos(repo string, orphaned OrphanedFilter) (*types.APIStatsResponse, error) {
+func (c *Client) StatsRepos(repo string, orphaned types.OrphanedFilter) (*types.StatsResponse, error) {
 	params := make(url.Values)
 	addQuery(params, repo, orphaned)
 	path := api.RouteStats + queryString(params)
@@ -101,14 +93,14 @@ func (c *Client) StatsRepos(repo string, orphaned OrphanedFilter) (*types.APISta
 		return nil, err
 	}
 	defer resp.Body.Close()
-	stats, err := decodeJSON[types.APIStatsResponse](resp)
+	stats, err := decodeJSON[types.StatsResponse](resp)
 	if err != nil {
 		return nil, err
 	}
 	return &stats, nil
 }
 
-func (c *Client) UnlockRepos(repo string, orphaned OrphanedFilter) ([]types.APIResult, error) {
+func (c *Client) UnlockRepos(repo string, orphaned types.OrphanedFilter) ([]types.RepoResult, error) {
 	params := make(url.Values)
 	addQuery(params, repo, orphaned)
 	path := api.RouteUnlock + queryString(params)
@@ -118,10 +110,10 @@ func (c *Client) UnlockRepos(repo string, orphaned OrphanedFilter) ([]types.APIR
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return decodeJSON[[]types.APIResult](resp)
+	return decodeJSON[[]types.RepoResult](resp)
 }
 
-func (c *Client) ForgetRepos(repo string, retention string, orphaned OrphanedFilter) ([]types.APIResult, error) {
+func (c *Client) ForgetRepos(repo string, retention string, orphaned types.OrphanedFilter) ([]types.RepoResult, error) {
 	params := make(url.Values)
 	params.Set("retention", retention)
 	addQuery(params, repo, orphaned)
@@ -132,10 +124,10 @@ func (c *Client) ForgetRepos(repo string, retention string, orphaned OrphanedFil
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return decodeJSON[[]types.APIResult](resp)
+	return decodeJSON[[]types.RepoResult](resp)
 }
 
-func (c *Client) PruneRepos(repo string, orphaned OrphanedFilter) ([]types.APIResult, error) {
+func (c *Client) PruneRepos(repo string, orphaned types.OrphanedFilter) ([]types.RepoResult, error) {
 	params := make(url.Values)
 	addQuery(params, repo, orphaned)
 	path := api.RoutePrune + queryString(params)
@@ -145,10 +137,10 @@ func (c *Client) PruneRepos(repo string, orphaned OrphanedFilter) ([]types.APIRe
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return decodeJSON[[]types.APIResult](resp)
+	return decodeJSON[[]types.RepoResult](resp)
 }
 
-func (c *Client) TriggerBackup(containers []string) ([]types.APIBackupResult, error) {
+func (c *Client) TriggerBackup(containers []string) ([]types.BackupResult, error) {
 	params := make(url.Values)
 	for _, name := range containers {
 		params.Add("container", name)
@@ -160,10 +152,10 @@ func (c *Client) TriggerBackup(containers []string) ([]types.APIBackupResult, er
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return decodeJSON[[]types.APIBackupResult](resp)
+	return decodeJSON[[]types.BackupResult](resp)
 }
 
-func (c *Client) TriggerProjectBackup(project string, services []string) (*types.APIBackupResult, error) {
+func (c *Client) TriggerProjectBackup(project string, services []string) (*types.BackupResult, error) {
 	params := url.Values{"project": {project}}
 	for _, svc := range services {
 		params.Add("container", svc)
@@ -175,7 +167,7 @@ func (c *Client) TriggerProjectBackup(project string, services []string) (*types
 		return nil, err
 	}
 	defer resp.Body.Close()
-	results, err := decodeJSON[[]types.APIBackupResult](resp)
+	results, err := decodeJSON[[]types.BackupResult](resp)
 	if err != nil {
 		return nil, err
 	}
@@ -185,13 +177,13 @@ func (c *Client) TriggerProjectBackup(project string, services []string) (*types
 	return &results[0], nil
 }
 
-func (c *Client) TriggerBackupAll() ([]types.APIBackupResult, error) {
+func (c *Client) TriggerBackupAll() ([]types.BackupResult, error) {
 	resp, err := c.doRequest("POST", api.RouteBackup+"?all=true")
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return decodeJSON[[]types.APIBackupResult](resp)
+	return decodeJSON[[]types.BackupResult](resp)
 }
 
 func decodeJSON[T any](resp *http.Response) (T, error) {
@@ -215,7 +207,7 @@ func decodeJSON[T any](resp *http.Response) (T, error) {
 	return v, nil
 }
 
-func addQuery(params url.Values, repo string, orphaned OrphanedFilter) {
+func addQuery(params url.Values, repo string, orphaned types.OrphanedFilter) {
 	if repo != "" {
 		params.Set("repo", repo)
 	}

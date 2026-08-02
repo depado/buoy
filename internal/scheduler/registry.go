@@ -8,12 +8,12 @@ import (
 
 	"github.com/robfig/cron/v3"
 
-	"github.com/depado/buoy/internal/docker"
+	"github.com/depado/buoy/internal/types"
 )
 
 type containerRegistry struct {
 	mu      sync.Mutex
-	groups  map[string][]*docker.Container
+	groups  map[string][]*types.Container
 	index   map[string]string
 	cronIDs map[string]cron.EntryID
 	cron    *cron.Cron
@@ -22,7 +22,7 @@ type containerRegistry struct {
 
 func newContainerRegistry(c *cron.Cron, logger *slog.Logger) *containerRegistry {
 	return &containerRegistry{
-		groups:  make(map[string][]*docker.Container),
+		groups:  make(map[string][]*types.Container),
 		index:   make(map[string]string),
 		cronIDs: make(map[string]cron.EntryID),
 		cron:    c,
@@ -30,7 +30,7 @@ func newContainerRegistry(c *cron.Cron, logger *slog.Logger) *containerRegistry 
 	}
 }
 
-func (r *containerRegistry) register(ctr *docker.Container, key, schedule string, fn func()) error {
+func (r *containerRegistry) register(ctr *types.Container, key, schedule string, fn func()) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -92,9 +92,9 @@ func (r *containerRegistry) unregisterLocked(containerID string) bool {
 	return true
 }
 
-func (r *containerRegistry) getGroup(key string) []*docker.Container {
+func (r *containerRegistry) getGroup(key string) []*types.Container {
 	r.mu.Lock()
-	ctrs := make([]*docker.Container, len(r.groups[key]))
+	ctrs := make([]*types.Container, len(r.groups[key]))
 	copy(ctrs, r.groups[key])
 	r.mu.Unlock()
 	return ctrs
@@ -121,7 +121,7 @@ func (r *containerRegistry) forEachEntry(fn func(id, key string) bool) {
 }
 
 type entryInfo struct {
-	ctr      *docker.Container
+	ctr      *types.Container
 	schedule string
 }
 
@@ -152,7 +152,7 @@ func scheduleFromKey(key string) string {
 	return key
 }
 
-func (r *containerRegistry) find(name string) *docker.Container {
+func (r *containerRegistry) find(name string) *types.Container {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -166,11 +166,11 @@ func (r *containerRegistry) find(name string) *docker.Container {
 	return nil
 }
 
-func (r *containerRegistry) findByProject(project string) []*docker.Container {
+func (r *containerRegistry) findByProject(project string) []*types.Container {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	seen := make(map[string]bool)
-	var result []*docker.Container
+	var result []*types.Container
 	for _, ctrs := range r.groups {
 		for _, ctr := range ctrs {
 			if ctr.ComposeProject == project && !seen[ctr.ID] {

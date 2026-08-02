@@ -11,7 +11,6 @@ import (
 
 	bolt "go.etcd.io/bbolt"
 
-	"github.com/depado/buoy/internal/docker"
 	"github.com/depado/buoy/internal/types"
 )
 
@@ -54,7 +53,7 @@ func (r *Registry) Close() error {
 	return r.db.Close()
 }
 
-func (r *Registry) SyncContainer(ctr *docker.Container, cfg docker.BackupConfig) ([]types.RepoRef, error) {
+func (r *Registry) SyncContainer(ctr *types.Container, cfg types.BackupConfig) ([]types.RepoRef, error) {
 	repos, err := r.resolveRepos(ctr, cfg)
 	if err != nil {
 		return nil, err
@@ -83,7 +82,7 @@ func (r *Registry) SyncContainer(ctr *docker.Container, cfg docker.BackupConfig)
 	return repos, writeErr
 }
 
-func (r *Registry) upsertRepoEntry(b *bolt.Bucket, ref types.RepoRef, ctr *docker.Container, now time.Time) error {
+func (r *Registry) upsertRepoEntry(b *bolt.Bucket, ref types.RepoRef, ctr *types.Container, now time.Time) error {
 	key := []byte(ref.URL)
 	existing := b.Get(key)
 
@@ -257,7 +256,7 @@ func (r *Registry) ListRepos(opts ...ListOption) ([]types.RepoEntry, error) {
 	return entries, err
 }
 
-func (r *Registry) resolveRepos(ctr *docker.Container, cfg docker.BackupConfig) ([]types.RepoRef, error) {
+func (r *Registry) resolveRepos(ctr *types.Container, cfg types.BackupConfig) ([]types.RepoRef, error) {
 	var refs []types.RepoRef
 
 	if len(cfg.ReposOverride) > 0 {
@@ -312,7 +311,7 @@ func isLocalPath(p string) bool {
 	return false
 }
 
-func (r *Registry) ResolveRepos(ctr *docker.Container, cfg docker.BackupConfig) ([]types.RepoRef, error) {
+func (r *Registry) ResolveRepos(ctr *types.Container, cfg types.BackupConfig) ([]types.RepoRef, error) {
 	return r.resolveRepos(ctr, cfg)
 }
 

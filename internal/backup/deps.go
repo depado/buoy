@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/depado/buoy/internal/docker"
+	"github.com/depado/buoy/internal/types"
 )
 
 // DepCondition represents a Docker Compose dependency condition.
@@ -36,7 +36,7 @@ func orderForStartFromDeps(deps map[string][]depInfo, warn func(string)) []strin
 
 // serviceDeps extracts the depends_on graph from container labels.
 // Returns map of service name → list of (dependency name, condition).
-func serviceDeps(ctrs []*docker.Container) map[string][]depInfo {
+func serviceDeps(ctrs []*types.Container) map[string][]depInfo {
 	deps := make(map[string][]depInfo)
 	for _, ctr := range ctrs {
 		svc := ctr.ComposeService
@@ -145,8 +145,8 @@ func allServices(deps map[string][]string) []string {
 }
 
 // serviceContainers groups containers by their compose service name.
-func serviceContainers(ctrs []*docker.Container) map[string][]*docker.Container {
-	groups := make(map[string][]*docker.Container)
+func serviceContainers(ctrs []*types.Container) map[string][]*types.Container {
+	groups := make(map[string][]*types.Container)
 	for _, ctr := range ctrs {
 		svc := ctr.ComposeService
 		groups[svc] = append(groups[svc], ctr)
@@ -157,12 +157,12 @@ func serviceContainers(ctrs []*docker.Container) map[string][]*docker.Container 
 // stopSet returns the set of service names that must be stopped.
 // Only batch containers contribute to the stop decision via stop_before_backup.
 // The dependency graph is built from all containers so cascade works correctly.
-func stopSet(batch []*docker.Container, all []*docker.Container) map[string]bool {
+func stopSet(batch []*types.Container, all []*types.Container) map[string]bool {
 	dependents := buildDependents(all)
 	stop := make(map[string]bool)
 
 	for _, ctr := range batch {
-		cfg := docker.ParseBackupConfig(ctr.Labels, "", "") // only StopBefore is used; defaults irrelevant
+		cfg := types.ParseBackupConfig(ctr.Labels, "", "") // only StopBefore is used; defaults irrelevant
 		if !cfg.StopBefore {
 			continue
 		}
@@ -177,7 +177,7 @@ func stopSet(batch []*docker.Container, all []*docker.Container) map[string]bool
 }
 
 // buildDependents builds a reverse dependency map: service → services that depend on it.
-func buildDependents(ctrs []*docker.Container) map[string][]string {
+func buildDependents(ctrs []*types.Container) map[string][]string {
 	dependents := make(map[string][]string)
 	deps := serviceDeps(ctrs)
 

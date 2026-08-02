@@ -12,12 +12,11 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/depado/buoy/internal/docker"
 	"github.com/depado/buoy/internal/restic"
 	"github.com/depado/buoy/internal/types"
 )
 
-func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, repos []types.RepoRef, logger *slog.Logger) error {
+func (r *Runner) backupMounts(ctx context.Context, ctr *types.Container, cfg types.BackupConfig, repos []types.RepoRef, logger *slog.Logger) error {
 	mountCount := 0
 	var failures []mountError
 
@@ -37,7 +36,7 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *docker.Container, cfg do
 				continue
 			}
 
-			matchedName, ok := docker.MountMatches(m, cfg.Include, cfg.Exclude)
+			matchedName, ok := types.MountMatches(m, cfg.Include, cfg.Exclude)
 			if !ok {
 				continue
 			}
@@ -96,10 +95,10 @@ func (r *Runner) ensureRepo(ctx context.Context, repo string, logger *slog.Logge
 func (r *Runner) backupSingleMount(
 	ctx context.Context,
 	repo string,
-	ctr *docker.Container,
-	m docker.Mount,
+	ctr *types.Container,
+	m types.Mount,
 	matchedName string,
-	cfg docker.BackupConfig,
+	cfg types.BackupConfig,
 	l *slog.Logger,
 ) (mountErr *mountError) {
 	source := m.Source

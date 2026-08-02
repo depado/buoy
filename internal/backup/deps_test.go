@@ -4,15 +4,15 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/depado/buoy/internal/docker"
+	"github.com/depado/buoy/internal/types"
 )
 
-func makeCtr(svc string, depsLabel string) *docker.Container {
+func makeCtr(svc string, depsLabel string) *types.Container {
 	labels := map[string]string{}
 	if depsLabel != "" {
 		labels["com.docker.compose.depends_on"] = depsLabel
 	}
-	return &docker.Container{
+	return &types.Container{
 		ComposeService: svc,
 		ComposeProject: "proj",
 		Labels:         labels,
@@ -22,7 +22,7 @@ func makeCtr(svc string, depsLabel string) *docker.Container {
 func TestServiceDeps(t *testing.T) {
 	tests := []struct {
 		name string
-		ctrs []*docker.Container
+		ctrs []*types.Container
 		want map[string][]depInfo
 	}{
 		{
@@ -32,14 +32,14 @@ func TestServiceDeps(t *testing.T) {
 		},
 		{
 			name: "containers without compose labels",
-			ctrs: []*docker.Container{
+			ctrs: []*types.Container{
 				{ComposeService: ""},
 			},
 			want: map[string][]depInfo{},
 		},
 		{
 			name: "single service with depends_on",
-			ctrs: []*docker.Container{
+			ctrs: []*types.Container{
 				makeCtr("web", "db"),
 			},
 			want: map[string][]depInfo{
@@ -48,7 +48,7 @@ func TestServiceDeps(t *testing.T) {
 		},
 		{
 			name: "service with multiple dependencies",
-			ctrs: []*docker.Container{
+			ctrs: []*types.Container{
 				makeCtr("web", "db,redis"),
 			},
 			want: map[string][]depInfo{
@@ -60,7 +60,7 @@ func TestServiceDeps(t *testing.T) {
 		},
 		{
 			name: "depends_on with service_healthy condition",
-			ctrs: []*docker.Container{
+			ctrs: []*types.Container{
 				makeCtr("web", "db:service_healthy"),
 			},
 			want: map[string][]depInfo{
@@ -69,7 +69,7 @@ func TestServiceDeps(t *testing.T) {
 		},
 		{
 			name: "depends_on without explicit condition defaults to service_started",
-			ctrs: []*docker.Container{
+			ctrs: []*types.Container{
 				makeCtr("web", "db::restart"),
 			},
 			want: map[string][]depInfo{
@@ -78,7 +78,7 @@ func TestServiceDeps(t *testing.T) {
 		},
 		{
 			name: "service without depends_on label",
-			ctrs: []*docker.Container{
+			ctrs: []*types.Container{
 				{ComposeService: "db", ComposeProject: "proj", Labels: map[string]string{}},
 			},
 			want: map[string][]depInfo{},
@@ -253,17 +253,17 @@ func TestAllServices(t *testing.T) {
 func TestServiceContainers(t *testing.T) {
 	tests := []struct {
 		name string
-		ctrs []*docker.Container
-		want map[string][]*docker.Container
+		ctrs []*types.Container
+		want map[string][]*types.Container
 	}{
 		{
 			name: "groups by ComposeService",
-			ctrs: []*docker.Container{
+			ctrs: []*types.Container{
 				{ComposeService: "web", Name: "web1"},
 				{ComposeService: "web", Name: "web2"},
 				{ComposeService: "db", Name: "db1"},
 			},
-			want: map[string][]*docker.Container{
+			want: map[string][]*types.Container{
 				"web": {
 					{ComposeService: "web", Name: "web1"},
 					{ComposeService: "web", Name: "web2"},
@@ -275,10 +275,10 @@ func TestServiceContainers(t *testing.T) {
 		},
 		{
 			name: "empty service -> key \"\"",
-			ctrs: []*docker.Container{
+			ctrs: []*types.Container{
 				{Name: "standalone"},
 			},
-			want: map[string][]*docker.Container{
+			want: map[string][]*types.Container{
 				"": {{Name: "standalone"}},
 			},
 		},
@@ -304,7 +304,7 @@ func TestServiceContainers(t *testing.T) {
 }
 
 func TestBuildDependents(t *testing.T) {
-	ctrs := []*docker.Container{
+	ctrs := []*types.Container{
 		makeCtr("web", "api"),
 		makeCtr("api", "db"),
 	}
@@ -321,38 +321,38 @@ func TestBuildDependents(t *testing.T) {
 func TestStopSet(t *testing.T) {
 	tests := []struct {
 		name  string
-		batch []*docker.Container
-		all   []*docker.Container
+		batch []*types.Container
+		all   []*types.Container
 		want  map[string]bool
 	}{
 		{
 			name:  "no stop_before_backup -> empty stop set",
-			batch: []*docker.Container{makeCtr("web", "db")},
-			all:   []*docker.Container{},
+			batch: []*types.Container{makeCtr("web", "db")},
+			all:   []*types.Container{},
 			want:  map[string]bool{},
 		},
 		{
 			name: "one service with stop=true -> stops that service",
-			batch: []*docker.Container{
+			batch: []*types.Container{
 				{
 					ComposeService: "web",
 					ComposeProject: "proj",
 					Labels:         map[string]string{"buoy.stop-before": "true"},
 				},
 			},
-			all:  []*docker.Container{},
+			all:  []*types.Container{},
 			want: map[string]bool{"web": true},
 		},
 		{
 			name: "one service with stop=true, another depends on it -> both stopped",
-			batch: []*docker.Container{
+			batch: []*types.Container{
 				{
 					ComposeService: "web",
 					ComposeProject: "proj",
 					Labels:         map[string]string{"buoy.stop-before": "true"},
 				},
 			},
-			all: []*docker.Container{
+			all: []*types.Container{
 				makeCtr("api", "web"),
 				makeCtr("web", ""),
 			},
@@ -360,28 +360,28 @@ func TestStopSet(t *testing.T) {
 		},
 		{
 			name: "dependent of stopped service is also stopped via cascade",
-			batch: []*docker.Container{
+			batch: []*types.Container{
 				{
 					ComposeService: "db",
 					ComposeProject: "proj",
 					Labels:         map[string]string{"buoy.stop-before": "true"},
 				},
 			},
-			all: []*docker.Container{
+			all: []*types.Container{
 				makeCtr("api", "db"),
 			},
 			want: map[string]bool{"db": true, "api": true},
 		},
 		{
 			name: "transitive cascade: A with stop=true, B depends on A, C depends on B",
-			batch: []*docker.Container{
+			batch: []*types.Container{
 				{
 					ComposeService: "a",
 					ComposeProject: "proj",
 					Labels:         map[string]string{"buoy.stop-before": "true"},
 				},
 			},
-			all: []*docker.Container{
+			all: []*types.Container{
 				makeCtr("b", "a"),
 				makeCtr("c", "b"),
 			},
@@ -389,14 +389,14 @@ func TestStopSet(t *testing.T) {
 		},
 		{
 			name: "non-batch container is NOT in stop set",
-			batch: []*docker.Container{
+			batch: []*types.Container{
 				{
 					ComposeService: "db",
 					ComposeProject: "proj",
 					Labels:         map[string]string{"buoy.stop-before": "true"},
 				},
 			},
-			all: []*docker.Container{
+			all: []*types.Container{
 				{ComposeService: "web", ComposeProject: "proj", Labels: map[string]string{"buoy.stop-before": "true"}},
 			},
 			want: map[string]bool{"db": true},

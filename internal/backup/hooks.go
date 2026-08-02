@@ -10,11 +10,11 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/depado/buoy/internal/docker"
 	"github.com/depado/buoy/internal/hook"
+	"github.com/depado/buoy/internal/types"
 )
 
-func (r *Runner) runPreHooks(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) {
+func (r *Runner) runPreHooks(ctx context.Context, ctr *types.Container, cfg types.BackupConfig, l *slog.Logger) {
 	if cfg.HookPreCmd != "" {
 		r.runHook(ctx, "buoy.hook.pre.host", ctr, "pre", "host",
 			func(ctx context.Context) error { return hook.ExecOnHost(ctx, cfg.HookPreCmd, l) },
@@ -29,7 +29,7 @@ func (r *Runner) runPreHooks(ctx context.Context, ctr *docker.Container, cfg doc
 	}
 }
 
-func (r *Runner) runPostHooks(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) {
+func (r *Runner) runPostHooks(ctx context.Context, ctr *types.Container, cfg types.BackupConfig, l *slog.Logger) {
 	if cfg.HookPostExec != "" {
 		r.runHook(ctx, "buoy.hook.post.exec", ctr, "post", "container",
 			func(ctx context.Context) error {
@@ -47,7 +47,7 @@ func (r *Runner) runPostHooks(ctx context.Context, ctr *docker.Container, cfg do
 func (r *Runner) runHook(
 	ctx context.Context,
 	spanName string,
-	ctr *docker.Container,
+	ctr *types.Container,
 	hookType, hookTarget string,
 	fn func(context.Context) error,
 	l *slog.Logger,

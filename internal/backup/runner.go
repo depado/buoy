@@ -19,6 +19,7 @@ import (
 	"github.com/depado/buoy/internal/registry"
 	"github.com/depado/buoy/internal/restic"
 	"github.com/depado/buoy/internal/telemetry"
+	"github.com/depado/buoy/internal/types"
 )
 
 type Runner struct {
@@ -71,11 +72,11 @@ func New(cfg *RunnerConfig) *Runner {
 	}
 }
 
-func (r *Runner) parseConfig(labels map[string]string) docker.BackupConfig {
-	return docker.ParseBackupConfig(labels, r.defaultSchedule, r.defaultRetention)
+func (r *Runner) parseConfig(labels map[string]string) types.BackupConfig {
+	return types.ParseBackupConfig(labels, r.defaultSchedule, r.defaultRetention)
 }
 
-func (r *Runner) Run(ctx context.Context, ctr *docker.Container) (runErr error) {
+func (r *Runner) Run(ctx context.Context, ctr *types.Container) (runErr error) {
 	ctx, span := r.tracer.Start(ctx, "buoy.backup",
 		trace.WithAttributes(containerAttrs(ctr)...),
 	)
@@ -174,7 +175,7 @@ func (r *Runner) Run(ctx context.Context, ctr *docker.Container) (runErr error) 
 	return nil
 }
 
-func (r *Runner) effectivePassword(cfg docker.BackupConfig, repoName string) string {
+func (r *Runner) effectivePassword(cfg types.BackupConfig, repoName string) string {
 	if cfg.Password != "" {
 		return cfg.Password
 	}
@@ -184,20 +185,20 @@ func (r *Runner) effectivePassword(cfg docker.BackupConfig, repoName string) str
 func (r *Runner) ignore(id string)  { r.ignoredIDs.Store(id, true) }
 func (r *Runner) release(id string) { r.ignoredIDs.Delete(id) }
 
-func countEligibleMounts(ctr *docker.Container, cfg docker.BackupConfig) int {
+func countEligibleMounts(ctr *types.Container, cfg types.BackupConfig) int {
 	n := 0
 	for _, m := range ctr.Mounts {
 		if m.Type == "tmpfs" {
 			continue
 		}
-		if _, ok := docker.MountMatches(m, cfg.Include, cfg.Exclude); ok {
+		if _, ok := types.MountMatches(m, cfg.Include, cfg.Exclude); ok {
 			n++
 		}
 	}
 	return n
 }
 
-func containerAttrs(ctr *docker.Container, extra ...attribute.KeyValue) []attribute.KeyValue {
+func containerAttrs(ctr *types.Container, extra ...attribute.KeyValue) []attribute.KeyValue {
 	base := make([]attribute.KeyValue, 0, 3+len(extra))
 	base = append(base,
 		attribute.String("container", ctr.Name),

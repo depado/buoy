@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/depado/buoy/internal/docker"
 	"github.com/depado/buoy/internal/types"
 )
 
@@ -26,8 +25,8 @@ func newTestRegistry(t *testing.T) *Registry {
 	return r
 }
 
-func testContainer(name, project, service string) *docker.Container {
-	return &docker.Container{
+func testContainer(name, project, service string) *types.Container {
+	return &types.Container{
 		ID:             "abc123",
 		Name:           name,
 		ComposeProject: project,
@@ -39,7 +38,7 @@ func TestSyncContainer(t *testing.T) {
 	r := newTestRegistry(t)
 	ctr := testContainer("myapp", "project", "web")
 
-	repos, err := r.SyncContainer(ctr, docker.BackupConfig{})
+	repos, err := r.SyncContainer(ctr, types.BackupConfig{})
 	if err != nil {
 		t.Fatalf("SyncContainer: %v", err)
 	}
@@ -58,7 +57,7 @@ func TestSyncContainer_ComposeStack(t *testing.T) {
 	r := newTestRegistry(t)
 	ctr := testContainer("myapp", "myproject", "web")
 
-	repos, err := r.SyncContainer(ctr, docker.BackupConfig{})
+	repos, err := r.SyncContainer(ctr, types.BackupConfig{})
 	if err != nil {
 		t.Fatalf("SyncContainer: %v", err)
 	}
@@ -80,7 +79,7 @@ func TestSyncContainer_ReposOverride(t *testing.T) {
 	r := newTestRegistry(t)
 	ctr := testContainer("myapp", "", "")
 
-	repos, err := r.SyncContainer(ctr, docker.BackupConfig{
+	repos, err := r.SyncContainer(ctr, types.BackupConfig{
 		ReposOverride: []string{"s3"},
 	})
 	if err != nil {
@@ -98,7 +97,7 @@ func TestSyncContainer_UnknownRepoName(t *testing.T) {
 	r := newTestRegistry(t)
 	ctr := testContainer("myapp", "", "")
 
-	repos, err := r.SyncContainer(ctr, docker.BackupConfig{
+	repos, err := r.SyncContainer(ctr, types.BackupConfig{
 		ReposOverride: []string{"unknown", "local"},
 	})
 	if err != nil {
@@ -116,7 +115,7 @@ func TestMarkBackupComplete(t *testing.T) {
 	r := newTestRegistry(t)
 	ctr := testContainer("myapp", "", "")
 
-	repos, err := r.SyncContainer(ctr, docker.BackupConfig{})
+	repos, err := r.SyncContainer(ctr, types.BackupConfig{})
 	if err != nil {
 		t.Fatalf("SyncContainer: %v", err)
 	}
@@ -148,7 +147,7 @@ func TestListRepos(t *testing.T) {
 	r := newTestRegistry(t)
 	ctr := testContainer("myapp", "", "")
 
-	if _, err := r.SyncContainer(ctr, docker.BackupConfig{}); err != nil {
+	if _, err := r.SyncContainer(ctr, types.BackupConfig{}); err != nil {
 		t.Fatalf("SyncContainer: %v", err)
 	}
 
@@ -165,7 +164,7 @@ func TestListRepos_OnlyOrphaned(t *testing.T) {
 	r := newTestRegistry(t)
 	ctr := testContainer("myapp", "", "")
 
-	if _, err := r.SyncContainer(ctr, docker.BackupConfig{}); err != nil {
+	if _, err := r.SyncContainer(ctr, types.BackupConfig{}); err != nil {
 		t.Fatalf("SyncContainer: %v", err)
 	}
 	if err := r.MarkOrphaned("abc123"); err != nil {
@@ -190,7 +189,7 @@ func TestListRepos_ExcludeOrphaned(t *testing.T) {
 	r := newTestRegistry(t)
 	ctr := testContainer("myapp", "", "")
 
-	if _, err := r.SyncContainer(ctr, docker.BackupConfig{}); err != nil {
+	if _, err := r.SyncContainer(ctr, types.BackupConfig{}); err != nil {
 		t.Fatalf("SyncContainer: %v", err)
 	}
 
@@ -212,7 +211,7 @@ func TestListRepos_FilterByRepo(t *testing.T) {
 	r := newTestRegistry(t)
 	ctr := testContainer("myapp", "project", "web")
 
-	repos, err := r.SyncContainer(ctr, docker.BackupConfig{})
+	repos, err := r.SyncContainer(ctr, types.BackupConfig{})
 	if err != nil {
 		t.Fatalf("SyncContainer: %v", err)
 	}
@@ -233,7 +232,7 @@ func TestGetContainerRepos(t *testing.T) {
 	r := newTestRegistry(t)
 	ctr := testContainer("myapp", "", "")
 
-	if _, err := r.SyncContainer(ctr, docker.BackupConfig{}); err != nil {
+	if _, err := r.SyncContainer(ctr, types.BackupConfig{}); err != nil {
 		t.Fatalf("SyncContainer: %v", err)
 	}
 
@@ -261,7 +260,7 @@ func TestMarkOrphaned(t *testing.T) {
 	r := newTestRegistry(t)
 	ctr := testContainer("myapp", "", "")
 
-	if _, err := r.SyncContainer(ctr, docker.BackupConfig{}); err != nil {
+	if _, err := r.SyncContainer(ctr, types.BackupConfig{}); err != nil {
 		t.Fatalf("SyncContainer: %v", err)
 	}
 	if err := r.MarkOrphaned("abc123"); err != nil {
@@ -301,7 +300,7 @@ func TestResolveRepos(t *testing.T) {
 	r := newTestRegistry(t)
 	ctr := testContainer("standalone", "", "")
 
-	repos, err := r.ResolveRepos(ctr, docker.BackupConfig{})
+	repos, err := r.ResolveRepos(ctr, types.BackupConfig{})
 	if err != nil {
 		t.Fatalf("ResolveRepos: %v", err)
 	}

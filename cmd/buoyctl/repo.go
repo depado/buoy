@@ -83,7 +83,7 @@ var repoCheckCmd = &cobra.Command{
 		}
 		repo := getRepoFlag(cmd)
 
-		results, err := withSpinner(cmd, "Running check...", func() ([]types.APIResult, error) {
+		results, err := withSpinner(cmd, "Running check...", func() ([]types.RepoResult, error) {
 			return clientAPI().CheckRepos(repo, readData, orphaned)
 		})
 		if err != nil {
@@ -111,7 +111,7 @@ var repoStatsCmd = &cobra.Command{
 		}
 		repo := getRepoFlag(cmd)
 
-		stats, err := withSpinner(cmd, "Fetching stats...", func() (*types.APIStatsResponse, error) {
+		stats, err := withSpinner(cmd, "Fetching stats...", func() (*types.StatsResponse, error) {
 			return clientAPI().StatsRepos(repo, orphaned)
 		})
 		if err != nil {
@@ -188,7 +188,7 @@ var repoUnlockCmd = &cobra.Command{
 		}
 		repo := getRepoFlag(cmd)
 
-		results, err := withSpinner(cmd, "Unlocking repos...", func() ([]types.APIResult, error) {
+		results, err := withSpinner(cmd, "Unlocking repos...", func() ([]types.RepoResult, error) {
 			return clientAPI().UnlockRepos(repo, orphaned)
 		})
 		if err != nil {
@@ -223,7 +223,7 @@ var repoForgetCmd = &cobra.Command{
 		}
 		repo := getRepoFlag(cmd)
 
-		results, err := withSpinner(cmd, "Forgetting snapshots...", func() ([]types.APIResult, error) {
+		results, err := withSpinner(cmd, "Forgetting snapshots...", func() ([]types.RepoResult, error) {
 			return clientAPI().ForgetRepos(repo, retention, orphaned)
 		})
 		if err != nil {
@@ -254,7 +254,7 @@ var repoPruneCmd = &cobra.Command{
 		}
 		repo := getRepoFlag(cmd)
 
-		results, err := withSpinner(cmd, "Pruning repos...", func() ([]types.APIResult, error) {
+		results, err := withSpinner(cmd, "Pruning repos...", func() ([]types.RepoResult, error) {
 			return clientAPI().PruneRepos(repo, orphaned)
 		})
 		if err != nil {
@@ -310,7 +310,7 @@ func requireScope(cmd *cobra.Command) error {
 	return nil
 }
 
-func orphanedFilter(cmd *cobra.Command) (client.OrphanedFilter, error) {
+func orphanedFilter(cmd *cobra.Command) (types.OrphanedFilter, error) {
 	orphaned, _ := cmd.Flags().GetBool("orphaned")
 	all, _ := cmd.Flags().GetBool("all")
 	if orphaned && all {
@@ -318,11 +318,11 @@ func orphanedFilter(cmd *cobra.Command) (client.OrphanedFilter, error) {
 	}
 	switch {
 	case orphaned:
-		return client.Orphaned, nil
+		return types.Orphaned, nil
 	case all:
-		return client.AllRepos, nil
+		return types.AllRepos, nil
 	default:
-		return client.NonOrphaned, nil
+		return types.NonOrphaned, nil
 	}
 }
 
@@ -348,7 +348,7 @@ func withSpinner[T any](cmd *cobra.Command, text string, fn func() (T, error)) (
 	return result, err
 }
 
-func printOpResults(results []types.APIResult, opName string) error {
+func printOpResults(results []types.RepoResult, opName string) error {
 	failures := 0
 	for _, r := range results {
 		if r.OK {

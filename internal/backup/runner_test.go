@@ -4,13 +4,13 @@ import (
 	"testing"
 
 	"github.com/depado/buoy/internal/config"
-	"github.com/depado/buoy/internal/docker"
+	"github.com/depado/buoy/internal/types"
 )
 
 func TestDeduplicateByService(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    []*docker.Container
+		input    []*types.Container
 		wantCnt  int
 		wantSvcs []string // expected service names in order
 	}{
@@ -21,7 +21,7 @@ func TestDeduplicateByService(t *testing.T) {
 		},
 		{
 			name: "single",
-			input: []*docker.Container{
+			input: []*types.Container{
 				{ComposeService: "web", Name: "web1"},
 			},
 			wantCnt:  1,
@@ -29,7 +29,7 @@ func TestDeduplicateByService(t *testing.T) {
 		},
 		{
 			name: "duplicates by service name -> one kept",
-			input: []*docker.Container{
+			input: []*types.Container{
 				{ComposeService: "web", Name: "web1"},
 				{ComposeService: "web", Name: "web2"},
 			},
@@ -38,7 +38,7 @@ func TestDeduplicateByService(t *testing.T) {
 		},
 		{
 			name: "standalone containers (no service) -> never deduplicated",
-			input: []*docker.Container{
+			input: []*types.Container{
 				{Name: "standalone1"},
 				{Name: "standalone2"},
 			},
@@ -47,7 +47,7 @@ func TestDeduplicateByService(t *testing.T) {
 		},
 		{
 			name: "mix of duped services and standalones",
-			input: []*docker.Container{
+			input: []*types.Container{
 				{ComposeService: "web", Name: "web1"},
 				{Name: "standalone1"},
 				{ComposeService: "web", Name: "web2"},
@@ -88,14 +88,14 @@ func TestEffectivePassword(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		cfg      docker.BackupConfig
+		cfg      types.BackupConfig
 		repoName string
 		want     string
 	}{
-		{"container label wins", docker.BackupConfig{Password: "ctr-pass"}, "s3", "ctr-pass"},
-		{"per-repo password", docker.BackupConfig{}, "s3", "s3-pass"},
-		{"global fallback", docker.BackupConfig{}, "local", "global"},
-		{"unknown repo uses global", docker.BackupConfig{}, "unknown", "global"},
+		{"container label wins", types.BackupConfig{Password: "ctr-pass"}, "s3", "ctr-pass"},
+		{"per-repo password", types.BackupConfig{}, "s3", "s3-pass"},
+		{"global fallback", types.BackupConfig{}, "local", "global"},
+		{"unknown repo uses global", types.BackupConfig{}, "unknown", "global"},
 	}
 
 	for _, tt := range tests {
