@@ -15,7 +15,6 @@ import (
 
 	"github.com/depado/buoy/internal/config"
 	"github.com/depado/buoy/internal/docker"
-	"github.com/depado/buoy/internal/hook"
 	"github.com/depado/buoy/internal/notify"
 	"github.com/depado/buoy/internal/registry"
 	"github.com/depado/buoy/internal/restic"
@@ -25,7 +24,6 @@ import (
 type Runner struct {
 	docker            *docker.Client
 	restic            *restic.Client
-	hook              *hook.Executor
 	repoReg           *registry.Registry
 	resticConf        *config.ResticConf
 	defaultSchedule   string
@@ -36,13 +34,12 @@ type Runner struct {
 	execTimeout       time.Duration
 	healthWaitTimeout time.Duration
 	meters            telemetry.MeterSet
-	tracers           telemetry.TracerSet
+	tracer            trace.Tracer
 }
 
 type RunnerConfig struct {
 	Docker            *docker.Client
 	Restic            *restic.Client
-	Hook              *hook.Executor
 	Registry          *registry.Registry
 	ResticConf        *config.ResticConf
 	DefaultSchedule   string
@@ -53,14 +50,13 @@ type RunnerConfig struct {
 	ExecTimeout       time.Duration
 	HealthWaitTimeout time.Duration
 	Meters            telemetry.MeterSet
-	Tracers           telemetry.TracerSet
+	Tracer            trace.Tracer
 }
 
 func New(cfg *RunnerConfig) *Runner {
 	return &Runner{
 		docker:            cfg.Docker,
 		restic:            cfg.Restic,
-		hook:              cfg.Hook,
 		repoReg:           cfg.Registry,
 		resticConf:        cfg.ResticConf,
 		defaultSchedule:   cfg.DefaultSchedule,
@@ -71,7 +67,7 @@ func New(cfg *RunnerConfig) *Runner {
 		execTimeout:       cfg.ExecTimeout,
 		healthWaitTimeout: cfg.HealthWaitTimeout,
 		meters:            cfg.Meters,
-		tracers:           cfg.Tracers,
+		tracer:            cfg.Tracer,
 	}
 }
 
@@ -80,7 +76,7 @@ func (r *Runner) parseConfig(labels map[string]string) docker.BackupConfig {
 }
 
 func (r *Runner) Run(ctx context.Context, ctr *docker.Container) (runErr error) {
-	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.backup",
+	ctx, span := r.tracer.Start(ctx, "buoy.backup",
 		trace.WithAttributes(containerAttrs(ctr)...),
 	)
 	defer func() {

@@ -5,22 +5,9 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 )
 
-type TracerSet struct {
-	Tracer trace.Tracer
-}
-
-func newTracerSet() TracerSet {
-	tp := noop.NewTracerProvider()
-	return TracerSet{
-		Tracer: tp.Tracer("buoy"),
-	}
-}
-
-func (t *Telemetry) Tracers() TracerSet {
+func (t *Telemetry) Tracer() trace.Tracer {
 	if t.tp == nil {
-		return newTracerSet()
+		return noop.NewTracerProvider().Tracer("buoy")
 	}
-	return TracerSet{
-		Tracer: t.tp.Tracer("buoy"),
-	}
+	return t.tp.Tracer("buoy")
 }

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/depado/buoy/client"
+	"github.com/depado/buoy/internal/types"
 )
 
 func (s *Server) handleTriggerBackup(w http.ResponseWriter, r *http.Request) {
@@ -15,11 +15,11 @@ func (s *Server) handleTriggerBackup(w http.ResponseWriter, r *http.Request) {
 
 	if project != "" {
 		err := s.scheduler.TriggerProjectBackup(r.Context(), project, containers)
-		result := client.BackupResult{Container: project, OK: err == nil}
+		result := types.APIBackupResult{Container: project, OK: err == nil}
 		if err != nil {
 			result.Error = err.Error()
 		}
-		writeJSON(w, http.StatusOK, []client.BackupResult{result})
+		writeJSON(w, http.StatusOK, []types.APIBackupResult{result})
 		return
 	}
 
@@ -33,15 +33,21 @@ func (s *Server) handleTriggerBackup(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "specify ?all=true, ?project=<name>, or ?container=<name>"})
 		return
 	}
+	for _, name := range containers {
+		if name == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "container parameter must not be empty"})
+			return
+		}
+	}
 
-	results := make([]client.BackupResult, len(containers))
+	results := make([]types.APIBackupResult, len(containers))
 	var wg sync.WaitGroup
 	for i, target := range containers {
 		wg.Add(1)
 		go func(idx int, name string) {
 			defer wg.Done()
 			err := s.scheduler.TriggerBackup(r.Context(), name)
-			results[idx] = client.BackupResult{Container: name, OK: err == nil}
+			results[idx] = types.APIBackupResult{Container: name, OK: err == nil}
 			if err != nil {
 				results[idx].Error = err.Error()
 			}
@@ -51,7 +57,7 @@ func (s *Server) handleTriggerBackup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, results)
 }
 
-func (s *Server) triggerAll(ctx context.Context) []client.BackupResult {
+func (s *Server) triggerAll(ctx context.Context) []types.APIBackupResult {
 	entries := s.scheduler.ListScheduled()
 	if len(entries) == 0 {
 		return nil
@@ -72,7 +78,7 @@ func (s *Server) triggerAll(ctx context.Context) []client.BackupResult {
 	}
 
 	n := len(projects) + len(standalones)
-	results := make([]client.BackupResult, n)
+	results := make([]types.APIBackupResult, n)
 	var wg sync.WaitGroup
 
 	for i, proj := range projects {
@@ -80,7 +86,7 @@ func (s *Server) triggerAll(ctx context.Context) []client.BackupResult {
 		go func(idx int, p string) {
 			defer wg.Done()
 			err := s.scheduler.TriggerProjectBackup(ctx, p, nil)
-			results[idx] = client.BackupResult{Container: p, OK: err == nil}
+			results[idx] = types.APIBackupResult{Container: p, OK: err == nil}
 			if err != nil {
 				results[idx].Error = err.Error()
 			}
@@ -91,7 +97,7 @@ func (s *Server) triggerAll(ctx context.Context) []client.BackupResult {
 		go func(idx int, n string) {
 			defer wg.Done()
 			err := s.scheduler.TriggerBackup(ctx, n)
-			results[idx] = client.BackupResult{Container: n, OK: err == nil}
+			results[idx] = types.APIBackupResult{Container: n, OK: err == nil}
 			if err != nil {
 				results[idx].Error = err.Error()
 			}

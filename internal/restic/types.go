@@ -1,18 +1,5 @@
 package restic
 
-// BackupStatus represents a progress update from restic during a backup.
-type BackupStatus struct {
-	SecondsElapsed   uint64   `json:"seconds_elapsed"`
-	SecondsRemaining uint64   `json:"seconds_remaining"`
-	PercentDone      float64  `json:"percent_done"`
-	TotalFiles       uint64   `json:"total_files"`
-	FilesDone        uint64   `json:"files_done"`
-	TotalBytes       uint64   `json:"total_bytes"`
-	BytesDone        uint64   `json:"bytes_done"`
-	ErrorCount       uint64   `json:"error_count"`
-	CurrentFiles     []string `json:"current_files"`
-}
-
 // BackupSummary is the final result of a successful restic backup.
 type BackupSummary struct {
 	FilesNew            uint64  `json:"files_new"`

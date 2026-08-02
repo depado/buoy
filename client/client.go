@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/depado/buoy/internal/api"
 	"github.com/depado/buoy/internal/types"
 )
 
@@ -55,7 +56,7 @@ func (c *Client) doRequest(method, path string) (*http.Response, error) {
 func (c *Client) ListRepos(repo string, orphaned OrphanedFilter) ([]types.RepoEntry, error) {
 	params := make(url.Values)
 	addQuery(params, repo, orphaned)
-	path := "/api/v1/repos" + queryString(params)
+	path := api.RouteRepos + queryString(params)
 
 	resp, err := c.doRequest("GET", path)
 	if err != nil {
@@ -65,116 +66,116 @@ func (c *Client) ListRepos(repo string, orphaned OrphanedFilter) ([]types.RepoEn
 	return decodeJSON[[]types.RepoEntry](resp)
 }
 
-func (c *Client) ListScheduled() ([]ScheduledEntry, error) {
-	resp, err := c.doRequest("GET", "/api/v1/scheduled")
+func (c *Client) ListScheduled() ([]types.APIScheduledEntry, error) {
+	resp, err := c.doRequest("GET", api.RouteScheduled)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return decodeJSON[[]ScheduledEntry](resp)
+	return decodeJSON[[]types.APIScheduledEntry](resp)
 }
 
-func (c *Client) CheckRepos(repo string, readData bool, orphaned OrphanedFilter) ([]Result, error) {
+func (c *Client) CheckRepos(repo string, readData bool, orphaned OrphanedFilter) ([]types.APIResult, error) {
 	params := make(url.Values)
 	addQuery(params, repo, orphaned)
 	if readData {
 		params.Set("read-data", "true")
 	}
-	path := "/api/v1/repos/check" + queryString(params)
+	path := api.RouteCheck + queryString(params)
 
 	resp, err := c.doRequest("GET", path)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return decodeJSON[[]Result](resp)
+	return decodeJSON[[]types.APIResult](resp)
 }
 
-func (c *Client) StatsRepos(repo string, orphaned OrphanedFilter) (*StatsResponse, error) {
+func (c *Client) StatsRepos(repo string, orphaned OrphanedFilter) (*types.APIStatsResponse, error) {
 	params := make(url.Values)
 	addQuery(params, repo, orphaned)
-	path := "/api/v1/repos/stats" + queryString(params)
+	path := api.RouteStats + queryString(params)
 
 	resp, err := c.doRequest("GET", path)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	stats, err := decodeJSON[StatsResponse](resp)
+	stats, err := decodeJSON[types.APIStatsResponse](resp)
 	if err != nil {
 		return nil, err
 	}
 	return &stats, nil
 }
 
-func (c *Client) UnlockRepos(repo string, orphaned OrphanedFilter) ([]Result, error) {
+func (c *Client) UnlockRepos(repo string, orphaned OrphanedFilter) ([]types.APIResult, error) {
 	params := make(url.Values)
 	addQuery(params, repo, orphaned)
-	path := "/api/v1/repos/unlock" + queryString(params)
+	path := api.RouteUnlock + queryString(params)
 
 	resp, err := c.doRequest("POST", path)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return decodeJSON[[]Result](resp)
+	return decodeJSON[[]types.APIResult](resp)
 }
 
-func (c *Client) ForgetRepos(repo string, retention string, orphaned OrphanedFilter) ([]Result, error) {
+func (c *Client) ForgetRepos(repo string, retention string, orphaned OrphanedFilter) ([]types.APIResult, error) {
 	params := make(url.Values)
 	params.Set("retention", retention)
 	addQuery(params, repo, orphaned)
-	path := "/api/v1/repos/forget" + queryString(params)
+	path := api.RouteForget + queryString(params)
 
 	resp, err := c.doRequest("POST", path)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return decodeJSON[[]Result](resp)
+	return decodeJSON[[]types.APIResult](resp)
 }
 
-func (c *Client) PruneRepos(repo string, orphaned OrphanedFilter) ([]Result, error) {
+func (c *Client) PruneRepos(repo string, orphaned OrphanedFilter) ([]types.APIResult, error) {
 	params := make(url.Values)
 	addQuery(params, repo, orphaned)
-	path := "/api/v1/repos/prune" + queryString(params)
+	path := api.RoutePrune + queryString(params)
 
 	resp, err := c.doRequest("POST", path)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return decodeJSON[[]Result](resp)
+	return decodeJSON[[]types.APIResult](resp)
 }
 
-func (c *Client) TriggerBackup(containers []string) ([]BackupResult, error) {
+func (c *Client) TriggerBackup(containers []string) ([]types.APIBackupResult, error) {
 	params := make(url.Values)
 	for _, name := range containers {
 		params.Add("container", name)
 	}
-	path := "/api/v1/backup" + queryString(params)
+	path := api.RouteBackup + queryString(params)
 
 	resp, err := c.doRequest("POST", path)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return decodeJSON[[]BackupResult](resp)
+	return decodeJSON[[]types.APIBackupResult](resp)
 }
 
-func (c *Client) TriggerProjectBackup(project string, services []string) (*BackupResult, error) {
+func (c *Client) TriggerProjectBackup(project string, services []string) (*types.APIBackupResult, error) {
 	params := url.Values{"project": {project}}
 	for _, svc := range services {
 		params.Add("container", svc)
 	}
-	path := "/api/v1/backup" + queryString(params)
+	path := api.RouteBackup + queryString(params)
 
 	resp, err := c.doRequest("POST", path)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	results, err := decodeJSON[[]BackupResult](resp)
+	results, err := decodeJSON[[]types.APIBackupResult](resp)
 	if err != nil {
 		return nil, err
 	}
@@ -184,13 +185,13 @@ func (c *Client) TriggerProjectBackup(project string, services []string) (*Backu
 	return &results[0], nil
 }
 
-func (c *Client) TriggerBackupAll() ([]BackupResult, error) {
-	resp, err := c.doRequest("POST", "/api/v1/backup?all=true")
+func (c *Client) TriggerBackupAll() ([]types.APIBackupResult, error) {
+	resp, err := c.doRequest("POST", api.RouteBackup+"?all=true")
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return decodeJSON[[]BackupResult](resp)
+	return decodeJSON[[]types.APIBackupResult](resp)
 }
 
 func decodeJSON[T any](resp *http.Response) (T, error) {
@@ -204,7 +205,7 @@ func decodeJSON[T any](resp *http.Response) (T, error) {
 			Error string `json:"error"`
 		}
 		if json.Unmarshal(body, &errResp) == nil && errResp.Error != "" {
-			return v, fmt.Errorf("%s", errResp.Error)
+			return v, fmt.Errorf("api error: %s", errResp.Error)
 		}
 		return v, fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}

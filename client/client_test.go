@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/depado/buoy/internal/types"
 )
 
 func TestTriggerBackup(t *testing.T) {
@@ -21,7 +23,7 @@ func TestTriggerBackup(t *testing.T) {
 			t.Errorf("unexpected containers: %v", containers)
 		}
 
-		_ = json.NewEncoder(w).Encode([]BackupResult{
+		_ = json.NewEncoder(w).Encode([]types.APIBackupResult{
 			{Container: "uptime-kuma", OK: true},
 			{Container: "beszel", OK: true},
 		})
@@ -47,7 +49,7 @@ func TestTriggerBackupAll(t *testing.T) {
 			t.Error("expected ?all=true")
 		}
 
-		_ = json.NewEncoder(w).Encode([]BackupResult{
+		_ = json.NewEncoder(w).Encode([]types.APIBackupResult{
 			{Container: "uptime-kuma", OK: true},
 			{Container: "beszel", OK: false, Error: "broken"},
 		})
@@ -73,7 +75,7 @@ func TestTriggerProjectBackup(t *testing.T) {
 			t.Errorf("expected project=myapp, got %q", r.URL.Query().Get("project"))
 		}
 
-		_ = json.NewEncoder(w).Encode([]BackupResult{
+		_ = json.NewEncoder(w).Encode([]types.APIBackupResult{
 			{Container: "myapp", OK: true},
 		})
 	}))
@@ -99,7 +101,7 @@ func TestTriggerProjectBackup_Services(t *testing.T) {
 			t.Errorf("unexpected containers: %v", containers)
 		}
 
-		_ = json.NewEncoder(w).Encode([]BackupResult{
+		_ = json.NewEncoder(w).Encode([]types.APIBackupResult{
 			{Container: "myapp", OK: true},
 		})
 	}))
@@ -117,7 +119,7 @@ func TestTriggerProjectBackup_Services(t *testing.T) {
 
 func TestTriggerBackup_NoContainers(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode([]BackupResult{})
+		_ = json.NewEncoder(w).Encode([]types.APIBackupResult{})
 	}))
 	defer srv.Close()
 

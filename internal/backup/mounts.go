@@ -142,7 +142,7 @@ func (r *Runner) backupSingleMount(
 
 	start := time.Now()
 
-	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.restic.backup",
+	ctx, span := r.tracer.Start(ctx, "buoy.restic.backup",
 		trace.WithAttributes(
 			attribute.String("repo", repo),
 			attribute.String("mount.source", source),

@@ -47,6 +47,17 @@ type RetentionPolicy struct {
 	KeepWithin  string
 }
 
+// IsZero reports whether the policy has no retention rules set.
+func (rp RetentionPolicy) IsZero() bool {
+	return rp.KeepLast == 0 &&
+		rp.KeepHourly == 0 &&
+		rp.KeepDaily == 0 &&
+		rp.KeepWeekly == 0 &&
+		rp.KeepMonthly == 0 &&
+		rp.KeepYearly == 0 &&
+		rp.KeepWithin == ""
+}
+
 func ParseRetentionPolicy(s string) RetentionPolicy {
 	var rp RetentionPolicy
 	if s == "" {
@@ -101,4 +112,47 @@ func SplitTrim(s string) []string {
 		}
 	}
 	return result
+}
+
+// --- API response types shared between server and client ---
+
+type APIResult struct {
+	Repo  string `json:"repo"`
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
+type APIStatsResponse struct {
+	Total *Stats         `json:"total"`
+	Repos []APIRepoStats `json:"repos"`
+}
+
+type APIRepoStats struct {
+	Repo  string `json:"repo"`
+	Stats *Stats `json:"stats,omitempty"`
+	Error string `json:"error,omitempty"`
+}
+
+type APIScheduledRepo struct {
+	URL          string    `json:"url"`
+	RepoName     string    `json:"repo_name,omitempty"`
+	Created      bool      `json:"created"`
+	LastBackupAt time.Time `json:"last_backup_at"`
+	LastBackupOK bool      `json:"last_backup_ok"`
+}
+
+type APIScheduledEntry struct {
+	ContainerID    string             `json:"container_id"`
+	ContainerName  string             `json:"container_name"`
+	ComposeProject string             `json:"compose_project,omitempty"`
+	ComposeService string             `json:"compose_service,omitempty"`
+	Schedule       string             `json:"schedule"`
+	Repos          []APIScheduledRepo `json:"repos,omitempty"`
+	StopBefore     bool               `json:"stop_before"`
+}
+
+type APIBackupResult struct {
+	Container string `json:"container"`
+	OK        bool   `json:"ok"`
+	Error     string `json:"error,omitempty"`
 }

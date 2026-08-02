@@ -10,14 +10,14 @@ import (
 	"github.com/depado/gorich/table/box"
 	"github.com/spf13/cobra"
 
-	"github.com/depado/buoy/client"
+	"github.com/depado/buoy/internal/types"
 )
 
 var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List currently scheduled backups",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		entries, err := withSpinner(cmd, "Fetching scheduled backups...", func() ([]client.ScheduledEntry, error) {
+		entries, err := withSpinner(cmd, "Fetching scheduled backups...", func() ([]types.APIScheduledEntry, error) {
 			return clientAPI().ListScheduled()
 		})
 		if err != nil {

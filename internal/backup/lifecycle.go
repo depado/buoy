@@ -17,7 +17,7 @@ import (
 
 func (r *Runner) stopContainer(ctx context.Context, ctr *docker.Container, cfg docker.BackupConfig, l *slog.Logger) (stopped bool, stopErr error) {
 	stopStart := time.Now()
-	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.container.stop",
+	ctx, span := r.tracer.Start(ctx, "buoy.container.stop",
 		trace.WithAttributes(containerAttrs(ctr)...),
 	)
 	recordCtx := context.WithoutCancel(ctx)
@@ -52,7 +52,7 @@ func (r *Runner) stopContainer(ctx context.Context, ctr *docker.Container, cfg d
 func (r *Runner) startContainer(ctx context.Context, ctr *docker.Container, l *slog.Logger) {
 	startTime := time.Now()
 	startErr := error(nil)
-	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.container.start",
+	ctx, span := r.tracer.Start(ctx, "buoy.container.start",
 		trace.WithAttributes(containerAttrs(ctr)...),
 	)
 	recordCtx := context.WithoutCancel(ctx)

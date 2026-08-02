@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/moby/moby/api/types/container"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
@@ -22,7 +23,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 	start := time.Now()
 	var backupErrors map[string]error
 	var allIssues []string
-	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.stack.backup",
+	ctx, span := r.tracer.Start(ctx, "buoy.stack.backup",
 		trace.WithAttributes(
 			attribute.String("project", project),
 			attribute.Int("services", len(batch)),
@@ -60,7 +61,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 	r.runParallelPreHooks(ctx, fresh, containerCfg, l)
 
 	stopSvc := stopSet(fresh, all)
-	l.Info("stack backup started", "services", len(fresh), "stop_set", mapKeys(stopSvc))
+	l.Info("stack backup started", "services", len(fresh), "stop_set", slices.Collect(maps.Keys(stopSvc)))
 	services := serviceContainers(all)
 	deps := serviceDeps(all)
 
@@ -89,7 +90,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 }
 
 func (r *Runner) discoverStackContainers(ctx context.Context, project string, l *slog.Logger) ([]*docker.Container, map[string]*docker.Container) {
-	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.stack.discover")
+	ctx, span := r.tracer.Start(ctx, "buoy.stack.discover")
 	defer span.End()
 
 	summaries, err := r.docker.ListContainersByProject(ctx, project)
@@ -186,34 +187,14 @@ func (r *Runner) stopStackServices(
 			sl.Debug("stopping container")
 			cfg := r.parseConfig(ctr.Labels)
 
-			stopCtx, stopSpan := r.tracers.Tracer.Start(ctx, "buoy.container.stop",
-				trace.WithAttributes(containerAttrs(ctr)...),
-			)
-			startStop := time.Now()
-			if err := r.docker.StopContainer(stopCtx, ctr.ID, cfg.StopTimeout); err != nil {
-				sl.Warn("failed to stop container", "error", err)
+			_, stopErr := r.stopContainer(ctx, ctr, cfg, sl)
+			if stopErr != nil {
+				sl.Warn("failed to stop container", "error", stopErr)
 				stopFailed[ctr.ID] = true
-				stopSpan.RecordError(err)
-				stopSpan.SetStatus(codes.Error, err.Error())
-				r.meters.ContainerStopDur.Record(context.WithoutCancel(ctx), time.Since(startStop).Seconds(),
-					metric.WithAttributes(containerAttrs(ctr, attribute.Bool("success", false))...),
-				)
-				stopSpan.End()
 				r.release(ctr.ID)
 				delete(ignored, ctr.ID)
 				continue
 			}
-			waitErr := r.docker.ContainerWait(stopCtx, ctr.ID, container.WaitConditionNotRunning)
-			if waitErr != nil {
-				sl.Warn("failed to wait for container stop", "error", waitErr)
-				stopSpan.RecordError(waitErr)
-				stopSpan.SetStatus(codes.Error, waitErr.Error())
-			}
-			r.meters.ContainerStopDur.Record(context.WithoutCancel(ctx), time.Since(startStop).Seconds(),
-				metric.WithAttributes(containerAttrs(ctr, attribute.Bool("success", waitErr == nil))...),
-			)
-			stopSpan.End()
-			sl.Info("container stopped")
 			wasStopped[ctr.ID] = true
 		}
 	}
@@ -296,25 +277,7 @@ func (r *Runner) startStackServices(
 				continue
 			}
 			cl := l.With("service", ctr.ComposeService)
-			cl.Debug("starting container")
-
-			startCtx, startSpan := r.tracers.Tracer.Start(ctx, "buoy.container.start",
-				trace.WithAttributes(containerAttrs(ctr)...),
-			)
-			startTime := time.Now()
-			startErr := r.docker.StartContainer(startCtx, ctr.ID)
-			if startErr != nil {
-				cl.Warn("failed to start container", "error", startErr)
-				startSpan.RecordError(startErr)
-				startSpan.SetStatus(codes.Error, startErr.Error())
-			} else {
-				cl.Info("container started")
-				r.waitRunning(startCtx, ctr, cl)
-			}
-			r.meters.ContainerStartDur.Record(context.WithoutCancel(ctx), time.Since(startTime).Seconds(),
-				metric.WithAttributes(containerAttrs(ctr, attribute.Bool("success", startErr == nil))...),
-			)
-			startSpan.End()
+			r.startContainer(ctx, ctr, cl)
 		}
 	}
 }
@@ -386,7 +349,7 @@ func (r *Runner) waitForEvent(
 	eventTypes []string,
 	check func(*docker.Container) (bool, error),
 ) (waitErr error) {
-	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.container.wait",
+	ctx, span := r.tracer.Start(ctx, "buoy.container.wait",
 		trace.WithAttributes(containerAttrs(ctr, attribute.StringSlice("event_types", eventTypes))...),
 	)
 	defer func() {
@@ -445,9 +408,8 @@ func eventsForCondition(c depCondition) []string {
 		return []string{"health_status", "die"}
 	case serviceCompletedSuccessfully:
 		return []string{"die"}
-	default:
-		return nil
 	}
+	return nil
 }
 
 func (r *Runner) waitForCondition(ctx context.Context, ctr *docker.Container, condition depCondition) error {
@@ -479,9 +441,8 @@ func (r *Runner) waitForCondition(ctx context.Context, ctr *docker.Container, co
 				return true, nil
 			}
 			return false, nil
-		default:
-			return false, fmt.Errorf("unknown dependency condition: %s", condition)
 		}
+		return false, fmt.Errorf("unknown dependency condition: %s", condition)
 	})
 }
 
@@ -501,12 +462,4 @@ func deduplicateByService(ctrs []*docker.Container) []*docker.Container {
 		out = append(out, c)
 	}
 	return out
-}
-
-func mapKeys(m map[string]bool) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
 }

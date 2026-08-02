@@ -95,22 +95,13 @@ func (c *Client) Backup(ctx context.Context, repo string, paths []string, opts B
 		args = append(args, "--host", opts.Hostname)
 	}
 
-	var tmpFile string
 	if len(opts.Files) > 0 {
-		f, err := os.CreateTemp("", "buoy-files-*.txt")
+		f, err := writeTempFile("buoy-files-*.txt", strings.Join(opts.Files, "\n"))
 		if err != nil {
-			return nil, fmt.Errorf("create files temp file: %w", err)
+			return nil, err
 		}
-		defer os.Remove(f.Name()) //nolint:errcheck
-		if _, err := f.WriteString(strings.Join(opts.Files, "\n")); err != nil {
-			f.Close() //nolint:errcheck
-			return nil, fmt.Errorf("write files temp file: %w", err)
-		}
-		if err := f.Close(); err != nil {
-			return nil, fmt.Errorf("close files temp file: %w", err)
-		}
-		tmpFile = f.Name()
-		args = append(args, "--files-from", tmpFile)
+		defer os.Remove(f) //nolint:errcheck
+		args = append(args, "--files-from", f)
 	} else {
 		args = append(args, paths...)
 	}
@@ -137,7 +128,7 @@ func (c *Client) Backup(ctx context.Context, repo string, paths []string, opts B
 	}
 
 	var errors []BackupError
-	summary, exitErr, parseErr := parseBackupStream(stdout, nil, func(e BackupError) {
+	summary, exitErr, parseErr := parseBackupStream(stdout, func(e BackupError) {
 		errors = append(errors, e)
 	})
 
@@ -295,24 +286,12 @@ func (c *Client) runSimple(ctx context.Context, op string, args ...string) error
 }
 
 func (c *Client) command(ctx context.Context, args ...string) (*exec.Cmd, func(), error) {
-	f, err := os.CreateTemp("", "buoy-password-*")
+	f, err := writeTempFile("buoy-password-*", passwordFromCtx(ctx, c.password))
 	if err != nil {
-		return nil, nil, fmt.Errorf("create password temp file: %w", err)
-	}
-	if _, err := f.WriteString(passwordFromCtx(ctx, c.password)); err != nil {
-		if err := f.Close(); err != nil {
-			slog.Warn("failed to close password temp file", "error", err)
-		}
-		if err := os.Remove(f.Name()); err != nil {
-			slog.Warn("failed to remove password temp file", "error", err)
-		}
-		return nil, nil, fmt.Errorf("write password temp file: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		slog.Warn("failed to close password temp file", "error", err)
+		return nil, nil, err
 	}
 
-	args = append([]string{"--password-file", f.Name()}, args...)
+	args = append([]string{"--password-file", f}, args...)
 	cmd := exec.CommandContext(ctx, c.binPath, args...)
 	setSysProcAttr(cmd)
 	cmd.Env = append(os.Environ(),
@@ -321,9 +300,24 @@ func (c *Client) command(ctx context.Context, args ...string) (*exec.Cmd, func()
 	)
 
 	cleanup := func() {
-		if err := os.Remove(f.Name()); err != nil {
+		if err := os.Remove(f); err != nil {
 			slog.Warn("failed to remove password temp file", "error", err)
 		}
 	}
 	return cmd, cleanup, nil
+}
+
+// writeTempFile creates a temporary file with the given pattern and content,
+// returning its path. The caller is responsible for removing the file.
+func writeTempFile(pattern, content string) (string, error) {
+	f, err := os.CreateTemp("", pattern)
+	if err != nil {
+		return "", fmt.Errorf("create temp file %q: %w", pattern, err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString(content); err != nil {
+		os.Remove(f.Name()) //nolint:errcheck
+		return "", fmt.Errorf("write temp file %q: %w", pattern, err)
+	}
+	return f.Name(), nil
 }

@@ -16,7 +16,7 @@ import (
 
 func (r *Runner) CheckKnownRepos(ctx context.Context) {
 	start := time.Now()
-	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.check")
+	ctx, span := r.tracer.Start(ctx, "buoy.check")
 	var checkErr error
 	defer span.End()
 	defer func() {
@@ -90,7 +90,7 @@ func (r *Runner) checkRepoEntries(ctx context.Context, entries []types.RepoEntry
 			continue
 		}
 		seen[entry.URL] = true
-		ctx := restic.WithPassword(ctx, r.resticConf.PasswordForEntry(entry.RepoName, entry.URL))
+		ctx := restic.WithPassword(ctx, r.resticConf.PasswordFor(entry.RepoName))
 		if err := r.restic.Check(ctx, entry.URL); err != nil {
 			logger.Error("check: repository check failed", "repo", entry.URL, "error", err)
 			if err := r.repoReg.MarkCheckComplete(entry.URL, false); err != nil {

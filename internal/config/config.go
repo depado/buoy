@@ -228,21 +228,16 @@ func (rc *ResticConf) PasswordFor(name string) string {
 	return rc.Password
 }
 
-func (rc *ResticConf) PasswordForURL(url string) string {
-	for _, c := range rc.Repos {
-		if c.Password == "" {
-			continue
-		}
-		if url == c.URL || (strings.HasPrefix(url, c.URL) && url[len(c.URL)] == '/') {
-			return c.Password
-		}
+// ParseDurationOrDefault parses a duration string, returning the default on
+// empty input or parse failure. A warning is logged if the parse fails.
+func ParseDurationOrDefault(s string, defaultDuration time.Duration) time.Duration {
+	if s == "" {
+		return defaultDuration
 	}
-	return rc.Password
-}
-
-func (rc *ResticConf) PasswordForEntry(repoName, url string) string {
-	if repoName != "" {
-		return rc.PasswordFor(repoName)
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		slog.Warn("invalid duration, using default", "value", s, "default", defaultDuration)
+		return defaultDuration
 	}
-	return rc.PasswordForURL(url)
+	return d
 }

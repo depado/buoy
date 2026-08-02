@@ -83,7 +83,7 @@ var repoCheckCmd = &cobra.Command{
 		}
 		repo := getRepoFlag(cmd)
 
-		results, err := withSpinner(cmd, "Running check...", func() ([]client.Result, error) {
+		results, err := withSpinner(cmd, "Running check...", func() ([]types.APIResult, error) {
 			return clientAPI().CheckRepos(repo, readData, orphaned)
 		})
 		if err != nil {
@@ -111,7 +111,7 @@ var repoStatsCmd = &cobra.Command{
 		}
 		repo := getRepoFlag(cmd)
 
-		stats, err := withSpinner(cmd, "Fetching stats...", func() (*client.StatsResponse, error) {
+		stats, err := withSpinner(cmd, "Fetching stats...", func() (*types.APIStatsResponse, error) {
 			return clientAPI().StatsRepos(repo, orphaned)
 		})
 		if err != nil {
@@ -188,7 +188,7 @@ var repoUnlockCmd = &cobra.Command{
 		}
 		repo := getRepoFlag(cmd)
 
-		results, err := withSpinner(cmd, "Unlocking repos...", func() ([]client.Result, error) {
+		results, err := withSpinner(cmd, "Unlocking repos...", func() ([]types.APIResult, error) {
 			return clientAPI().UnlockRepos(repo, orphaned)
 		})
 		if err != nil {
@@ -223,7 +223,7 @@ var repoForgetCmd = &cobra.Command{
 		}
 		repo := getRepoFlag(cmd)
 
-		results, err := withSpinner(cmd, "Forgetting snapshots...", func() ([]client.Result, error) {
+		results, err := withSpinner(cmd, "Forgetting snapshots...", func() ([]types.APIResult, error) {
 			return clientAPI().ForgetRepos(repo, retention, orphaned)
 		})
 		if err != nil {
@@ -254,7 +254,7 @@ var repoPruneCmd = &cobra.Command{
 		}
 		repo := getRepoFlag(cmd)
 
-		results, err := withSpinner(cmd, "Pruning repos...", func() ([]client.Result, error) {
+		results, err := withSpinner(cmd, "Pruning repos...", func() ([]types.APIResult, error) {
 			return clientAPI().PruneRepos(repo, orphaned)
 		})
 		if err != nil {
@@ -348,7 +348,7 @@ func withSpinner[T any](cmd *cobra.Command, text string, fn func() (T, error)) (
 	return result, err
 }
 
-func printOpResults(results []client.Result, opName string) error {
+func printOpResults(results []types.APIResult, opName string) error {
 	failures := 0
 	for _, r := range results {
 		if r.OK {

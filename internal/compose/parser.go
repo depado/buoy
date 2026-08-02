@@ -71,7 +71,7 @@ func Discover(dir string, maxDepth int, patterns []string, resolveEnv bool) ([]S
 		}
 
 		if maxDepth >= 0 && path != abs {
-			rel, _ := filepath.Rel(abs, path)
+			rel, _ := filepath.Rel(abs, path) //nolint:nilerr
 			depth := len(strings.Split(rel, string(os.PathSeparator)))
 			if depth > maxDepth {
 				return filepath.SkipDir

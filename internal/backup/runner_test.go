@@ -5,38 +5,7 @@ import (
 
 	"github.com/depado/buoy/internal/config"
 	"github.com/depado/buoy/internal/docker"
-	"github.com/depado/buoy/internal/types"
 )
-
-func TestMapKeys(t *testing.T) {
-	tests := []struct {
-		name string
-		m    map[string]bool
-	}{
-		{"empty map", map[string]bool{}},
-		{"map with entries", map[string]bool{"a": true, "b": false, "c": true}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := mapKeys(tt.m)
-			if len(got) != len(tt.m) {
-				t.Fatalf("len mismatch: got %d, want %d", len(got), len(tt.m))
-			}
-			seen := make(map[string]bool)
-			for _, k := range got {
-				if _, ok := tt.m[k]; !ok {
-					t.Errorf("key %q not in original map", k)
-				}
-				seen[k] = true
-			}
-			for k := range tt.m {
-				if !seen[k] {
-					t.Errorf("key %q missing from result", k)
-				}
-			}
-		})
-	}
-}
 
 func TestDeduplicateByService(t *testing.T) {
 	tests := []struct {
@@ -139,7 +108,7 @@ func TestEffectivePassword(t *testing.T) {
 	}
 }
 
-func TestPasswordForEntry(t *testing.T) {
+func TestPasswordFor(t *testing.T) {
 	rc := &config.ResticConf{
 		Password: "global",
 		Repos: map[string]config.RepoConfig{
@@ -150,35 +119,17 @@ func TestPasswordForEntry(t *testing.T) {
 	r := &Runner{resticConf: rc}
 
 	tests := []struct {
-		name  string
-		entry types.RepoEntry
-		want  string
+		name     string
+		repoName string
+		want     string
 	}{
-		{
-			"by repo name",
-			types.RepoEntry{RepoName: "s3", URL: "s3:https://bucket/myapp/db"},
-			"s3-pass",
-		},
-		{
-			"by URL prefix match (no RepoName)",
-			types.RepoEntry{URL: "/backup/myapp/db"},
-			"local-pass",
-		},
-		{
-			"global fallback",
-			types.RepoEntry{URL: "/unknown/path"},
-			"global",
-		},
-		{
-			"repo name takes priority over prefix match",
-			types.RepoEntry{RepoName: "s3", URL: "/backup/myapp/db"},
-			"s3-pass",
-		},
+		{"by repo name", "s3", "s3-pass"},
+		{"global fallback", "", "global"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := r.resticConf.PasswordForEntry(tt.entry.RepoName, tt.entry.URL)
+			got := r.resticConf.PasswordFor(tt.repoName)
 			if got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}

@@ -79,7 +79,7 @@ host paths and YAML sections.`,
 
 				volumeCount := 0
 				for _, e := range s.Volumes {
-					if isExcluded(e, cfg) {
+					if _, ok := docker.MountMatches(docker.Mount{Source: e.Source, Destination: e.Destination}, cfg.Include, cfg.Exclude); !ok {
 						continue
 					}
 					volumeCount++
@@ -155,23 +155,6 @@ host paths and YAML sections.`,
 
 		return nil
 	},
-}
-
-func isExcluded(e compose.VolumeEntry, cfg docker.BackupConfig) bool {
-	if len(cfg.Include) > 0 {
-		for _, entry := range cfg.Include {
-			if entry.Key == e.Source || entry.Key == e.Destination {
-				return false
-			}
-		}
-		return true
-	}
-	for _, ex := range cfg.Exclude {
-		if ex == e.Source || ex == e.Destination {
-			return true
-		}
-	}
-	return false
 }
 
 func sortedKeys(m map[string]bool) []string {

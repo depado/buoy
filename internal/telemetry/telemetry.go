@@ -102,7 +102,9 @@ func (t *Telemetry) setupMetrics(ctx context.Context, res *sdkresource.Resource)
 	)
 	otel.SetMeterProvider(mp)
 	t.mp = mp
-	runtime.Start(runtime.WithMeterProvider(mp)) //nolint:errcheck
+	if err := runtime.Start(runtime.WithMeterProvider(mp)); err != nil {
+		slog.Warn("runtime metrics collection failed to start", "error", err)
+	}
 	return nil
 }
 

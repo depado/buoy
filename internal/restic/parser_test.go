@@ -26,7 +26,7 @@ func TestParseStream_Summary(t *testing.T) {
 	lines := `{"message_type":"summary","files_new":5,"files_changed":0,"files_unmodified":0,"dirs_new":1,"dirs_changed":0,"dirs_unmodified":0,"data_blobs":1,"tree_blobs":1,"data_added":1024,"total_files_processed":5,"total_bytes_processed":2048,"total_duration":1.5,"snapshot_id":"snap1"}
 `
 	stdout := strings.NewReader(lines)
-	summary, exitErr, err := parseBackupStream(stdout, nil, nil)
+	summary, exitErr, err := parseBackupStream(stdout, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -44,32 +44,11 @@ func TestParseStream_Summary(t *testing.T) {
 	}
 }
 
-func TestParseStream_StatusCallback(t *testing.T) {
-	lines := `{"message_type":"status","percent_done":50.0,"files_done":10,"total_files":20}
-{"message_type":"status","percent_done":100.0,"files_done":20,"total_files":20}
-`
-	var statuses []BackupStatus
-	onStatus := func(s BackupStatus) {
-		statuses = append(statuses, s)
-	}
-	stdout := strings.NewReader(lines)
-	_, _, err := parseBackupStream(stdout, onStatus, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(statuses) != 2 {
-		t.Fatalf("expected 2 status callbacks, got %d", len(statuses))
-	}
-	if statuses[0].PercentDone != 50.0 {
-		t.Errorf("expected 50.0%%, got %f", statuses[0].PercentDone)
-	}
-}
-
 func TestParseStream_ExitError(t *testing.T) {
 	lines := `{"message_type":"exit_error","code":1,"message":"repository does not exist"}
 `
 	stdout := strings.NewReader(lines)
-	_, exitErr, err := parseBackupStream(stdout, nil, nil)
+	_, exitErr, err := parseBackupStream(stdout, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -83,7 +62,7 @@ func TestParseStream_ExitError(t *testing.T) {
 
 func TestParseStream_EmptyInput(t *testing.T) {
 	stdout := strings.NewReader("")
-	summary, exitErr, err := parseBackupStream(stdout, nil, nil)
+	summary, exitErr, err := parseBackupStream(stdout, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -21,7 +21,6 @@ import (
 	"github.com/depado/buoy/internal/backup"
 	"github.com/depado/buoy/internal/config"
 	"github.com/depado/buoy/internal/docker"
-	"github.com/depado/buoy/internal/hook"
 	"github.com/depado/buoy/internal/notify"
 	"github.com/depado/buoy/internal/registry"
 	"github.com/depado/buoy/internal/restic"
@@ -37,8 +36,16 @@ var RunCmd = &cobra.Command{
 		if err := conf.Restic.Validate(); err != nil {
 			return err
 		}
+
+		// Logger setup
 		logger := config.NewLogger(&conf)
+		tel, telErr := telemetry.New(logger)
+		if telErr != nil {
+			logger.Warn("telemetry setup failed, continuing without", "error", telErr)
+		}
+		logger = slog.New(tel.LoggerHandler(logger.Handler()))
 		slog.SetDefault(logger)
+
 		logger.Info("starting buoy daemon", "version", version.Version)
 
 		repoRefs, repoLogList := config.ToRepoRefs(conf.Restic.Repos)
@@ -55,14 +62,6 @@ var RunCmd = &cobra.Command{
 			"notify_level", conf.Notify.Level,
 			"db_path", conf.Daemon.DBPath,
 		)
-
-		tel, telErr := telemetry.New(logger)
-		if telErr != nil {
-			logger.Warn("telemetry setup failed, continuing without", "error", telErr)
-		}
-
-		logger = slog.New(tel.LoggerHandler(logger.Handler()))
-		slog.SetDefault(logger)
 
 		reg, err := registry.Open(conf.Daemon.DBPath, repoRefs, logger)
 		if err != nil {
@@ -81,14 +80,14 @@ var RunCmd = &cobra.Command{
 		}
 
 		resticClient := restic.New(conf.Restic.BinaryPath, conf.Restic.Password, conf.Restic.Compression)
-		hookExec := hook.New(dockerClient)
 		notifier, err := notify.New(conf.Notify.Urls, notify.ParseLevel(conf.Notify.Level), logger)
 		if err != nil {
 			return fmt.Errorf("notify: %w", err)
 		}
-		backupTimeout := parseDurationOrDefault(conf.Daemon.BackupTimeout, 1*time.Hour)
-		execTimeout := parseDurationOrDefault(conf.Daemon.ExecTimeout, 5*time.Minute)
-		healthWaitTimeout := parseDurationOrDefault(conf.Daemon.HealthWaitTimeout, 5*time.Minute)
+
+		backupTimeout := config.ParseDurationOrDefault(conf.Daemon.BackupTimeout, 1*time.Hour)
+		execTimeout := config.ParseDurationOrDefault(conf.Daemon.ExecTimeout, 5*time.Minute)
+		healthWaitTimeout := config.ParseDurationOrDefault(conf.Daemon.HealthWaitTimeout, 5*time.Minute)
 		ignoredIDs := &sync.Map{}
 
 		meters := tel.Meters()
@@ -96,7 +95,6 @@ var RunCmd = &cobra.Command{
 		runner := backup.New(&backup.RunnerConfig{
 			Docker:            dockerClient,
 			Restic:            resticClient,
-			Hook:              hookExec,
 			Registry:          reg,
 			ResticConf:        &conf.Restic,
 			DefaultSchedule:   conf.Daemon.DefaultSchedule,
@@ -107,16 +105,32 @@ var RunCmd = &cobra.Command{
 			ExecTimeout:       execTimeout,
 			HealthWaitTimeout: healthWaitTimeout,
 			Meters:            meters,
-			Tracers:           tel.Tracers(),
+			Tracer:            tel.Tracer(),
+		})
+
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := tel.Shutdown(shutdownCtx); err != nil {
+				logger.Debug("telemetry shutdown error", "error", err)
+			}
+		}()
+
+		sched := scheduler.New(&scheduler.Config{
+			Docker:           dockerClient,
+			Runner:           runner,
+			Registry:         reg,
+			Concurrency:      conf.Daemon.Concurrency,
+			DefaultSchedule:  conf.Daemon.DefaultSchedule,
+			DefaultRetention: conf.Daemon.DefaultRetention,
+			BackupTimeout:    backupTimeout,
+			Logger:           logger,
+			Tracer:           tel.Tracer(),
 		})
 
 		meters.RegisterCallbacks(
 			func(ctx context.Context) (int64, error) {
-				containers, err := dockerClient.ListBackupContainers(ctx)
-				if err != nil {
-					return 0, nil
-				}
-				return int64(len(containers)), nil
+				return sched.ContainerCount(), nil
 			},
 			func(ctx context.Context) ([]telemetry.LastSuccessPoint, error) {
 				entries, err := reg.LastSuccessTimestamps()
@@ -135,24 +149,6 @@ var RunCmd = &cobra.Command{
 				return points, nil
 			},
 		)
-		defer func() {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := tel.Shutdown(shutdownCtx); err != nil {
-				logger.Debug("telemetry shutdown error", "error", err)
-			}
-		}()
-		sched := scheduler.New(&scheduler.Config{
-			Docker:           dockerClient,
-			Runner:           runner,
-			Registry:         reg,
-			Concurrency:      conf.Daemon.Concurrency,
-			DefaultSchedule:  conf.Daemon.DefaultSchedule,
-			DefaultRetention: conf.Daemon.DefaultRetention,
-			BackupTimeout:    backupTimeout,
-			Logger:           logger,
-			Tracer:           tel.Tracers().Tracer,
-		})
 
 		var apiSrv *api.Server
 		if conf.API.Enabled {
@@ -165,7 +161,7 @@ var RunCmd = &cobra.Command{
 		}
 
 		if err := func() error {
-			ctx, span := tel.Tracers().Tracer.Start(context.Background(), "buoy.startup_scan")
+			ctx, span := tel.Tracer().Start(context.Background(), "buoy.startup_scan")
 			defer span.End()
 			containers, scanErr := dockerClient.ListBackupContainers(ctx)
 			if scanErr != nil {
@@ -204,7 +200,7 @@ var RunCmd = &cobra.Command{
 		sched.Start()
 
 		var resyncTicker <-chan time.Time
-		if resyncInterval := parseDurationOrDefault(conf.Daemon.ResyncInterval, 0); resyncInterval > 0 {
+		if resyncInterval := config.ParseDurationOrDefault(conf.Daemon.ResyncInterval, 0); resyncInterval > 0 {
 			t := time.NewTicker(resyncInterval)
 			defer t.Stop()
 			resyncTicker = t.C
@@ -223,7 +219,7 @@ var RunCmd = &cobra.Command{
 				logger.Debug("received event", "type", evt.Type, "name", evt.ActorName)
 				switch evt.Type {
 				case docker.EventStart:
-					ctx, span := tel.Tracers().Tracer.Start(context.Background(), "buoy.container.detected",
+					ctx, span := tel.Tracer().Start(context.Background(), "buoy.container.detected",
 						trace.WithAttributes(
 							attribute.String("container", evt.ActorName),
 						),
@@ -284,16 +280,4 @@ func countStacks(containers []docker.Container) int {
 		}
 	}
 	return len(stacks)
-}
-
-func parseDurationOrDefault(s string, defaultDuration time.Duration) time.Duration {
-	if s == "" {
-		return defaultDuration
-	}
-	d, err := time.ParseDuration(s)
-	if err != nil {
-		slog.Warn("invalid duration, using default", "value", s, "default", defaultDuration)
-		return defaultDuration
-	}
-	return d
 }

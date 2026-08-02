@@ -61,6 +61,12 @@ func (r *containerRegistry) unregister(containerID string) bool {
 	return r.unregisterLocked(containerID)
 }
 
+func (r *containerRegistry) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.index)
+}
+
 func (r *containerRegistry) unregisterLocked(containerID string) bool {
 	groupKey, ok := r.index[containerID]
 	if !ok {

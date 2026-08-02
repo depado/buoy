@@ -14,10 +14,10 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/depado/buoy/client"
 	"github.com/depado/buoy/internal/backup"
 	"github.com/depado/buoy/internal/docker"
 	"github.com/depado/buoy/internal/registry"
+	"github.com/depado/buoy/internal/types"
 )
 
 type Scheduler struct {
@@ -130,24 +130,28 @@ func (s *Scheduler) RemoveContainer(containerID string) {
 	s.logger.Debug("removed container from schedule", "id", containerID)
 }
 
+func (s *Scheduler) ContainerCount() int64 {
+	return int64(s.containerReg.count())
+}
+
 func (s *Scheduler) Running() bool {
 	return s.active.Load() > 0
 }
 
-func (s *Scheduler) ListScheduled() []client.ScheduledEntry {
+func (s *Scheduler) ListScheduled() []types.APIScheduledEntry {
 	infos := s.containerReg.listAll()
-	entries := make([]client.ScheduledEntry, 0, len(infos))
+	entries := make([]types.APIScheduledEntry, 0, len(infos))
 	for _, info := range infos {
 		ctr := info.ctr
 		cfg := docker.ParseBackupConfig(ctr.Labels, s.defaultSchedule, s.defaultRetention)
 
 		repoEntries, _ := s.repoReg.GetContainerRepos(ctr.ID)
 
-		var repoList []client.ScheduledRepo
+		var repoList []types.APIScheduledRepo
 		if len(repoEntries) > 0 {
-			repoList = make([]client.ScheduledRepo, 0, len(repoEntries))
+			repoList = make([]types.APIScheduledRepo, 0, len(repoEntries))
 			for _, re := range repoEntries {
-				repoList = append(repoList, client.ScheduledRepo{
+				repoList = append(repoList, types.APIScheduledRepo{
 					URL:          re.URL,
 					RepoName:     re.RepoName,
 					Created:      !re.CreatedAt.IsZero(),
@@ -161,13 +165,13 @@ func (s *Scheduler) ListScheduled() []client.ScheduledEntry {
 				s.logger.Warn("failed to resolve repos for scheduled container", "container", ctr.Name, "error", err)
 				repoURLs = nil
 			}
-			repoList = make([]client.ScheduledRepo, 0, len(repoURLs))
+			repoList = make([]types.APIScheduledRepo, 0, len(repoURLs))
 			for _, ref := range repoURLs {
-				repoList = append(repoList, client.ScheduledRepo{URL: ref.URL, RepoName: ref.Name})
+				repoList = append(repoList, types.APIScheduledRepo{URL: ref.URL, RepoName: ref.Name})
 			}
 		}
 
-		entries = append(entries, client.ScheduledEntry{
+		entries = append(entries, types.APIScheduledEntry{
 			ContainerID:    ctr.ID,
 			ContainerName:  ctr.Name,
 			ComposeProject: ctr.ComposeProject,
