@@ -59,23 +59,20 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*typ
 	l.Debug("running pre-backup hooks", "services", len(fresh))
 	r.runParallelPreHooks(ctx, fresh, containerCfg, l)
 
-	deps := serviceDeps(all)
-	topoOrder := orderForStartFromDeps(deps, func(svc string) {
-		l.Warn("dependency cycle detected", "service", svc)
-	})
-	stopSvc := stopSet(fresh, deps)
+	stopSvc := stopSet(fresh, all)
 	l.Info("stack backup started", "services", len(fresh), "stop_set", slices.Collect(maps.Keys(stopSvc)))
 	services := serviceContainers(all)
+	deps := serviceDeps(all)
 
 	l.Debug("stopping stack services", "count", len(stopSvc))
-	wasStopped, stopFailed, ignored := r.stopStackServices(ctx, services, stopSvc, topoOrder, l)
+	wasStopped, stopFailed, ignored := r.stopStackServices(ctx, services, stopSvc, deps, l)
 	defer r.releaseBatch(ignored)
 
 	l.Debug("backing up stack services", "count", len(fresh))
 	backupErrors, allIssues = r.backupStackServices(ctx, fresh, containerCfg, containerRepos, stopFailed, l)
 
 	l.Debug("starting stack services")
-	r.startStackServices(ctx, services, deps, topoOrder, all, wasStopped, l)
+	r.startStackServices(ctx, services, deps, all, wasStopped, l)
 
 	l.Debug("running post-backup hooks and retention")
 	r.runPostHooksAndRetention(ctx, fresh, containerCfg, containerRepos, backupErrors, &allIssues, l)
@@ -154,16 +151,16 @@ func (r *Runner) stopStackServices(
 	ctx context.Context,
 	services map[string][]*types.Container,
 	stopSvc map[string]bool,
-	topoOrder []string,
+	deps map[string][]depInfo,
 	l *slog.Logger,
 ) (wasStopped, stopFailed, ignored map[string]bool) {
 	wasStopped = make(map[string]bool)
 	stopFailed = make(map[string]bool)
 	ignored = make(map[string]bool)
 
-	stopOrder := make([]string, len(topoOrder))
-	copy(stopOrder, topoOrder)
-	slices.Reverse(stopOrder)
+	stopOrder := orderForStopFromDeps(deps, func(svc string) {
+		l.Warn("dependency cycle detected", "service", svc)
+	})
 
 	ordered := make(map[string]bool, len(stopOrder))
 	for _, svc := range stopOrder {
@@ -249,12 +246,13 @@ func (r *Runner) startStackServices(
 	ctx context.Context,
 	services map[string][]*types.Container,
 	deps map[string][]depInfo,
-	topoOrder []string,
 	all []*types.Container,
 	wasStopped map[string]bool,
 	l *slog.Logger,
 ) {
-	startOrder := topoOrder
+	startOrder := orderForStartFromDeps(deps, func(svc string) {
+		l.Warn("dependency cycle detected", "service", svc)
+	})
 
 	ordered := make(map[string]bool, len(startOrder))
 	for _, svc := range startOrder {
