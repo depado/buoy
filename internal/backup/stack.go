@@ -19,13 +19,25 @@ import (
 )
 
 func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*docker.Container) {
+	start := time.Now()
+	var backupErrors map[string]error
+	var allIssues []string
 	ctx, span := r.tracers.Tracer.Start(ctx, "buoy.stack.backup",
 		trace.WithAttributes(
 			attribute.String("project", project),
 			attribute.Int("services", len(batch)),
 		),
 	)
-	defer span.End()
+	defer func() {
+		r.meters.StackDuration.Record(ctx, time.Since(start).Seconds(),
+			metric.WithAttributes(
+				attribute.String("project", project),
+				attribute.Int("services", len(batch)),
+				attribute.Bool("success", len(backupErrors) == 0),
+			),
+		)
+		span.End()
+	}()
 
 	l := r.logger.With("project", project)
 
@@ -57,7 +69,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*doc
 	defer r.releaseBatch(ignored)
 
 	l.Debug("backing up stack services", "count", len(fresh))
-	backupErrors, allIssues := r.backupStackServices(ctx, fresh, containerCfg, containerRepos, stopFailed, l)
+	backupErrors, allIssues = r.backupStackServices(ctx, fresh, containerCfg, containerRepos, stopFailed, l)
 
 	l.Debug("starting stack services")
 	r.startStackServices(ctx, services, deps, all, wasStopped, l)

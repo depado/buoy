@@ -19,6 +19,7 @@ type MeterSet struct {
 	HookDuration      metric.Float64Histogram
 	RetentionDuration metric.Float64Histogram
 	CheckDuration     metric.Float64Histogram
+	StackDuration     metric.Float64Histogram
 
 	ContainersActive metric.Int64ObservableGauge
 	LastSuccess      metric.Int64ObservableGauge
@@ -160,6 +161,16 @@ func buildMeterSet(m metric.Meter) MeterSet {
 		slog.Warn("failed to create metric", "name", "buoy.check.duration", "error", err)
 	}
 	ms.CheckDuration = checkDuration
+
+	stackDuration, err := m.Float64Histogram("buoy.stack.duration",
+		metric.WithUnit("s"),
+		metric.WithDescription("Total duration of a compose stack backup cycle"),
+		metric.WithExplicitBucketBoundaries(5, 10, 30, 60, 120, 300, 600, 1800, 3600),
+	)
+	if err != nil {
+		slog.Warn("failed to create metric", "name", "buoy.stack.duration", "error", err)
+	}
+	ms.StackDuration = stackDuration
 
 	containersActive, err := m.Int64ObservableGauge("buoy.containers.active",
 		metric.WithUnit("{container}"),
