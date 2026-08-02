@@ -83,7 +83,16 @@ func (r *Runner) waitRunning(ctx context.Context, ctr *types.Container, l *slog.
 	if err := r.waitForEvent(ctx, ctr,
 		[]string{"start", "die"},
 		func(c *types.Container) (bool, error) {
-			return c.State == "running" || c.State == "exited", nil
+			if c.State == "running" {
+				return true, nil
+			}
+			if c.State == "exited" {
+				if c.ExitCode != 0 {
+					return false, fmt.Errorf("%s exited with code %d", ctr.Name, c.ExitCode)
+				}
+				return true, nil
+			}
+			return false, nil
 		}); err != nil {
 		l.Warn("container did not reach running state", "error", err)
 		return
