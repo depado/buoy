@@ -2,6 +2,18 @@
 
 buoyctl communicates with a running buoy daemon via its HTTP API. Set `--api.url` and `--api.token` per command, or use the `BUOY_URL` / `BUOY_TOKEN` environment variables. Defaults to `http://127.0.0.1:8080`.
 
+## `buoyctl version`
+
+Display the version of buoyctl and the daemon (if connected).
+
+```bash
+buoyctl version
+# buoyctl v0.4.0-dev (build abc1234, 2026-01-15)
+
+buoy version
+# buoy v0.4.0-dev (build abc1234, 2026-01-15)
+```
+
 ## `buoyctl repo`
 
 Query and operate on managed repositories.

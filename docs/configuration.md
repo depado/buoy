@@ -137,8 +137,8 @@ buoy exposes a read/write HTTP API on `api.host:api.port` (default `0.0.0.0:8080
 | `GET`  | `/api/v1/health`       | Health check (no auth)                                                  |
 | `GET`  | `/api/v1/scheduled`    | List currently scheduled backups                                        |
 | `GET`  | `/api/v1/repos`        | List all known repos. `?orphaned=true` to show only orphaned.           |
-| `POST` | `/api/v1/repos/check`  | Run `restic check` on all repos. `?read-data=true` for full check.      |
-| `POST` | `/api/v1/repos/stats`  | Aggregate `restic stats` across all repos.                              |
+| `GET`  | `/api/v1/repos/check`  | Run `restic check` on all repos. `?read-data=true` for full check.      |
+| `GET`  | `/api/v1/repos/stats`  | Aggregate `restic stats` across all repos.                              |
 | `POST` | `/api/v1/repos/unlock` | Unlock all repos.                                                       |
 | `POST` | `/api/v1/repos/forget` | Run `restic forget` with `?retention=keep-daily:7,...`.                 |
 | `POST` | `/api/v1/repos/prune`  | Run `restic prune` on all repos.                                        |
