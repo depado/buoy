@@ -23,6 +23,16 @@
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "restic/restic",
       "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^Dockerfile$/"
+      ],
+      "matchStrings": ["ARG RCLONE_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "rclone/rclone",
+      "extractVersionTemplate": "^v(?<version>.*)$"
     }
   ]
 }

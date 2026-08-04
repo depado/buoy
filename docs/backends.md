@@ -9,9 +9,9 @@ buoy supports all [restic backends](https://restic.readthedocs.io/en/stable/030_
 - Google Cloud: `gs:bucket:/path`
 - SFTP: `sftp:user@host:/path`
 - REST server: `rest:https://host:8000/`
-- rclone: `rclone:remote:path`
+- rclone: `rclone:remote:path` - requires `rclone.conf` mounted at `/root/.config/rclone/rclone.conf` and credentials handled by rclone, not restic env vars
 
-Each container backs up to all configured repos simultaneously. Cloud credentials are passed via standard restic environment variables.
+Each container backs up to all configured repos simultaneously. Credentials are passed via standard restic environment variables or rclone config where applicable.
 
 ```yaml
 restic:
