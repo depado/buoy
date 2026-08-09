@@ -242,7 +242,7 @@ func parseLongSyntax(svcName string, m map[string]any, baseDir string, env map[s
 
 	resolved := source
 	if volType == "bind" {
-		resolved = resolvePath(resolveVars(source, env), baseDir)
+		resolved = resolveBindSource(source, baseDir, env)
 	}
 
 	return makeVolumeEntry(svcName, volType, source, resolved, target, mode), true
@@ -266,9 +266,22 @@ var varPattern = regexp.MustCompile(`\$\{(\w+)(?::[?+-]([^}]*))?\}`)
 
 func classifySource(source, baseDir string, env map[string]string) (volType, resolved string) {
 	if strings.HasPrefix(source, "/") || strings.HasPrefix(source, ".") || strings.ContainsRune(source, '/') || strings.ContainsRune(source, '$') {
-		return "bind", resolvePath(resolveVars(source, env), baseDir)
+		return "bind", resolveBindSource(source, baseDir, env)
 	}
 	return "volume", source
+}
+
+// resolveBindSource resolves a bind mount source to a concrete host path.
+// When the source contains a variable that could not be resolved (not in the
+// environment and no usable default), the concrete path is unknowable and
+// the variable path is kept as-is — shortening to a common ancestor is the
+// caller's job.
+func resolveBindSource(source, baseDir string, env map[string]string) string {
+	resolved := resolveVars(source, env)
+	if strings.Contains(resolved, "${") {
+		return resolved
+	}
+	return resolvePath(resolved, baseDir)
 }
 
 func resolveVars(s string, env map[string]string) string {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -46,114 +47,140 @@ host paths and YAML sections.`,
 			return err
 		}
 
-		asJSON, _ := cmd.Flags().GetBool("json")
-		if asJSON {
+		if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			return enc.Encode(stacks)
 		}
 
-		bindMounts := make(map[string]bool)
-		hasVolumes := false
-		var volumeless []string
-		c := gorich.Console()
-
-		for _, stack := range stacks {
-			tbl := table.NewTableWithOptions(nil,
-				table.WithBox(box.SIMPLE),
-				table.WithHeaderStyle(&style.Bold),
-				table.WithTitle("[green]"+stack.Path+"[/]"),
-			)
-			tbl.AddColumn("Service")
-			tbl.AddColumn("Enabled")
-			tbl.AddColumn("Type")
-			tbl.AddColumn("Source")
-			tbl.AddColumn("Destination")
-			tbl.AddColumn("Mode")
-
-			var stackEmpty []string
-
-			for _, s := range stack.Services {
-				cfg := types.ParseBackupConfig(s.Labels, "", "")
-
-				volumeCount := 0
-				for _, e := range s.Volumes {
-					if _, ok := types.MountMatches(types.Mount{Source: e.Source, Destination: e.Destination}, cfg.Include, cfg.Exclude); !ok {
-						continue
-					}
-					volumeCount++
-
-					enabled := "[red]no[/]"
-					if cfg.Enabled {
-						enabled = "[green]yes[/]"
-					}
-
-					source := e.Source
-					if cfg.Enabled && e.Type == "bind" && !isBuiltinMount(e.Source) {
-						source = "[bold green]" + e.Source + "[/]"
-					}
-
-					tbl.AddRow(e.Service, enabled, e.Type, source, e.Destination, e.Mode)
-
-					if cfg.Enabled {
-						if e.Type == "bind" {
-							bindMounts[e.Resolved] = true
-						}
-						if e.Type == "volume" {
-							hasVolumes = true
-						}
-					}
-				}
-
-				if cfg.Enabled && volumeCount == 0 {
-					stackEmpty = append(stackEmpty, s.Name)
-				}
-			}
-
-			for _, svc := range stackEmpty {
-				tbl.AddRow(svc, "[green]yes[/]", "[yellow](none)[/]", "-", "-", "-")
-				volumeless = append(volumeless, stack.Path+" / "+svc)
-			}
-
-			c.Render(tbl)
-			c.Println()
-		}
-
-		if len(volumeless) > 0 {
-			fmt.Println()
-			tbl := table.NewTableWithOptions(nil,
-				table.WithBox(box.SIMPLE),
-				table.WithHeaderStyle(&style.Bold),
-				table.WithTitle("[bold yellow]Enabled services with no volumes[/]"),
-			)
-			tbl.AddColumn("Stack")
-			tbl.AddColumn("Service")
-			for _, s := range volumeless {
-				parts := strings.SplitN(s, " / ", 2)
-				tbl.AddRow(parts[0], parts[1])
-			}
-			gorich.Console().Render(tbl)
-		}
-
-		needsDockerVolumes := hasVolumes && !bindMounts["/var/lib/docker/volumes"]
-
-		if len(bindMounts) == 0 && !needsDockerVolumes {
-			return nil
-		}
-
-		fmt.Println()
-		gorich.Println("[bold]Add to buoy's compose service volumes:[/]")
-		fmt.Println("volumes:")
-		paths := sortedKeys(bindMounts)
-		for _, src := range paths {
-			fmt.Printf("  - %s:%s:ro\n", src, src)
-		}
-		if needsDockerVolumes {
-			fmt.Println("  - /var/lib/docker/volumes:/var/lib/docker/volumes:ro")
-		}
+		mounts, hasVolumes, _ := scanStacks(stacks)
+		renderSuggestions(mounts, hasVolumes)
 
 		return nil
 	},
+}
+
+// volumelessService is an enabled service that has no backup-eligible volumes.
+type volumelessService struct {
+	stack   string
+	service string
+}
+
+// scanStacks renders one table per stack and collects bind mount sources,
+// named-volume presence, and services without backup-eligible volumes.
+func scanStacks(stacks []compose.StackInfo) (bindMounts map[string]bool, hasVolumes bool, volumeless []volumelessService) {
+	bindMounts = make(map[string]bool)
+	c := gorich.Console()
+
+	for _, stack := range stacks {
+		tbl := table.NewTableWithOptions(nil,
+			table.WithBox(box.SIMPLE),
+			table.WithHeaderStyle(&style.Bold),
+			table.WithTitle("[green]"+stack.Path+"[/]"),
+		)
+		tbl.AddColumn("Service")
+		tbl.AddColumn("Enabled")
+		tbl.AddColumn("Type")
+		tbl.AddColumn("Source")
+		tbl.AddColumn("Destination")
+		tbl.AddColumn("Mode")
+
+		var stackEmpty []volumelessService
+
+		for _, s := range stack.Services {
+			cfg := types.ParseBackupConfig(s.Labels, "", "")
+
+			volumeCount := 0
+			for _, e := range s.Volumes {
+				if _, ok := types.MountMatches(types.Mount{Source: e.Source, Destination: e.Destination}, cfg.Include, cfg.Exclude); !ok {
+					continue
+				}
+				volumeCount++
+
+				enabled := "[red]no[/]"
+				if cfg.Enabled {
+					enabled = "[green]yes[/]"
+				}
+
+				source := e.Source
+				if cfg.Enabled && e.Type == "bind" && !isBuiltinMount(e.Source) {
+					source = "[bold green]" + e.Source + "[/]"
+				}
+
+				tbl.AddRow(e.Service, enabled, e.Type, source, e.Destination, e.Mode)
+
+				if cfg.Enabled {
+					switch e.Type {
+					case "bind":
+						bindMounts[e.Resolved] = true
+					case "volume":
+						hasVolumes = true
+					}
+				}
+			}
+
+			if cfg.Enabled && volumeCount == 0 {
+				stackEmpty = append(stackEmpty, volumelessService{stack: stack.Path, service: s.Name})
+			}
+		}
+
+		for _, v := range stackEmpty {
+			tbl.AddRow(v.service, "[green]yes[/]", "[yellow](none)[/]", "-", "-", "-")
+			volumeless = append(volumeless, v)
+		}
+
+		c.Render(tbl)
+		c.Println()
+	}
+
+	if len(volumeless) > 0 {
+		fmt.Println()
+		tbl := table.NewTableWithOptions(nil,
+			table.WithBox(box.SIMPLE),
+			table.WithHeaderStyle(&style.Bold),
+			table.WithTitle("[bold yellow]Enabled services with no volumes[/]"),
+		)
+		tbl.AddColumn("Stack")
+		tbl.AddColumn("Service")
+		for _, v := range volumeless {
+			tbl.AddRow(v.stack, v.service)
+		}
+		c.Render(tbl)
+	}
+
+	return
+}
+
+// renderSuggestions prints the exact mount list and, when a common ancestor
+// exists, the collapsed alternative.
+func renderSuggestions(bindMounts map[string]bool, hasVolumes bool) {
+	needsDockerVolumes := hasVolumes && !bindMounts["/var/lib/docker/volumes"]
+	if len(bindMounts) == 0 && !needsDockerVolumes {
+		return
+	}
+
+	mounts := sortedKeys(bindMounts)
+	if needsDockerVolumes {
+		mounts = append(mounts, "/var/lib/docker/volumes")
+		sort.Strings(mounts)
+	}
+
+	fmt.Println()
+	gorich.Println("[bold]Add to buoy's compose service volumes:[/]")
+	printMounts(mounts)
+
+	if collapsed := collapseMounts(mounts); !slices.Equal(collapsed, mounts) {
+		fmt.Println()
+		gorich.Println("[bold]Suggested collapsed mounts (alternative to the above):[/]")
+		printMounts(collapsed)
+	}
+}
+
+func printMounts(mounts []string) {
+	fmt.Println("volumes:")
+	for _, src := range mounts {
+		fmt.Printf("  - %s:%s:ro\n", src, src)
+	}
 }
 
 func sortedKeys(m map[string]bool) []string {
@@ -163,6 +190,75 @@ func sortedKeys(m map[string]bool) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// collapseMounts shortens a set of mount sources to their common path
+// ancestors. When several paths share a common ancestor, mounting that
+// ancestor read-only covers them all: e.g. "${DOCKERDATA_DIR:-.}/beszel"
+// and "${DOCKERDATA_DIR:-.}/gotify" collapse to "${DOCKERDATA_DIR:-.}".
+// A path without siblings keeps its full form.
+func collapseMounts(paths []string) []string {
+	if len(paths) < 2 {
+		return paths
+	}
+	remaining := append([]string(nil), paths...)
+	out := make([]string, 0, len(remaining))
+
+	for len(remaining) > 0 {
+		best, bestCover, bestLen := "", 0, 0
+		for i := 0; i < len(remaining); i++ {
+			for j := i + 1; j < len(remaining); j++ {
+				anc := longestCommonPathPrefix(remaining[i], remaining[j])
+				if anc == "" || anc == "/" {
+					continue
+				}
+				cover := 0
+				for _, p := range remaining {
+					if isUnder(p, anc) {
+						cover++
+					}
+				}
+				l := len(strings.Split(anc, "/"))
+				if cover > bestCover || (cover == bestCover && l > bestLen) {
+					best, bestCover, bestLen = anc, cover, l
+				}
+			}
+		}
+		if bestCover < 2 {
+			out = append(out, remaining...)
+			break
+		}
+		out = append(out, best)
+		var kept []string
+		for _, p := range remaining {
+			if !isUnder(p, best) {
+				kept = append(kept, p)
+			}
+		}
+		remaining = kept
+	}
+	sort.Strings(out)
+	return out
+}
+
+// longestCommonPathPrefix returns the longest common ancestor directory of
+// two paths, compared segment by segment.
+func longestCommonPathPrefix(a, b string) string {
+	as := strings.Split(a, "/")
+	bs := strings.Split(b, "/")
+	var out []string
+	for i := 0; i < len(as) && i < len(bs); i++ {
+		if as[i] != bs[i] {
+			break
+		}
+		out = append(out, as[i])
+	}
+	return strings.Join(out, "/")
+}
+
+// isUnder reports whether path equals ancestor or is nested below it.
+func isUnder(path, ancestor string) bool {
+	return path == ancestor || strings.HasPrefix(path, ancestor+"/")
 }
 
 func isBuiltinMount(source string) bool {

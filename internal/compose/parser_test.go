@@ -72,6 +72,14 @@ func TestParseShortSyntax(t *testing.T) {
 			ok:      true,
 		},
 		{
+			name:    "unresolvable variable bind mount keeps variable path",
+			svcName: "web",
+			spec:    "${DOCKERDATA_DIR:-.}/beszel:/data",
+			baseDir: "/app",
+			want:    VolumeEntry{Service: "web", Type: "bind", Source: "${DOCKERDATA_DIR:-.}/beszel", Resolved: "${DOCKERDATA_DIR:-.}/beszel", Destination: "/data", Mode: "rw"},
+			ok:      true,
+		},
+		{
 			name:    "invalid short syntax (no target)",
 			svcName: "bad",
 			spec:    "only_source",
@@ -744,8 +752,8 @@ services:
 	if v2.Source != "${BASE}/config" {
 		t.Errorf("source: got %q", v2.Source)
 	}
-	if v2.Resolved != filepath.Join(dir, "${BASE}/config") {
-		t.Errorf("resolved: got %q", v2.Resolved)
+	if v2.Resolved != "${BASE}/config" {
+		t.Errorf("resolved: got %q, want %q", v2.Resolved, "${BASE}/config")
 	}
 
 	v3 := findVol("volume", "/cache")
