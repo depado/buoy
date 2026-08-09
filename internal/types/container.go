@@ -155,8 +155,8 @@ func MountMatches(m Mount, include []MountEntry, exclude []string) (matchedName 
 // ParseBackupConfig extracts backup configuration from Docker labels.
 func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetention string) BackupConfig {
 	cfg := BackupConfig{
-		StopTimeout: 30 * time.Second,
-		MountOpts:   make(map[string]mountBackupOpts),
+		StopTimeout:  30 * time.Second,
+		MountOpts:    make(map[string]mountBackupOpts),
 		RepoTimeouts: make(map[string]time.Duration),
 	}
 
