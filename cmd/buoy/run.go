@@ -87,6 +87,7 @@ var RunCmd = &cobra.Command{
 		}
 
 		backupTimeout := config.ParseDurationOrDefault(conf.Daemon.BackupTimeout, 1*time.Hour)
+		repoTimeout := config.ParseDurationOrDefault(conf.Daemon.RepoTimeout, 30*time.Minute)
 		execTimeout := config.ParseDurationOrDefault(conf.Daemon.ExecTimeout, 5*time.Minute)
 		healthWaitTimeout := config.ParseDurationOrDefault(conf.Daemon.HealthWaitTimeout, 5*time.Minute)
 		ignoredIDs := &sync.Map{}
@@ -105,6 +106,7 @@ var RunCmd = &cobra.Command{
 			Logger:            logger,
 			ExecTimeout:       execTimeout,
 			HealthWaitTimeout: healthWaitTimeout,
+			RepoTimeout:       repoTimeout,
 			Meters:            meters,
 			Tracer:            tel.Tracer(),
 		})

@@ -17,6 +17,7 @@ daemon:
   exec_timeout: "5m"
   health_wait_timeout: "5m"
   backup_timeout: "1h"
+  repo_timeout: "30m"
   check_schedule: "@weekly"
   db_path: "./buoy.db"
 

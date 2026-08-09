@@ -52,6 +52,12 @@ func (r *Runner) stopContainer(ctx context.Context, ctr *types.Container, cfg ty
 func (r *Runner) startContainer(ctx context.Context, ctr *types.Container, l *slog.Logger) {
 	startTime := time.Now()
 	startErr := error(nil)
+	// Detach from the backup deadline: the container must be restarted even
+	// if the backup timed out, otherwise it is left stopped. Bound the
+	// restart with its own timeout instead.
+	ctx = context.WithoutCancel(ctx)
+	ctx, cancel := context.WithTimeout(ctx, r.healthWaitTimeout)
+	defer cancel()
 	ctx, span := r.tracer.Start(ctx, "buoy.container.start",
 		trace.WithAttributes(containerAttrs(ctr)...),
 	)

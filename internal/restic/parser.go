@@ -15,9 +15,10 @@ type message struct {
 }
 
 // ParseBackupStream reads restic's JSON line output from stdout.
-// It calls onError for each file-level error.
+// It calls onError for each file-level error and onStatus for each progress
+// line (the last one is what an interrupted backup should report).
 // Returns the final backup summary and any fatal exit error.
-func parseBackupStream(stdout io.Reader, onError func(BackupError)) (*BackupSummary, *ExitError, error) {
+func parseBackupStream(stdout io.Reader, onError func(BackupError), onStatus func(*BackupStatus)) (*BackupSummary, *ExitError, error) {
 	var summary *BackupSummary
 	var exitErr *ExitError
 
@@ -35,6 +36,11 @@ func parseBackupStream(stdout io.Reader, onError func(BackupError)) (*BackupSumm
 			var s BackupSummary
 			if err := json.Unmarshal(line, &s); err == nil {
 				summary = &s
+			}
+		case "status":
+			var st BackupStatus
+			if err := json.Unmarshal(line, &st); err == nil && onStatus != nil {
+				onStatus(&st)
 			}
 		case "error":
 			var e BackupError

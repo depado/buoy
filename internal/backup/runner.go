@@ -34,6 +34,7 @@ type Runner struct {
 	logger            *slog.Logger
 	execTimeout       time.Duration
 	healthWaitTimeout time.Duration
+	repoTimeout       time.Duration
 	meters            telemetry.MeterSet
 	tracer            trace.Tracer
 }
@@ -50,6 +51,7 @@ type RunnerConfig struct {
 	Logger            *slog.Logger
 	ExecTimeout       time.Duration
 	HealthWaitTimeout time.Duration
+	RepoTimeout       time.Duration
 	Meters            telemetry.MeterSet
 	Tracer            trace.Tracer
 }
@@ -67,6 +69,7 @@ func New(cfg *RunnerConfig) *Runner {
 		logger:            cfg.Logger,
 		execTimeout:       cfg.ExecTimeout,
 		healthWaitTimeout: cfg.HealthWaitTimeout,
+		repoTimeout:       cfg.RepoTimeout,
 		meters:            cfg.Meters,
 		tracer:            cfg.Tracer,
 	}
@@ -115,6 +118,9 @@ func (r *Runner) Run(ctx context.Context, ctr *types.Container) (runErr error) {
 	r.runPreHooks(ctx, fresh, cfg, l)
 
 	l.Info("backup started", "stop", cfg.StopBefore, "mounts", len(fresh.Mounts), "repos", len(repos))
+	if d, ok := ctx.Deadline(); ok {
+		l.Info("backup budget", "deadline", d, "remaining", time.Until(d).Round(time.Second))
+	}
 	l.Debug("pre-hooks completed, proceeding with backup")
 	wasRunning := false
 	if cfg.StopBefore {

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/depado/buoy/internal/types"
 )
@@ -126,10 +127,14 @@ func (c *Client) Backup(ctx context.Context, repo string, paths []string, opts B
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start restic backup: %w", err)
 	}
+	start := time.Now()
 
 	var errors []BackupError
+	var lastStatus *BackupStatus
 	summary, exitErr, parseErr := parseBackupStream(stdout, func(e BackupError) {
 		errors = append(errors, e)
+	}, func(s *BackupStatus) {
+		lastStatus = s
 	})
 
 	waitErr := cmd.Wait()
@@ -141,6 +146,13 @@ func (c *Client) Backup(ctx context.Context, repo string, paths []string, opts B
 		return summary, fmt.Errorf("restic backup: %s", exitErr.Message)
 	}
 	if waitErr != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			elapsed := time.Since(start).Round(time.Second)
+			if lastStatus != nil {
+				return summary, fmt.Errorf("restic backup: %v after %s (last progress: %s)", ctxErr, elapsed, lastStatus)
+			}
+			return summary, fmt.Errorf("restic backup: %v after %s", ctxErr, elapsed)
+		}
 		stderr := strings.TrimSpace(stderrBuf.String())
 		if e := tryParseExitError(stderr); e != nil {
 			return summary, fmt.Errorf("restic backup: %s", e.Message)

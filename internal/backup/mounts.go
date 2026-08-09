@@ -21,9 +21,17 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *types.Container, cfg typ
 	var failures []mountError
 
 	for _, ref := range repos {
-		ctx := restic.WithPassword(ctx, r.effectivePassword(cfg, ref.Name))
+		// Give each repo its own budget so one slow repo can't starve the
+		// others. The parent deadline still caps the whole cycle.
+		repoCtx := ctx
+		cancel := func() {}
+		if r.repoTimeout > 0 {
+			repoCtx, cancel = context.WithTimeout(ctx, r.repoTimeout)
+		}
+		repoCtx = restic.WithPassword(repoCtx, r.effectivePassword(cfg, ref.Name))
 
-		if !r.ensureRepo(ctx, ref.URL, logger, &failures) {
+		if !r.ensureRepo(repoCtx, ref.URL, logger, &failures) {
+			cancel()
 			continue
 		}
 
@@ -43,7 +51,7 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *types.Container, cfg typ
 
 			mountCount++
 			repoMounts++
-			if repoErr := r.backupSingleMount(ctx, ref.URL, ctr, m, matchedName, cfg, l); repoErr != nil {
+			if repoErr := r.backupSingleMount(repoCtx, ref.URL, ctr, m, matchedName, cfg, l); repoErr != nil {
 				failures = append(failures, *repoErr)
 				repoOK = false
 			}
@@ -51,6 +59,7 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *types.Container, cfg typ
 		if err := r.repoReg.MarkBackupComplete(ref.URL, repoOK); err != nil {
 			logger.Warn("failed to persist backup status", "repo", ref.URL, "error", err)
 		}
+		cancel()
 	}
 
 	if mountCount == 0 {
