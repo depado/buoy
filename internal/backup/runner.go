@@ -150,7 +150,7 @@ func (r *Runner) Run(ctx context.Context, ctr *types.Container) (runErr error) {
 	)
 
 	if wasRunning {
-		r.startContainer(ctx, fresh, l)
+		r.startContainer(ctx, fresh, cfg, l)
 	}
 
 	l.Debug("running post-backup hooks")
@@ -186,6 +186,28 @@ func (r *Runner) effectivePassword(cfg types.BackupConfig, repoName string) stri
 		return cfg.Password
 	}
 	return r.resticConf.PasswordFor(repoName)
+}
+
+func (r *Runner) effectiveRepoTimeout(cfg types.BackupConfig, repoName string) time.Duration {
+	if t, ok := cfg.RepoTimeouts[repoName]; ok && t > 0 {
+		return t
+	}
+	if cfg.RepoTimeout > 0 {
+		return cfg.RepoTimeout
+	}
+	if repo, ok := r.resticConf.Repos[repoName]; ok && repo.Timeout != "" {
+		if d, err := time.ParseDuration(repo.Timeout); err == nil && d > 0 {
+			return d
+		}
+	}
+	return r.repoTimeout
+}
+
+func (r *Runner) effectiveHealthWaitTimeout(cfg types.BackupConfig) time.Duration {
+	if cfg.HealthWaitTimeout > 0 {
+		return cfg.HealthWaitTimeout
+	}
+	return r.healthWaitTimeout
 }
 
 func (r *Runner) ignore(id string)  { r.ignoredIDs.Store(id, true) }

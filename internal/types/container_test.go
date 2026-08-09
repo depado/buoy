@@ -276,6 +276,48 @@ func TestParseBackupConfig(t *testing.T) {
 			},
 		},
 		{
+			name:   "buoy.repo-timeout=45m",
+			labels: map[string]string{"buoy.repo-timeout": "45m"},
+			want: BackupConfig{
+				StopTimeout: 30 * time.Second,
+				RepoTimeout: 45 * time.Minute,
+				Retention:   RetentionPolicy{},
+				MountOpts:   make(map[string]mountBackupOpts),
+			},
+		},
+		{
+			name:   "invalid repo-timeout -> zero (daemon default)",
+			labels: map[string]string{"buoy.repo-timeout": "not_a_duration"},
+			want: BackupConfig{
+				StopTimeout:  30 * time.Second,
+				Retention:    RetentionPolicy{},
+				MountOpts:    make(map[string]mountBackupOpts),
+				RepoTimeouts: make(map[string]time.Duration),
+			},
+		},
+		{
+			name:   "per-repo timeout label",
+			labels: map[string]string{"buoy.repo-timeout.b2": "2h", "buoy.repo-timeout.invalid": "nope"},
+			want: BackupConfig{
+				StopTimeout: 30 * time.Second,
+				RepoTimeouts: map[string]time.Duration{
+					"b2": 2 * time.Hour,
+				},
+				Retention: RetentionPolicy{},
+				MountOpts: make(map[string]mountBackupOpts),
+			},
+		},
+		{
+			name:   "buoy.health-wait-timeout=10m",
+			labels: map[string]string{"buoy.health-wait-timeout": "10m"},
+			want: BackupConfig{
+				StopTimeout:       30 * time.Second,
+				HealthWaitTimeout: 10 * time.Minute,
+				Retention:         RetentionPolicy{},
+				MountOpts:         make(map[string]mountBackupOpts),
+			},
+		},
+		{
 			name:   "buoy.include (unnamed)",
 			labels: map[string]string{"buoy.include": "vol1, /data"},
 			want: BackupConfig{
@@ -449,6 +491,21 @@ func TestParseBackupConfig(t *testing.T) {
 			}
 			if got.StopTimeout != tt.want.StopTimeout {
 				t.Errorf("StopTimeout: got %v, want %v", got.StopTimeout, tt.want.StopTimeout)
+			}
+			if got.RepoTimeout != tt.want.RepoTimeout {
+				t.Errorf("RepoTimeout: got %v, want %v", got.RepoTimeout, tt.want.RepoTimeout)
+			}
+			if len(got.RepoTimeouts) != len(tt.want.RepoTimeouts) {
+				t.Errorf("RepoTimeouts: got %v, want %v", got.RepoTimeouts, tt.want.RepoTimeouts)
+			} else {
+				for k, v := range tt.want.RepoTimeouts {
+					if got.RepoTimeouts[k] != v {
+						t.Errorf("RepoTimeouts[%q]: got %v, want %v", k, got.RepoTimeouts[k], v)
+					}
+				}
+			}
+			if got.HealthWaitTimeout != tt.want.HealthWaitTimeout {
+				t.Errorf("HealthWaitTimeout: got %v, want %v", got.HealthWaitTimeout, tt.want.HealthWaitTimeout)
 			}
 			if len(got.Include) != len(tt.want.Include) {
 				t.Errorf("Include: got %v, want %v", got.Include, tt.want.Include)

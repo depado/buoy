@@ -49,14 +49,14 @@ func (r *Runner) stopContainer(ctx context.Context, ctr *types.Container, cfg ty
 	return true, nil
 }
 
-func (r *Runner) startContainer(ctx context.Context, ctr *types.Container, l *slog.Logger) {
+func (r *Runner) startContainer(ctx context.Context, ctr *types.Container, cfg types.BackupConfig, l *slog.Logger) {
 	startTime := time.Now()
 	startErr := error(nil)
 	// Detach from the backup deadline: the container must be restarted even
 	// if the backup timed out, otherwise it is left stopped. Bound the
 	// restart with its own timeout instead.
 	ctx = context.WithoutCancel(ctx)
-	ctx, cancel := context.WithTimeout(ctx, r.healthWaitTimeout)
+	ctx, cancel := context.WithTimeout(ctx, r.effectiveHealthWaitTimeout(cfg))
 	defer cancel()
 	ctx, span := r.tracer.Start(ctx, "buoy.container.start",
 		trace.WithAttributes(containerAttrs(ctr)...),
@@ -78,12 +78,12 @@ func (r *Runner) startContainer(ctx context.Context, ctr *types.Container, l *sl
 		return
 	}
 	l.Info("container started")
-	r.waitRunning(ctx, ctr, l)
+	r.waitRunning(ctx, ctr, cfg, l)
 }
 
-func (r *Runner) waitRunning(ctx context.Context, ctr *types.Container, l *slog.Logger) {
-	l.Debug("waiting for container to be running", "timeout", r.healthWaitTimeout)
-	ctx, cancel := context.WithTimeout(ctx, r.healthWaitTimeout)
+func (r *Runner) waitRunning(ctx context.Context, ctr *types.Container, cfg types.BackupConfig, l *slog.Logger) {
+	l.Debug("waiting for container to be running", "timeout", r.effectiveHealthWaitTimeout(cfg))
+	ctx, cancel := context.WithTimeout(ctx, r.effectiveHealthWaitTimeout(cfg))
 	defer cancel()
 
 	if err := r.waitForEvent(ctx, ctr,

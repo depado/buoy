@@ -42,6 +42,7 @@ type DockerConf struct {
 type RepoConfig struct {
 	URL      string `mapstructure:"url"`
 	Password string `mapstructure:"password"`
+	Timeout  string `mapstructure:"timeout"`
 }
 
 type ResticConf struct {

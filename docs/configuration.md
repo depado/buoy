@@ -31,6 +31,7 @@ restic:
   repos:
     local:
       url: /backup
+      timeout: 30m
 
 api:
   enabled: true

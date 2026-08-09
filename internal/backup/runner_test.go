@@ -2,6 +2,7 @@ package backup
 
 import (
 	"testing"
+	"time"
 
 	"github.com/depado/buoy/internal/config"
 	"github.com/depado/buoy/internal/types"
@@ -103,6 +104,39 @@ func TestEffectivePassword(t *testing.T) {
 			got := r.effectivePassword(tt.cfg, tt.repoName)
 			if got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEffectiveRepoTimeout(t *testing.T) {
+	rc := &config.ResticConf{
+		Repos: map[string]config.RepoConfig{
+			"b2":    {URL: "b2:bucket", Timeout: "45m"},
+			"local": {URL: "/backup"},
+		},
+	}
+	r := &Runner{resticConf: rc, repoTimeout: 30 * time.Minute}
+
+	tests := []struct {
+		name     string
+		cfg      types.BackupConfig
+		repoName string
+		want     time.Duration
+	}{
+		{"per-repo label wins", types.BackupConfig{RepoTimeouts: map[string]time.Duration{"b2": 2 * time.Hour}, RepoTimeout: 1 * time.Hour}, "b2", 2 * time.Hour},
+		{"container label beats repo config", types.BackupConfig{RepoTimeout: 1 * time.Hour}, "b2", 1 * time.Hour},
+		{"repo config beats global", types.BackupConfig{}, "b2", 45 * time.Minute},
+		{"unknown repo falls back to global", types.BackupConfig{}, "sftp", 30 * time.Minute},
+		{"per-repo label on other repo ignored", types.BackupConfig{RepoTimeouts: map[string]time.Duration{"b2": 2 * time.Hour}}, "local", 30 * time.Minute},
+		{"zero label values fall through", types.BackupConfig{RepoTimeouts: map[string]time.Duration{"b2": 0}}, "b2", 45 * time.Minute},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := r.effectiveRepoTimeout(tt.cfg, tt.repoName)
+			if got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
 			}
 		})
 	}

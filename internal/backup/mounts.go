@@ -25,8 +25,8 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *types.Container, cfg typ
 		// others. The parent deadline still caps the whole cycle.
 		repoCtx := ctx
 		cancel := func() {}
-		if r.repoTimeout > 0 {
-			repoCtx, cancel = context.WithTimeout(ctx, r.repoTimeout)
+		if t := r.effectiveRepoTimeout(cfg, ref.Name); t > 0 {
+			repoCtx, cancel = context.WithTimeout(ctx, t)
 		}
 		repoCtx = restic.WithPassword(repoCtx, r.effectivePassword(cfg, ref.Name))
 

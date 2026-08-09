@@ -276,7 +276,8 @@ func (r *Runner) startStackServices(
 				continue
 			}
 			cl := l.With("service", ctr.ComposeService)
-			r.startContainer(ctx, ctr, cl)
+			cfg := r.parseConfig(ctr.Labels)
+			r.startContainer(ctx, ctr, cfg, cl)
 		}
 	}
 }
@@ -329,7 +330,8 @@ func (r *Runner) waitForDeps(ctx context.Context, deps map[string][]depInfo, ctr
 		for _, ctr := range depCtrs {
 			l := logger.With("service", dep.Name)
 			l.Debug("waiting for dependency", "condition", dep.Condition)
-			if err := r.waitForCondition(ctx, ctr, dep.Condition); err != nil {
+			cfg := r.parseConfig(ctr.Labels)
+			if err := r.waitForCondition(ctx, ctr, dep.Condition, r.effectiveHealthWaitTimeout(cfg)); err != nil {
 				return err
 			}
 			if dep.Condition == serviceHealthy {
@@ -411,8 +413,8 @@ func eventsForCondition(c depCondition) []string {
 	return nil
 }
 
-func (r *Runner) waitForCondition(ctx context.Context, ctr *types.Container, condition depCondition) error {
-	ctx, cancel := context.WithTimeout(ctx, r.healthWaitTimeout)
+func (r *Runner) waitForCondition(ctx context.Context, ctr *types.Container, condition depCondition, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	eventTypes := eventsForCondition(condition)

@@ -51,6 +51,16 @@ type BackupConfig struct {
 	StopBefore  bool
 	StopTimeout time.Duration
 
+	// Per-container overrides for daemon-level timeouts. Zero means "use the
+	// daemon config value".
+	RepoTimeout       time.Duration
+	HealthWaitTimeout time.Duration
+
+	// RepoTimeouts holds per-repo overrides from buoy.repo-timeout.<name>
+	// labels. Zero values mean "unset" (fall back to the container label,
+	// repo config, then daemon config).
+	RepoTimeouts map[string]time.Duration
+
 	Include []MountEntry
 	Exclude []string
 
@@ -147,6 +157,7 @@ func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetenti
 	cfg := BackupConfig{
 		StopTimeout: 30 * time.Second,
 		MountOpts:   make(map[string]mountBackupOpts),
+		RepoTimeouts: make(map[string]time.Duration),
 	}
 
 	cfg.Enabled, _ = strconv.ParseBool(labels["buoy.enabled"])
@@ -165,6 +176,17 @@ func ParseBackupConfig(labels map[string]string, defaultSchedule, defaultRetenti
 	if v, ok := labels["buoy.stop-timeout"]; ok {
 		if d, err := time.ParseDuration(v); err == nil {
 			cfg.StopTimeout = d
+		}
+	}
+	if v, ok := labels["buoy.repo-timeout"]; ok {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.RepoTimeout = d
+		}
+	}
+	parseRepoTimeoutLabels(labels, cfg.RepoTimeouts)
+	if v, ok := labels["buoy.health-wait-timeout"]; ok {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.HealthWaitTimeout = d
 		}
 	}
 
@@ -255,6 +277,19 @@ func parseBackupMountOpts(labels map[string]string, opts map[string]mountBackupO
 			continue
 		}
 		opts[name] = entry
+	}
+}
+
+func parseRepoTimeoutLabels(labels map[string]string, out map[string]time.Duration) {
+	const prefix = "buoy.repo-timeout."
+	for k, v := range labels {
+		name, ok := strings.CutPrefix(k, prefix)
+		if !ok || name == "" {
+			continue
+		}
+		if d, err := time.ParseDuration(v); err == nil {
+			out[name] = d
+		}
 	}
 }
 
