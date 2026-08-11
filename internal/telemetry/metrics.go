@@ -12,15 +12,14 @@ import (
 type MeterSet struct {
 	meter metric.Meter
 
-	BackupDuration    metric.Float64Histogram
+	BackupDuration    metric.Float64Gauge
 	BackupsTotal      metric.Int64Counter
-	ContainerStopDur  metric.Float64Histogram
-	ContainerStartDur metric.Float64Histogram
-	HookDuration      metric.Float64Histogram
-	RetentionDuration metric.Float64Histogram
-	CheckDuration     metric.Float64Histogram
-	StackDuration     metric.Float64Histogram
-	LastDuration      metric.Float64Gauge
+	ContainerStopDur  metric.Float64Gauge
+	ContainerStartDur metric.Float64Gauge
+	HookDuration      metric.Float64Gauge
+	RetentionDuration metric.Float64Gauge
+	CheckDuration     metric.Float64Gauge
+	StackDuration     metric.Float64Gauge
 
 	ContainersActive metric.Int64ObservableGauge
 	LastSuccess      metric.Int64ObservableGauge
@@ -94,10 +93,9 @@ func (ms MeterSet) RegisterCallbacks(active ActiveCallback, lastSuccess LastSucc
 func buildMeterSet(m metric.Meter) MeterSet {
 	ms := MeterSet{meter: m}
 
-	backupDuration, err := m.Float64Histogram("buoy.backup.duration",
+	backupDuration, err := m.Float64Gauge("buoy.backup.duration",
 		metric.WithUnit("s"),
-		metric.WithDescription("Duration of restic backup per mount"),
-		metric.WithExplicitBucketBoundaries(1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600),
+		metric.WithDescription("Duration of the last completed backup run per repo"),
 	)
 	if err != nil {
 		slog.Warn("failed to create metric", "name", "buoy.backup.duration", "error", err)
@@ -113,60 +111,54 @@ func buildMeterSet(m metric.Meter) MeterSet {
 	}
 	ms.BackupsTotal = backupsTotal
 
-	containerStopDur, err := m.Float64Histogram("buoy.container.stop.duration",
+	containerStopDur, err := m.Float64Gauge("buoy.container.stop.duration",
 		metric.WithUnit("s"),
-		metric.WithDescription("Duration of container stop operations"),
-		metric.WithExplicitBucketBoundaries(0.1, 0.5, 1, 2, 5, 10, 30, 60, 120),
+		metric.WithDescription("Duration of the last container stop operation"),
 	)
 	if err != nil {
 		slog.Warn("failed to create metric", "name", "buoy.container.stop.duration", "error", err)
 	}
 	ms.ContainerStopDur = containerStopDur
 
-	containerStartDur, err := m.Float64Histogram("buoy.container.start.duration",
+	containerStartDur, err := m.Float64Gauge("buoy.container.start.duration",
 		metric.WithUnit("s"),
-		metric.WithDescription("Duration of container start operations"),
-		metric.WithExplicitBucketBoundaries(0.1, 0.5, 1, 2, 5, 10, 30, 60, 120),
+		metric.WithDescription("Duration of the last container start operation"),
 	)
 	if err != nil {
 		slog.Warn("failed to create metric", "name", "buoy.container.start.duration", "error", err)
 	}
 	ms.ContainerStartDur = containerStartDur
 
-	hookDuration, err := m.Float64Histogram("buoy.hook.duration",
+	hookDuration, err := m.Float64Gauge("buoy.hook.duration",
 		metric.WithUnit("s"),
-		metric.WithDescription("Duration of hook command execution"),
-		metric.WithExplicitBucketBoundaries(0.1, 0.5, 1, 2, 5, 10, 30, 60, 120),
+		metric.WithDescription("Duration of the last hook command execution"),
 	)
 	if err != nil {
 		slog.Warn("failed to create metric", "name", "buoy.hook.duration", "error", err)
 	}
 	ms.HookDuration = hookDuration
 
-	retentionDuration, err := m.Float64Histogram("buoy.retention.duration",
+	retentionDuration, err := m.Float64Gauge("buoy.retention.duration",
 		metric.WithUnit("s"),
-		metric.WithDescription("Duration of retention operations"),
-		metric.WithExplicitBucketBoundaries(1, 5, 10, 30, 60, 120, 300, 600, 1800),
+		metric.WithDescription("Duration of the last retention operation per repo"),
 	)
 	if err != nil {
 		slog.Warn("failed to create metric", "name", "buoy.retention.duration", "error", err)
 	}
 	ms.RetentionDuration = retentionDuration
 
-	checkDuration, err := m.Float64Histogram("buoy.check.duration",
+	checkDuration, err := m.Float64Gauge("buoy.check.duration",
 		metric.WithUnit("s"),
-		metric.WithDescription("Duration of restic repository check operations"),
-		metric.WithExplicitBucketBoundaries(1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600),
+		metric.WithDescription("Duration of the last restic repository check per repo"),
 	)
 	if err != nil {
 		slog.Warn("failed to create metric", "name", "buoy.check.duration", "error", err)
 	}
 	ms.CheckDuration = checkDuration
 
-	stackDuration, err := m.Float64Histogram("buoy.stack.duration",
+	stackDuration, err := m.Float64Gauge("buoy.stack.duration",
 		metric.WithUnit("s"),
-		metric.WithDescription("Total duration of a compose stack backup cycle"),
-		metric.WithExplicitBucketBoundaries(5, 10, 30, 60, 120, 300, 600, 1800, 3600),
+		metric.WithDescription("Duration of the last compose stack backup cycle per project"),
 	)
 	if err != nil {
 		slog.Warn("failed to create metric", "name", "buoy.stack.duration", "error", err)
@@ -190,15 +182,6 @@ func buildMeterSet(m metric.Meter) MeterSet {
 		slog.Warn("failed to create metric", "name", "buoy.backup.last_success", "error", err)
 	}
 	ms.LastSuccess = lastSuccess
-
-	lastDuration, err := m.Float64Gauge("buoy.backup.last_duration",
-		metric.WithUnit("s"),
-		metric.WithDescription("Duration of the last completed backup run per container"),
-	)
-	if err != nil {
-		slog.Warn("failed to create metric", "name", "buoy.backup.last_duration", "error", err)
-	}
-	ms.LastDuration = lastDuration
 
 	return ms
 }

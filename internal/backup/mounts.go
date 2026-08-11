@@ -30,7 +30,14 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *types.Container, cfg typ
 		}
 		repoCtx = restic.WithPassword(repoCtx, r.effectivePassword(cfg, ref.Name))
 
+		repoStart := time.Now()
 		if !r.ensureRepo(repoCtx, ref.URL, logger, &failures) {
+			r.meters.BackupDuration.Record(context.WithoutCancel(repoCtx), time.Since(repoStart).Seconds(),
+				metric.WithAttributes(containerAttrs(ctr,
+					attribute.String("repo", ref.URL),
+					attribute.Bool("success", false),
+				)...),
+			)
 			cancel()
 			continue
 		}
@@ -56,6 +63,12 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *types.Container, cfg typ
 				repoOK = false
 			}
 		}
+		r.meters.BackupDuration.Record(context.WithoutCancel(repoCtx), time.Since(repoStart).Seconds(),
+			metric.WithAttributes(containerAttrs(ctr,
+				attribute.String("repo", ref.URL),
+				attribute.Bool("success", repoOK),
+			)...),
+		)
 		if err := r.repoReg.MarkBackupComplete(ref.URL, repoOK); err != nil {
 			logger.Warn("failed to persist backup status", "repo", ref.URL, "error", err)
 		}

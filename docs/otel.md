@@ -33,16 +33,17 @@ That's it. buoy automatically initializes traces, metrics, and logs when `OTEL_E
 
 All metrics share the instrumentation scope `buoy`. When ingested by Prometheus via remote write, dots become underscores and units are appended as suffixes.
 
+All duration metrics are `Float64Gauge`s recording the last operation's duration per entity — a gauge series holds a sample at every scrape and steps at each run, so every run's duration is a visible datapoint. No histograms: sparse daily events would be aggregated away by histograms.
+
 ### `buoy.backup.duration`
 
 | Field | Value |
 |---|---|
-| Type | Float64Histogram |
+| Type | Float64Gauge |
 | Unit | `s` |
-| Buckets | 1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600 |
-| Description | Duration of restic backup per mount |
+| Description | Duration of the last backup run per repo |
 
-**Attributes:** `container` (string), `service` (string), `project` (string), `repo` (string), `mount` (string), `success` (bool)
+**Attributes:** `container` (string), `service` (string), `project` (string), `repo` (string), `success` (bool)
 
 ### `buoy.backup.runs`
 
@@ -64,16 +65,6 @@ All metrics share the instrumentation scope `buoy`. When ingested by Prometheus 
 
 **Attributes:** `container` (string), `service` (string), `project` (string)
 
-### `buoy.backup.last_duration`
-
-| Field | Value |
-|---|---|
-| Type | Float64Gauge |
-| Unit | `s` |
-| Description | Duration of the last completed backup run per container (updated after every run, so per-run history is visible as steps) |
-
-**Attributes:** `container` (string), `service` (string), `project` (string), `success` (bool)
-
 ### `buoy.containers.active`
 
 | Field | Value |
@@ -86,10 +77,9 @@ All metrics share the instrumentation scope `buoy`. When ingested by Prometheus 
 
 | Field | Value |
 |---|---|
-| Type | Float64Histogram |
+| Type | Float64Gauge |
 | Unit | `s` |
-| Buckets | 0.1, 0.5, 1, 2, 5, 10, 30, 60, 120 |
-| Description | Duration of container stop operations |
+| Description | Duration of the last container stop operation |
 
 **Attributes:** `container` (string), `service` (string), `project` (string), `success` (bool)
 
@@ -97,10 +87,9 @@ All metrics share the instrumentation scope `buoy`. When ingested by Prometheus 
 
 | Field | Value |
 |---|---|
-| Type | Float64Histogram |
+| Type | Float64Gauge |
 | Unit | `s` |
-| Buckets | 0.1, 0.5, 1, 2, 5, 10, 30, 60, 120 |
-| Description | Duration of container start operations |
+| Description | Duration of the last container start operation |
 
 **Attributes:** `container` (string), `service` (string), `project` (string), `success` (bool)
 
@@ -108,10 +97,9 @@ All metrics share the instrumentation scope `buoy`. When ingested by Prometheus 
 
 | Field | Value |
 |---|---|
-| Type | Float64Histogram |
+| Type | Float64Gauge |
 | Unit | `s` |
-| Buckets | 0.1, 0.5, 1, 2, 5, 10, 30, 60, 120 |
-| Description | Duration of hook command execution |
+| Description | Duration of the last hook command execution |
 
 **Attributes:** `container` (string), `service` (string), `project` (string), `type` (`pre` / `post`), `target` (`host` / `container`), `success` (bool)
 
@@ -119,21 +107,31 @@ All metrics share the instrumentation scope `buoy`. When ingested by Prometheus 
 
 | Field | Value |
 |---|---|
-| Type | Float64Histogram |
+| Type | Float64Gauge |
 | Unit | `s` |
-| Buckets | 1, 5, 10, 30, 60, 120, 300, 600, 1800 |
-| Description | Duration of retention operations (forget/prune) |
+| Description | Duration of the last retention operation (forget/prune) per repo |
 
-**Attributes:** `container` (string), `service` (string), `project` (string), `repo` (string)
+**Attributes:** `container` (string), `service` (string), `project` (string), `repo` (string), `success` (bool)
 
 ### `buoy.check.duration`
 
 | Field | Value |
 |---|---|
-| Type | Float64Histogram |
+| Type | Float64Gauge |
 | Unit | `s` |
-| Buckets | 1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600 |
-| Description | Duration of restic repository check operations |
+| Description | Duration of the last restic repository check per repo (weekly schedule) |
+
+**Attributes:** `repo` (string), `success` (bool)
+
+### `buoy.stack.duration`
+
+| Field | Value |
+|---|---|
+| Type | Float64Gauge |
+| Unit | `s` |
+| Description | Duration of the last compose stack backup cycle per project |
+
+**Attributes:** `project` (string), `services` (int), `success` (bool)
 
 ## Local development
 
@@ -300,25 +298,24 @@ Hooks only appear when configured - no empty spans when no labels are set.
 
 ## PromQL examples
 
-All metric names use underscores in Prometheus (OTel dots → underscores, unit suffix appended). Use `sum by(container)`, `sum by(project)`, or `sum by(repo)` to slice per entity. For counters (backup runs), use `offset 24h` subtraction instead of `increase` -- it works instantly without extrapolation on fresh data.
+All metric names use underscores in Prometheus (OTel dots → underscores, unit suffix appended). Use `sum by(container)`, `sum by(project)`, or `sum by(repo)` to slice per entity. All duration metrics are gauges holding the last operation's duration — query them directly, one step per run. For counters (backup runs), use `increase(...[$__range])` for windowed totals.
 
 | Panel | PromQL |
 |---|---|
 | Containers active | `buoy_containers_active` |
-| Per-container duration | `buoy_backup_last_duration_seconds{...}` (gauge — one step per run) |
+| Per-container duration | `buoy_backup_duration_seconds{...}` (one step per run) |
+| Per-repo duration | `sum by(repo)(buoy_backup_duration_seconds{...})` |
+| Per-project duration | `buoy_stack_duration_seconds{...}` |
 | Successful runs (24h) | `sum(increase(buoy_backup_runs_total{success="true"}[$__range]))` |
 | Failed runs (24h) | `sum(increase(buoy_backup_runs_total{success="false"}[$__range]))` |
 | Error rate (1h) | `sum(rate(buoy_backup_runs_total{success="false"}[1h])) / clamp_min(sum(rate(buoy_backup_runs_total[1h])), 1)` |
 | Healthy containers | `count(buoy_backup_last_success_seconds > (time() - 86400))` |
 | Stale containers | `count(buoy_backup_last_success_seconds < (time() - 86400))` |
-| Backup duration by container | `sum by(container)(buoy_backup_duration_seconds_sum) / sum by(container)(buoy_backup_duration_seconds_count)` |
-| Backup duration by project | `sum by(project)(buoy_backup_duration_seconds_sum) - sum by(project)(buoy_backup_duration_seconds_sum offset 24h or vector(0))` |
-| Backup duration by repo | `sum by(repo)(buoy_backup_duration_seconds_sum) / sum by(repo)(buoy_backup_duration_seconds_count)` |
-| Container stop by container | `sum by(container)(buoy_container_stop_duration_seconds_sum) / sum by(container)(buoy_container_stop_duration_seconds_count)` |
-| Container start by container | `sum by(container)(buoy_container_start_duration_seconds_sum) / sum by(container)(buoy_container_start_duration_seconds_count)` |
-| Hook duration p95 | `histogram_quantile(0.95, sum by(type, le)(rate(buoy_hook_duration_seconds_bucket[$__rate_interval])))` |
-| Retention duration p95 | `histogram_quantile(0.95, sum by(le)(rate(buoy_retention_duration_seconds_bucket[$__rate_interval])))` |
-| Check duration p95 | `histogram_quantile(0.95, sum by(le)(rate(buoy_check_duration_seconds_bucket[$__rate_interval])))` |
+| Container stop duration | `buoy_container_stop_duration_seconds{...}` |
+| Container start duration | `buoy_container_start_duration_seconds{...}` |
+| Hook duration | `buoy_hook_duration_seconds{type="pre",target="container",...}` |
+| Retention duration | `sum by(repo)(buoy_retention_duration_seconds{...})` |
+| Check duration | `buoy_check_duration_seconds{...}` |
 | Last backup age | `time() - buoy_backup_last_success_seconds` |
 | Errors & warnings (Loki) | `{service_name="buoy"} \| severity_text=~"ERROR\|WARN"` |
 

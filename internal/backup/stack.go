@@ -29,7 +29,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*typ
 		),
 	)
 	defer func() {
-		r.meters.StackDuration.Record(ctx, time.Since(start).Seconds(),
+		r.meters.StackDuration.Record(context.WithoutCancel(ctx), time.Since(start).Seconds(),
 			metric.WithAttributes(
 				attribute.String("project", project),
 				attribute.Int("services", len(batch)),
@@ -227,16 +227,12 @@ func (r *Runner) backupStackServices(
 			continue
 		}
 		ok := true
-		mountsStart := time.Now()
 		if err := r.backupMounts(ctx, ctr, cfg, repos[ctr.ID], l.With("service", ctr.ComposeService)); err != nil {
 			l.Error("backup failed for service", "service", ctr.ComposeService, "error", err)
 			backupErrors[ctr.ComposeService] = err
 			allIssues = append(allIssues, fmt.Sprintf("%s: %s", ctr.ComposeService, err.Error()))
 			ok = false
 		}
-		r.meters.LastDuration.Record(ctx, time.Since(mountsStart).Seconds(),
-			metric.WithAttributes(containerAttrs(ctr, attribute.Bool("success", ok))...),
-		)
 		r.meters.BackupsTotal.Add(ctx, 1,
 			metric.WithAttributes(containerAttrs(ctr,
 				attribute.Int("mounts", eligibleMounts),

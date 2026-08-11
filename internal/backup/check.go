@@ -7,7 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/depado/buoy/internal/registry"
 	"github.com/depado/buoy/internal/restic"
@@ -15,7 +17,6 @@ import (
 )
 
 func (r *Runner) CheckKnownRepos(ctx context.Context) {
-	start := time.Now()
 	ctx, span := r.tracer.Start(ctx, "buoy.check")
 	var checkErr error
 	defer span.End()
@@ -24,7 +25,6 @@ func (r *Runner) CheckKnownRepos(ctx context.Context) {
 			span.RecordError(checkErr)
 			span.SetStatus(codes.Error, checkErr.Error())
 		}
-		r.meters.CheckDuration.Record(ctx, time.Since(start).Seconds())
 	}()
 
 	l := r.logger.With("component", "check")
@@ -60,17 +60,10 @@ func (r *Runner) CheckKnownRepos(ctx context.Context) {
 				}
 				seen[ref.URL] = true
 				ctx := restic.WithPassword(ctx, r.effectivePassword(cfg, ref.Name))
-				if err := r.restic.Check(ctx, ref.URL); err != nil {
-					l.Error("check: repository check failed", "repo", ref.URL, "error", err)
-					if err := r.repoReg.MarkCheckComplete(ref.URL, false); err != nil {
-						l.Warn("failed to persist check status", "repo", ref.URL, "error", err)
-					}
+				if err := r.recordCheck(ctx, ref.URL, func(ctx context.Context) error {
+					return r.restic.Check(ctx, ref.URL)
+				}, l); err != nil {
 					failures = append(failures, fmt.Sprintf("%s: %s", ref.URL, err.Error()))
-				} else {
-					l.Info("check: repository ok", "repo", ref.URL)
-					if err := r.repoReg.MarkCheckComplete(ref.URL, true); err != nil {
-						l.Warn("failed to persist check status", "repo", ref.URL, "error", err)
-					}
 				}
 			}
 		}
@@ -91,18 +84,37 @@ func (r *Runner) checkRepoEntries(ctx context.Context, entries []types.RepoEntry
 		}
 		seen[entry.URL] = true
 		ctx := restic.WithPassword(ctx, r.resticConf.PasswordFor(entry.RepoName))
-		if err := r.restic.Check(ctx, entry.URL); err != nil {
-			logger.Error("check: repository check failed", "repo", entry.URL, "error", err)
-			if err := r.repoReg.MarkCheckComplete(entry.URL, false); err != nil {
-				logger.Warn("failed to persist check status", "repo", entry.URL, "error", err)
-			}
+		if err := r.recordCheck(ctx, entry.URL, func(ctx context.Context) error {
+			return r.restic.Check(ctx, entry.URL)
+		}, logger); err != nil {
 			failed = append(failed, fmt.Sprintf("%s: %s", entry.URL, err.Error()))
-		} else {
-			logger.Info("check: repository ok", "repo", entry.URL)
-			if err := r.repoReg.MarkCheckComplete(entry.URL, true); err != nil {
-				logger.Warn("failed to persist check status", "repo", entry.URL, "error", err)
-			}
 		}
 	}
 	return failed
+}
+
+// recordCheck runs a restic check for one repo, records its duration gauge
+// with repo and success labels, persists the result, and returns any error.
+func (r *Runner) recordCheck(ctx context.Context, repo string, check func(context.Context) error, logger *slog.Logger) error {
+	start := time.Now()
+	err := check(ctx)
+	ok := err == nil
+	r.meters.CheckDuration.Record(context.WithoutCancel(ctx), time.Since(start).Seconds(),
+		metric.WithAttributes(
+			attribute.String("repo", repo),
+			attribute.Bool("success", ok),
+		),
+	)
+	if err != nil {
+		logger.Error("check: repository check failed", "repo", repo, "error", err)
+		if perr := r.repoReg.MarkCheckComplete(repo, false); perr != nil {
+			logger.Warn("failed to persist check status", "repo", repo, "error", perr)
+		}
+		return err
+	}
+	logger.Info("check: repository ok", "repo", repo)
+	if perr := r.repoReg.MarkCheckComplete(repo, true); perr != nil {
+		logger.Warn("failed to persist check status", "repo", repo, "error", perr)
+	}
+	return nil
 }

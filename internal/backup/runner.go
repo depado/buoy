@@ -141,11 +141,7 @@ func (r *Runner) Run(ctx context.Context, ctr *types.Container) (runErr error) {
 	}
 
 	l.Debug("backing up mounts", "repos", len(repos))
-	mountsStart := time.Now()
 	backupErr := r.backupMounts(ctx, fresh, cfg, repos, l)
-	r.meters.LastDuration.Record(ctx, time.Since(mountsStart).Seconds(),
-		metric.WithAttributes(containerAttrs(fresh, attribute.Bool("success", backupErr == nil))...),
-	)
 
 	r.meters.BackupsTotal.Add(ctx, 1,
 		metric.WithAttributes(containerAttrs(fresh,
