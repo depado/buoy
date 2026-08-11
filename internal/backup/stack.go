@@ -218,7 +218,7 @@ func (r *Runner) backupStackServices(
 			l.With("service", ctr.ComposeService).Warn("skipping backup, stop failed")
 			backupErrors[ctr.ComposeService] = fmt.Errorf("stop failed")
 			allIssues = append(allIssues, fmt.Sprintf("%s: stop failed", ctr.ComposeService))
-			r.meters.BackupsTotal.Add(ctx, 1,
+			r.meters.ContainerBackups.Add(ctx, 1,
 				metric.WithAttributes(containerAttrs(ctr,
 					attribute.Int("mounts", eligibleMounts),
 					attribute.Bool("success", false),
@@ -233,7 +233,7 @@ func (r *Runner) backupStackServices(
 			allIssues = append(allIssues, fmt.Sprintf("%s: %s", ctr.ComposeService, err.Error()))
 			ok = false
 		}
-		r.meters.BackupsTotal.Add(ctx, 1,
+		r.meters.ContainerBackups.Add(ctx, 1,
 			metric.WithAttributes(containerAttrs(ctr,
 				attribute.Int("mounts", eligibleMounts),
 				attribute.Bool("success", ok),

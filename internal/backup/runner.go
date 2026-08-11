@@ -130,7 +130,7 @@ func (r *Runner) Run(ctx context.Context, ctr *types.Container) (runErr error) {
 		var err error
 		wasRunning, err = r.stopContainer(ctx, fresh, cfg, l)
 		if err != nil {
-			r.meters.BackupsTotal.Add(ctx, 1,
+			r.meters.ContainerBackups.Add(ctx, 1,
 				metric.WithAttributes(containerAttrs(fresh,
 					attribute.Int("mounts", eligibleMounts),
 					attribute.Bool("success", false),
@@ -143,7 +143,7 @@ func (r *Runner) Run(ctx context.Context, ctr *types.Container) (runErr error) {
 	l.Debug("backing up mounts", "repos", len(repos))
 	backupErr := r.backupMounts(ctx, fresh, cfg, repos, l)
 
-	r.meters.BackupsTotal.Add(ctx, 1,
+	r.meters.ContainerBackups.Add(ctx, 1,
 		metric.WithAttributes(containerAttrs(fresh,
 			attribute.Int("mounts", eligibleMounts),
 			attribute.Bool("success", backupErr == nil),

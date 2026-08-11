@@ -13,7 +13,8 @@ type MeterSet struct {
 	meter metric.Meter
 
 	BackupDuration    metric.Float64Gauge
-	BackupsTotal      metric.Int64Counter
+	ContainerBackups  metric.Int64Counter
+	RepoBackups       metric.Int64Counter
 	ContainerStopDur  metric.Float64Gauge
 	ContainerStartDur metric.Float64Gauge
 	HookDuration      metric.Float64Gauge
@@ -102,14 +103,23 @@ func buildMeterSet(m metric.Meter) MeterSet {
 	}
 	ms.BackupDuration = backupDuration
 
-	backupsTotal, err := m.Int64Counter("buoy.backup.runs",
-		metric.WithUnit("{run}"),
-		metric.WithDescription("Total number of completed backup runs"),
+	containerBackups, err := m.Int64Counter("buoy.container.backups",
+		metric.WithUnit("{backup}"),
+		metric.WithDescription("Total number of completed backup runs (one per container per cycle)"),
 	)
 	if err != nil {
-		slog.Warn("failed to create metric", "name", "buoy.backup.runs", "error", err)
+		slog.Warn("failed to create metric", "name", "buoy.container.backups", "error", err)
 	}
-	ms.BackupsTotal = backupsTotal
+	ms.ContainerBackups = containerBackups
+
+	repoBackups, err := m.Int64Counter("buoy.repo.backups",
+		metric.WithUnit("{backup}"),
+		metric.WithDescription("Total number of completed backups per repo (one per repo per run)"),
+	)
+	if err != nil {
+		slog.Warn("failed to create metric", "name", "buoy.repo.backups", "error", err)
+	}
+	ms.RepoBackups = repoBackups
 
 	containerStopDur, err := m.Float64Gauge("buoy.container.stop.duration",
 		metric.WithUnit("s"),

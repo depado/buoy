@@ -45,15 +45,25 @@ All duration metrics are `Float64Gauge`s recording the last operation's duration
 
 **Attributes:** `container` (string), `service` (string), `project` (string), `repo` (string), `success` (bool)
 
-### `buoy.backup.runs`
+### `buoy.container.backups`
 
 | Field | Value |
 |---|---|
 | Type | Int64Counter |
-| Unit | `{run}` |
+| Unit | `{backup}` |
 | Description | Total number of completed backup runs (one per container per cycle) |
 
 **Attributes:** `container` (string), `service` (string), `project` (string), `mounts` (int), `success` (bool)
+
+### `buoy.repo.backups`
+
+| Field | Value |
+|---|---|
+| Type | Int64Counter |
+| Unit | `{backup}` |
+| Description | Total number of completed backups per repo (one per repo per run — a container with 3 repos counts 3) |
+
+**Attributes:** `container` (string), `service` (string), `project` (string), `repo` (string), `success` (bool)
 
 ### `buoy.backup.last_success`
 
@@ -306,9 +316,10 @@ All metric names use underscores in Prometheus (OTel dots → underscores, unit 
 | Per-container duration | `buoy_backup_duration_seconds{...}` (one step per run) |
 | Per-repo duration | `sum by(repo)(buoy_backup_duration_seconds{...})` |
 | Per-project duration | `buoy_stack_duration_seconds{...}` |
-| Successful runs (24h) | `sum(increase(buoy_backup_runs_total{success="true"}[$__range]))` |
-| Failed runs (24h) | `sum(increase(buoy_backup_runs_total{success="false"}[$__range]))` |
-| Error rate (1h) | `sum(rate(buoy_backup_runs_total{success="false"}[1h])) / clamp_min(sum(rate(buoy_backup_runs_total[1h])), 1)` |
+| Successful runs (24h) | `round(sum(increase(buoy_container_backups_total{success="true"}[$__range])))` |
+| Failed runs (24h) | `round(sum(increase(buoy_container_backups_total{success="false"}[$__range])))` |
+| Effective backups (24h) | `round(sum(increase(buoy_repo_backups_total{success="true"}[$__range])))` |
+| Error rate (1h) | `sum(rate(buoy_container_backups_total{success="false"}[1h])) / clamp_min(sum(rate(buoy_container_backups_total[1h])), 1)` |
 | Healthy containers | `count(buoy_backup_last_success_seconds > (time() - 86400))` |
 | Stale containers | `count(buoy_backup_last_success_seconds < (time() - 86400))` |
 | Container stop duration | `buoy_container_stop_duration_seconds{...}` |

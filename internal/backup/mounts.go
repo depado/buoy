@@ -32,6 +32,12 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *types.Container, cfg typ
 
 		repoStart := time.Now()
 		if !r.ensureRepo(repoCtx, ref.URL, logger, &failures) {
+			r.meters.RepoBackups.Add(repoCtx, 1,
+				metric.WithAttributes(containerAttrs(ctr,
+					attribute.String("repo", ref.URL),
+					attribute.Bool("success", false),
+				)...),
+			)
 			r.meters.BackupDuration.Record(context.WithoutCancel(repoCtx), time.Since(repoStart).Seconds(),
 				metric.WithAttributes(containerAttrs(ctr,
 					attribute.String("repo", ref.URL),
@@ -63,6 +69,12 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *types.Container, cfg typ
 				repoOK = false
 			}
 		}
+		r.meters.RepoBackups.Add(repoCtx, 1,
+			metric.WithAttributes(containerAttrs(ctr,
+				attribute.String("repo", ref.URL),
+				attribute.Bool("success", repoOK),
+			)...),
+		)
 		r.meters.BackupDuration.Record(context.WithoutCancel(repoCtx), time.Since(repoStart).Seconds(),
 			metric.WithAttributes(containerAttrs(ctr,
 				attribute.String("repo", ref.URL),
