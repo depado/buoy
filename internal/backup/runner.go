@@ -104,6 +104,7 @@ func (r *Runner) Run(ctx context.Context, ctr *types.Container) (runErr error) {
 	}
 
 	cfg := r.parseConfig(fresh.Labels)
+	warnUnusedMountFilters(l, fresh, cfg)
 
 	repos, err := r.repoReg.SyncContainer(fresh, cfg)
 	if err != nil {
@@ -140,7 +141,11 @@ func (r *Runner) Run(ctx context.Context, ctr *types.Container) (runErr error) {
 	}
 
 	l.Debug("backing up mounts", "repos", len(repos))
+	mountsStart := time.Now()
 	backupErr := r.backupMounts(ctx, fresh, cfg, repos, l)
+	r.meters.LastDuration.Record(ctx, time.Since(mountsStart).Seconds(),
+		metric.WithAttributes(containerAttrs(fresh, attribute.Bool("success", backupErr == nil))...),
+	)
 
 	r.meters.BackupsTotal.Add(ctx, 1,
 		metric.WithAttributes(containerAttrs(fresh,
@@ -208,6 +213,34 @@ func (r *Runner) effectiveHealthWaitTimeout(cfg types.BackupConfig) time.Duratio
 		return cfg.HealthWaitTimeout
 	}
 	return r.healthWaitTimeout
+}
+
+// warnUnusedMountFilters logs a warning for include/exclude entries that
+// match none of the container's mounts — they silently do nothing.
+func warnUnusedMountFilters(l *slog.Logger, ctr *types.Container, cfg types.BackupConfig) {
+	for _, ex := range cfg.Exclude {
+		if !mountMatchesAny(ctr, func(m types.Mount) bool {
+			return m.Name == ex || m.Source == ex || m.Destination == ex
+		}) {
+			l.Warn("buoy.exclude matches no mount, ignoring", "exclude", ex)
+		}
+	}
+	for _, in := range cfg.Include {
+		if !mountMatchesAny(ctr, func(m types.Mount) bool {
+			return in.Key == m.Name || in.Key == m.Source || in.Key == m.Destination
+		}) {
+			l.Warn("buoy.include matches no mount, ignoring", "include", in.Key)
+		}
+	}
+}
+
+func mountMatchesAny(ctr *types.Container, match func(types.Mount) bool) bool {
+	for _, m := range ctr.Mounts {
+		if match(m) {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Runner) ignore(id string)  { r.ignoredIDs.Store(id, true) }

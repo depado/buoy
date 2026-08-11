@@ -20,6 +20,7 @@ type MeterSet struct {
 	RetentionDuration metric.Float64Histogram
 	CheckDuration     metric.Float64Histogram
 	StackDuration     metric.Float64Histogram
+	LastDuration      metric.Float64Gauge
 
 	ContainersActive metric.Int64ObservableGauge
 	LastSuccess      metric.Int64ObservableGauge
@@ -189,6 +190,15 @@ func buildMeterSet(m metric.Meter) MeterSet {
 		slog.Warn("failed to create metric", "name", "buoy.backup.last_success", "error", err)
 	}
 	ms.LastSuccess = lastSuccess
+
+	lastDuration, err := m.Float64Gauge("buoy.backup.last_duration",
+		metric.WithUnit("s"),
+		metric.WithDescription("Duration of the last completed backup run per container"),
+	)
+	if err != nil {
+		slog.Warn("failed to create metric", "name", "buoy.backup.last_duration", "error", err)
+	}
+	ms.LastDuration = lastDuration
 
 	return ms
 }

@@ -64,6 +64,16 @@ All metrics share the instrumentation scope `buoy`. When ingested by Prometheus 
 
 **Attributes:** `container` (string), `service` (string), `project` (string)
 
+### `buoy.backup.last_duration`
+
+| Field | Value |
+|---|---|
+| Type | Float64Gauge |
+| Unit | `s` |
+| Description | Duration of the last completed backup run per container (updated after every run, so per-run history is visible as steps) |
+
+**Attributes:** `container` (string), `service` (string), `project` (string), `success` (bool)
+
 ### `buoy.containers.active`
 
 | Field | Value |
@@ -295,8 +305,9 @@ All metric names use underscores in Prometheus (OTel dots → underscores, unit 
 | Panel | PromQL |
 |---|---|
 | Containers active | `buoy_containers_active` |
-| Successful runs (24h) | `sum(buoy_backup_runs_total{success="true"}) - sum(buoy_backup_runs_total{success="true"} offset 24h or vector(0))` |
-| Failed runs (24h) | `sum(buoy_backup_runs_total{success="false"}) - sum(buoy_backup_runs_total{success="false"} offset 24h or vector(0))` |
+| Per-container duration | `buoy_backup_last_duration_seconds{...}` (gauge — one step per run) |
+| Successful runs (24h) | `sum(increase(buoy_backup_runs_total{success="true"}[$__range]))` |
+| Failed runs (24h) | `sum(increase(buoy_backup_runs_total{success="false"}[$__range]))` |
 | Error rate (1h) | `sum(rate(buoy_backup_runs_total{success="false"}[1h])) / clamp_min(sum(rate(buoy_backup_runs_total[1h])), 1)` |
 | Healthy containers | `count(buoy_backup_last_success_seconds > (time() - 86400))` |
 | Stale containers | `count(buoy_backup_last_success_seconds < (time() - 86400))` |

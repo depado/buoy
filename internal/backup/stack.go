@@ -125,6 +125,7 @@ func (r *Runner) resolveStackConfigs(fresh []*types.Container, l *slog.Logger) (
 	repos := make(map[string][]types.RepoRef, len(fresh))
 	for _, ctr := range fresh {
 		cfg := r.parseConfig(ctr.Labels)
+		warnUnusedMountFilters(l.With("service", ctr.ComposeService), ctr, cfg)
 		resolved, err := r.repoReg.SyncContainer(ctr, cfg)
 		if err != nil {
 			l.Warn("failed to sync container repos", "service", ctr.ComposeService, "error", err)
@@ -226,12 +227,16 @@ func (r *Runner) backupStackServices(
 			continue
 		}
 		ok := true
+		mountsStart := time.Now()
 		if err := r.backupMounts(ctx, ctr, cfg, repos[ctr.ID], l.With("service", ctr.ComposeService)); err != nil {
 			l.Error("backup failed for service", "service", ctr.ComposeService, "error", err)
 			backupErrors[ctr.ComposeService] = err
 			allIssues = append(allIssues, fmt.Sprintf("%s: %s", ctr.ComposeService, err.Error()))
 			ok = false
 		}
+		r.meters.LastDuration.Record(ctx, time.Since(mountsStart).Seconds(),
+			metric.WithAttributes(containerAttrs(ctr, attribute.Bool("success", ok))...),
+		)
 		r.meters.BackupsTotal.Add(ctx, 1,
 			metric.WithAttributes(containerAttrs(ctr,
 				attribute.Int("mounts", eligibleMounts),
