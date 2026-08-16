@@ -19,6 +19,7 @@ daemon:
   backup_timeout: "1h"
   repo_timeout: "30m"
   check_schedule: "@weekly"
+  prune_schedule: "@weekly"
   db_path: "./buoy.db"
 
 docker:
@@ -114,6 +115,17 @@ daemon:
 ```
 
 When the check runs, buoy reads known repositories from its persistent state database (`buoy.db`). Failures are logged and optionally trigger notifications. This is a structural check only - it does not read pack file data (use the CLI or API for `restic check --read-data` if needed).
+
+## Periodic Repository Prune
+
+`restic forget` runs after every backup, but `restic prune` is expensive (it scans the whole repository and repacks data) and locks the repository. Instead of pruning after every backup, buoy runs it on a dedicated schedule via `daemon.prune_schedule` (default: `@weekly`). Set to `""` to disable.
+
+```yaml
+daemon:
+  prune_schedule: "@weekly"
+```
+
+If `prune_schedule` and `check_schedule` are identical, buoy merges them into a single maintenance job that prunes first and then checks (matching the restic recommendation to run `check` after `prune`). Otherwise they run as independent jobs.
 
 ## State Persistence
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -231,12 +232,7 @@ func warnUnusedMountFilters(l *slog.Logger, ctr *types.Container, cfg types.Back
 }
 
 func mountMatchesAny(ctr *types.Container, match func(types.Mount) bool) bool {
-	for _, m := range ctr.Mounts {
-		if match(m) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(ctr.Mounts, match)
 }
 
 func (r *Runner) ignore(id string)  { r.ignoredIDs.Store(id, true) }

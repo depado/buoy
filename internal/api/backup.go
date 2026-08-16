@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 
@@ -34,11 +35,9 @@ func (s *Server) handleTriggerBackup(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "specify ?all=true, ?project=<name>, or ?container=<name>"})
 		return
 	}
-	for _, name := range containers {
-		if name == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "container parameter must not be empty"})
-			return
-		}
+	if slices.Contains(containers, "") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "container parameter must not be empty"})
+		return
 	}
 
 	results := make([]types.BackupResult, len(containers))

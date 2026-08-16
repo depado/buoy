@@ -60,6 +60,7 @@ var RunCmd = &cobra.Command{
 			"default_retention", conf.Daemon.DefaultRetention,
 			"resync_interval", conf.Daemon.ResyncInterval,
 			"check_schedule", conf.Daemon.CheckSchedule,
+			"prune_schedule", conf.Daemon.PruneSchedule,
 			"notify_level", conf.Notify.Level,
 			"db_path", conf.Daemon.DBPath,
 		)
@@ -192,11 +193,31 @@ var RunCmd = &cobra.Command{
 
 		events, errs := watcher.Watch(ctx)
 
-		if conf.Daemon.CheckSchedule != "" {
-			if err := sched.ScheduleCheck(conf.Daemon.CheckSchedule); err != nil {
-				logger.Warn("failed to schedule periodic check", "error", err)
+		if conf.Daemon.PruneSchedule != "" && conf.Daemon.PruneSchedule == conf.Daemon.CheckSchedule {
+			if err := sched.ScheduleMaintenance(conf.Daemon.PruneSchedule, func(ctx context.Context) {
+				logger.Info("running periodic restic prune")
+				runner.PruneKnownRepos(ctx)
+				logger.Info("running periodic restic check")
+				runner.CheckKnownRepos(ctx)
+			}); err != nil {
+				logger.Warn("failed to schedule periodic prune+check", "error", err)
 			} else {
-				logger.Info("scheduled periodic restic check", "schedule", conf.Daemon.CheckSchedule)
+				logger.Info("scheduled periodic restic prune+check", "schedule", conf.Daemon.PruneSchedule)
+			}
+		} else {
+			if conf.Daemon.CheckSchedule != "" {
+				if err := sched.ScheduleCheck(conf.Daemon.CheckSchedule); err != nil {
+					logger.Warn("failed to schedule periodic check", "error", err)
+				} else {
+					logger.Info("scheduled periodic restic check", "schedule", conf.Daemon.CheckSchedule)
+				}
+			}
+			if conf.Daemon.PruneSchedule != "" {
+				if err := sched.SchedulePrune(conf.Daemon.PruneSchedule); err != nil {
+					logger.Warn("failed to schedule periodic prune", "error", err)
+				} else {
+					logger.Info("scheduled periodic restic prune", "schedule", conf.Daemon.PruneSchedule)
+				}
 			}
 		}
 

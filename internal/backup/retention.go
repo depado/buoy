@@ -30,11 +30,6 @@ func (r *Runner) applyRetention(ctx context.Context, ctr *types.Container, cfg t
 			issues = append(issues, fmt.Sprintf("forget on %s: %s", ref.URL, err.Error()))
 			repoOK = false
 		}
-		if err := r.restic.Prune(ctx, ref.URL); err != nil {
-			l.Warn("prune failed", "error", err)
-			issues = append(issues, fmt.Sprintf("prune on %s: %s", ref.URL, err.Error()))
-			repoOK = false
-		}
 		l.Info("retention applied", slog.Duration("duration", time.Since(start)))
 		r.meters.RetentionDuration.Record(context.WithoutCancel(ctx), time.Since(start).Seconds(),
 			metric.WithAttributes(containerAttrs(ctr,

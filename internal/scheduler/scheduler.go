@@ -187,6 +187,27 @@ func (s *Scheduler) ListScheduled() []types.ScheduledResponse {
 }
 
 func (s *Scheduler) ScheduleCheck(schedule string) error {
+	return s.scheduleMaintenance(schedule, func(ctx context.Context) {
+		s.logger.Info("running periodic restic check")
+		s.backup.CheckKnownRepos(ctx)
+	})
+}
+
+func (s *Scheduler) SchedulePrune(schedule string) error {
+	return s.scheduleMaintenance(schedule, func(ctx context.Context) {
+		s.logger.Info("running periodic restic prune")
+		s.backup.PruneKnownRepos(ctx)
+	})
+}
+
+// ScheduleMaintenance registers a maintenance job that runs fn while
+// holding the full semaphore, preventing concurrent backups (prune and
+// check take exclusive repo locks).
+func (s *Scheduler) ScheduleMaintenance(schedule string, fn func(context.Context)) error {
+	return s.scheduleMaintenance(schedule, fn)
+}
+
+func (s *Scheduler) scheduleMaintenance(schedule string, fn func(context.Context)) error {
 	if schedule == "" {
 		return nil
 	}
@@ -204,12 +225,11 @@ func (s *Scheduler) ScheduleCheck(schedule string) error {
 		defer s.active.Add(-1)
 		defer s.wg.Done()
 
-		s.logger.Info("running periodic restic check")
 		ctx, cancel := context.WithTimeout(context.Background(), s.backupTimeout)
 		defer cancel()
 		start := time.Now()
-		s.backup.CheckKnownRepos(ctx)
-		s.logger.Info("periodic restic check complete", slog.Duration("duration", time.Since(start)))
+		fn(ctx)
+		s.logger.Info("periodic maintenance complete", slog.Duration("duration", time.Since(start)))
 	})
 	return err
 }

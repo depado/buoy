@@ -21,6 +21,7 @@ func AddDaemonFlags(c *cobra.Command) {
 	c.PersistentFlags().String("daemon.backup_timeout", "1h", "max time for a backup cycle (e.g., 1h, 30m, 0 to disable)")
 	c.PersistentFlags().String("daemon.repo_timeout", "30m", "max time per repo within a backup cycle (e.g., 30m, 0 to disable)")
 	c.PersistentFlags().String("daemon.check_schedule", "@weekly", "cron schedule for periodic restic check (empty = disabled)")
+	c.PersistentFlags().String("daemon.prune_schedule", "@weekly", "cron schedule for periodic restic prune (empty = disabled)")
 	c.PersistentFlags().String("daemon.db_path", "./buoy.db", "path to the bbolt state database")
 	c.PersistentFlags().String("docker.host", "unix:///var/run/docker.sock", "Docker daemon socket path")
 	c.PersistentFlags().String("restic.binary_path", "restic", "path to the restic binary")

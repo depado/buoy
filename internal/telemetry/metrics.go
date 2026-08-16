@@ -20,6 +20,7 @@ type MeterSet struct {
 	HookDuration      metric.Float64Gauge
 	RetentionDuration metric.Float64Gauge
 	CheckDuration     metric.Float64Gauge
+	PruneDuration     metric.Float64Gauge
 	StackDuration     metric.Float64Gauge
 
 	ContainersActive metric.Int64ObservableGauge
@@ -165,6 +166,15 @@ func buildMeterSet(m metric.Meter) MeterSet {
 		slog.Warn("failed to create metric", "name", "buoy.check.duration", "error", err)
 	}
 	ms.CheckDuration = checkDuration
+
+	pruneDuration, err := m.Float64Gauge("buoy.prune.duration",
+		metric.WithUnit("s"),
+		metric.WithDescription("Duration of the last restic prune per repo"),
+	)
+	if err != nil {
+		slog.Warn("failed to create metric", "name", "buoy.prune.duration", "error", err)
+	}
+	ms.PruneDuration = pruneDuration
 
 	stackDuration, err := m.Float64Gauge("buoy.stack.duration",
 		metric.WithUnit("s"),

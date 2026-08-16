@@ -119,7 +119,7 @@ All duration metrics are `Float64Gauge`s recording the last operation's duration
 |---|---|
 | Type | Float64Gauge |
 | Unit | `s` |
-| Description | Duration of the last retention operation (forget/prune) per repo |
+| Description | Duration of the last retention (forget) operation per repo |
 
 **Attributes:** `container` (string), `service` (string), `project` (string), `repo` (string), `success` (bool)
 
@@ -130,6 +130,16 @@ All duration metrics are `Float64Gauge`s recording the last operation's duration
 | Type | Float64Gauge |
 | Unit | `s` |
 | Description | Duration of the last restic repository check per repo (weekly schedule) |
+
+**Attributes:** `repo` (string), `success` (bool)
+
+### `buoy.prune.duration`
+
+| Field | Value |
+|---|---|
+| Type | Float64Gauge |
+| Unit | `s` |
+| Description | Duration of the last restic prune per repo (weekly schedule) |
 
 **Attributes:** `repo` (string), `success` (bool)
 
@@ -313,15 +323,15 @@ All metric names use underscores in Prometheus (OTel dots → underscores, unit 
 | Panel | PromQL |
 |---|---|
 | Containers active | `buoy_containers_active` |
-| Per-container duration | `buoy_backup_duration_seconds{...}` (one step per run) |
+| Successful Backups (repo) | `sum(buoy_repo_backups_total{success="true"})` (instant — since daemon start) |
+| Failed Backups (repo) | `sum(buoy_repo_backups_total{success="false"})` |
+| Successful Containers | `sum(buoy_container_backups_total{success="true"})` |
+| Failed Containers | `sum(buoy_container_backups_total{success="false"})` |
+| Healthy Containers | `count(buoy_backup_last_success_seconds > (time() - 86400))` |
+| Stale Containers | `count(buoy_backup_last_success_seconds < (time() - 86400)) or vector(0)` |
+| Per-container duration | `sum by(container)(buoy_backup_duration_seconds{...})` (one step per run) |
 | Per-repo duration | `sum by(repo)(buoy_backup_duration_seconds{...})` |
 | Per-project duration | `buoy_stack_duration_seconds{...}` |
-| Successful runs (24h) | `round(sum(increase(buoy_container_backups_total{success="true"}[$__range])))` |
-| Failed runs (24h) | `round(sum(increase(buoy_container_backups_total{success="false"}[$__range])))` |
-| Effective backups (24h) | `round(sum(increase(buoy_repo_backups_total{success="true"}[$__range])))` |
-| Error rate (1h) | `sum(rate(buoy_container_backups_total{success="false"}[1h])) / clamp_min(sum(rate(buoy_container_backups_total[1h])), 1)` |
-| Healthy containers | `count(buoy_backup_last_success_seconds > (time() - 86400))` |
-| Stale containers | `count(buoy_backup_last_success_seconds < (time() - 86400))` |
 | Container stop duration | `buoy_container_stop_duration_seconds{...}` |
 | Container start duration | `buoy_container_start_duration_seconds{...}` |
 | Hook duration | `buoy_hook_duration_seconds{type="pre",target="container",...}` |

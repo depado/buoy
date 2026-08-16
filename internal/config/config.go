@@ -30,6 +30,7 @@ type DaemonConf struct {
 	ExecTimeout       string `mapstructure:"exec_timeout"`
 	HealthWaitTimeout string `mapstructure:"health_wait_timeout"`
 	CheckSchedule     string `mapstructure:"check_schedule"`
+	PruneSchedule     string `mapstructure:"prune_schedule"`
 	BackupTimeout     string `mapstructure:"backup_timeout"`
 	RepoTimeout       string `mapstructure:"repo_timeout"`
 	DBPath            string `mapstructure:"db_path"`

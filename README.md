@@ -45,7 +45,7 @@
 - **Hooks** - Run shell commands on the host or inside the container before and after each backup.
 - **Stop-first** - Optionally stop containers before backup for data consistency, then restart them automatically. One label to opt in.
 - **Notifications** - Success and failure alerts via [shoutrrr](https://github.com/nicholas-fedor/shoutrrr): Slack, Discord, Telegram, Pushover, email, Gotify, and more.
-- **Retention** - Automatic `restic forget` and `restic prune` with per-container policies (`keep-daily`, `keep-weekly`, `keep-monthly`, `keep-yearly`, `keep-within`).
+- **Retention** - Automatic `restic forget` after every backup with per-container policies (`keep-daily`, `keep-weekly`, `keep-monthly`, `keep-yearly`, `keep-within`), and scheduled `restic prune` (`daemon.prune_schedule`, default `@weekly`) so prune never slows down backups.
 - **Real-time discovery** - Watches Docker events. New containers are picked up immediately; removed containers are cleaned up.
 - **Selective backup** - Include or exclude volumes and mounts by name or path. Use restic file patterns to back up only what matters.
 - **Stack lifecycle** - When a container opts into `buoy.stop-before`, buoy cascades the stop to its dependents, backs up, then restarts everything in dependency order - waiting for each to be healthy before starting the next.
@@ -64,7 +64,7 @@
 │  ┌───────────────────────────────────────────────────┐    │
 │  │  pre-hooks → stop (ordered, cascade) →            │    │
 │  │  restic backup → start (ordered + health wait) →  │    │
-│  │  post-hooks → forget → prune                      │    │
+│  │  post-hooks → forget                              │    │
 │  └───────────────────────────────────────────────────┘    │
 │                                                           │
 │  Reacts to Docker events in real-time:                    │
@@ -405,6 +405,7 @@ When a container label refers to a global value (`buoy.schedule` →
 | `daemon.backup_timeout`      | `1h`                                                                     | `BUOY_DAEMON_BACKUP_TIMEOUT` / `--daemon.backup_timeout`           |
 | `daemon.repo_timeout`        | `30m`                                                                    | `BUOY_DAEMON_REPO_TIMEOUT` / `--daemon.repo_timeout`               |
 | `daemon.check_schedule`      | `@weekly`                                                                | `BUOY_DAEMON_CHECK_SCHEDULE` / `--daemon.check_schedule`           |
+| `daemon.prune_schedule`      | `@weekly`                                                                | `BUOY_DAEMON_PRUNE_SCHEDULE` / `--daemon.prune_schedule`           |
 | `daemon.db_path`             | `./buoy.db`                                                              | `BUOY_DAEMON_DB_PATH` / `--daemon.db_path`                         |
 | `docker.host`                | `unix:///var/run/docker.sock`                                            | `BUOY_DOCKER_HOST` / `--docker.host`                               |
 | `restic.binary_path`         | `restic`                                                                 | `BUOY_RESTIC_BINARY_PATH` / `--restic.binary_path`                 |
