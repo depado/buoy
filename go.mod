@@ -8,7 +8,7 @@ require (
 	github.com/mattn/go-isatty v0.0.24
 	github.com/moby/moby/api v1.55.0
 	github.com/moby/moby/client v0.5.1
-	github.com/nicholas-fedor/shoutrrr v0.17.0
+	github.com/nicholas-fedor/shoutrrr v0.17.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
@@ -80,12 +80,12 @@ require (
 	go.opentelemetry.io/otel/log v0.21.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/net v0.57.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/term v0.45.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260807164820-c8921c73eeea // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260807164820-c8921c73eeea // indirect
 	google.golang.org/grpc v1.83.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
+	google.golang.org/protobuf v1.36.12 // indirect
 )
