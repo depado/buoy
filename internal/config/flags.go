@@ -19,6 +19,7 @@ func AddDaemonFlags(c *cobra.Command) {
 	c.PersistentFlags().String("daemon.exec_timeout", "5m", "max time for docker exec hooks (e.g., 5m, 10m)")
 	c.PersistentFlags().String("daemon.health_wait_timeout", "5m", "max time to wait for container health/dependency satisfaction (e.g., 5m)")
 	c.PersistentFlags().String("daemon.backup_timeout", "1h", "max time for a backup cycle (e.g., 1h, 30m, 0 to disable)")
+	c.PersistentFlags().String("daemon.maintenance_timeout", "6h", "max time for a periodic prune/check run (e.g., 6h, 0 to disable)")
 	c.PersistentFlags().String("daemon.repo_timeout", "30m", "max time per repo within a backup cycle (e.g., 30m, 0 to disable)")
 	c.PersistentFlags().String("daemon.check_schedule", "@weekly", "cron schedule for periodic restic check (empty = disabled)")
 	c.PersistentFlags().String("daemon.prune_schedule", "@weekly", "cron schedule for periodic restic prune (empty = disabled)")

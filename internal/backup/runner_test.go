@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -140,6 +141,76 @@ func TestEffectiveRepoTimeout(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMaintenanceRepoTimeout(t *testing.T) {
+	rc := &config.ResticConf{
+		Repos: map[string]config.RepoConfig{
+			"b2":    {URL: "b2:bucket", Timeout: "45m"},
+			"local": {URL: "/backup"},
+		},
+	}
+	r := &Runner{resticConf: rc, repoTimeout: 30 * time.Minute}
+
+	tests := []struct {
+		name     string
+		repoName string
+		want     time.Duration
+	}{
+		{"repo config wins", "b2", 45 * time.Minute},
+		{"no repo config falls back to global", "local", 30 * time.Minute},
+		{"unknown repo falls back to global", "sftp", 30 * time.Minute},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := r.maintenanceRepoTimeout(tt.repoName); got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMaintenanceRepoCtx(t *testing.T) {
+	r := &Runner{
+		resticConf: &config.ResticConf{
+			Repos: map[string]config.RepoConfig{"b2": {URL: "b2:bucket", Timeout: "45m"}},
+		},
+		repoTimeout: 30 * time.Minute,
+	}
+
+	t.Run("repo config bounds the context", func(t *testing.T) {
+		ctx, cancel, err := r.maintenanceRepoCtx(context.Background(), "b2")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		defer cancel()
+		if d, ok := ctx.Deadline(); !ok || time.Until(d) < 44*time.Minute {
+			t.Errorf("expected ~45m deadline, got %v", d)
+		}
+	})
+
+	t.Run("zero timeout leaves context unbounded", func(t *testing.T) {
+		r.repoTimeout = 0
+		defer func() { r.repoTimeout = 30 * time.Minute }()
+		ctx, cancel, err := r.maintenanceRepoCtx(context.Background(), "local")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		defer cancel()
+		if _, ok := ctx.Deadline(); ok {
+			t.Error("expected no deadline")
+		}
+	})
+
+	t.Run("nearly-exhausted window refuses to start", func(t *testing.T) {
+		parent, pcancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+		defer pcancel()
+		_, _, err := r.maintenanceRepoCtx(parent, "b2")
+		if err == nil {
+			t.Error("expected budget-exhausted error")
+		}
+	})
 }
 
 func TestPasswordFor(t *testing.T) {

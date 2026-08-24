@@ -23,17 +23,18 @@ type LogConf struct {
 }
 
 type DaemonConf struct {
-	Concurrency       int    `mapstructure:"concurrency"`
-	DefaultSchedule   string `mapstructure:"default_schedule"`
-	DefaultRetention  string `mapstructure:"default_retention"`
-	ResyncInterval    string `mapstructure:"resync_interval"`
-	ExecTimeout       string `mapstructure:"exec_timeout"`
-	HealthWaitTimeout string `mapstructure:"health_wait_timeout"`
-	CheckSchedule     string `mapstructure:"check_schedule"`
-	PruneSchedule     string `mapstructure:"prune_schedule"`
-	BackupTimeout     string `mapstructure:"backup_timeout"`
-	RepoTimeout       string `mapstructure:"repo_timeout"`
-	DBPath            string `mapstructure:"db_path"`
+	Concurrency        int    `mapstructure:"concurrency"`
+	DefaultSchedule    string `mapstructure:"default_schedule"`
+	DefaultRetention   string `mapstructure:"default_retention"`
+	ResyncInterval     string `mapstructure:"resync_interval"`
+	ExecTimeout        string `mapstructure:"exec_timeout"`
+	HealthWaitTimeout  string `mapstructure:"health_wait_timeout"`
+	CheckSchedule      string `mapstructure:"check_schedule"`
+	PruneSchedule      string `mapstructure:"prune_schedule"`
+	BackupTimeout      string `mapstructure:"backup_timeout"`
+	MaintenanceTimeout string `mapstructure:"maintenance_timeout"`
+	RepoTimeout        string `mapstructure:"repo_timeout"`
+	DBPath             string `mapstructure:"db_path"`
 }
 
 type DockerConf struct {

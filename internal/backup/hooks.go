@@ -30,6 +30,11 @@ func (r *Runner) runPreHooks(ctx context.Context, ctr *types.Container, cfg type
 }
 
 func (r *Runner) runPostHooks(ctx context.Context, ctr *types.Container, cfg types.BackupConfig, l *slog.Logger) {
+	// Detach from the backup deadline: post-hooks must run even when the
+	// budget is gone, since pre-hooks may have left state behind that
+	// needs tearing down. They stay bounded by exec_timeout.
+	ctx = context.WithoutCancel(ctx)
+
 	if cfg.HookPostExec != "" {
 		r.runHook(ctx, "buoy.hook.post.exec", ctr, "post", "container",
 			func(ctx context.Context) error {
@@ -59,6 +64,13 @@ func (r *Runner) runHook(
 		),
 	)
 	defer span.End()
+
+	// Fail fast: a hook starting when the backup budget is nearly gone is
+	// guaranteed to die instantly, so skip it instead.
+	if d, ok := ctx.Deadline(); ok && time.Until(d) < minRemainingBudget {
+		l.Warn("skipping hook, backup budget nearly exhausted", "remaining", time.Until(d).Round(time.Second))
+		return
+	}
 
 	execCtx, cancel := context.WithTimeout(ctx, r.execTimeout)
 	defer cancel()

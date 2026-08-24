@@ -33,7 +33,7 @@ That's it. buoy automatically initializes traces, metrics, and logs when `OTEL_E
 
 All metrics share the instrumentation scope `buoy`. When ingested by Prometheus via remote write, dots become underscores and units are appended as suffixes.
 
-All duration metrics are `Float64Gauge`s recording the last operation's duration per entity — a gauge series holds a sample at every scrape and steps at each run, so every run's duration is a visible datapoint. No histograms: sparse daily events would be aggregated away by histograms.
+All duration metrics are `Float64Gauge`s recording the last operation's duration per entity; a gauge series holds a sample at every scrape and steps at each run, so every run's duration is a visible datapoint. No histograms: sparse daily events would be aggregated away by histograms.
 
 ### `buoy.backup.duration`
 
@@ -61,7 +61,7 @@ All duration metrics are `Float64Gauge`s recording the last operation's duration
 |---|---|
 | Type | Int64Counter |
 | Unit | `{backup}` |
-| Description | Total number of completed backups per repo (one per repo per run — a container with 3 repos counts 3) |
+| Description | Total number of completed backups per repo (one per repo per run; a container with 3 repos counts 3) |
 
 **Attributes:** `container` (string), `service` (string), `project` (string), `repo` (string), `success` (bool)
 
@@ -318,12 +318,12 @@ Hooks only appear when configured - no empty spans when no labels are set.
 
 ## PromQL examples
 
-All metric names use underscores in Prometheus (OTel dots → underscores, unit suffix appended). Use `sum by(container)`, `sum by(project)`, or `sum by(repo)` to slice per entity. All duration metrics are gauges holding the last operation's duration — query them directly, one step per run. For counters (backup runs), use `increase(...[$__range])` for windowed totals.
+All metric names use underscores in Prometheus (OTel dots → underscores, unit suffix appended). Use `sum by(container)`, `sum by(project)`, or `sum by(repo)` to slice per entity. All duration metrics are gauges holding the last operation's duration; query them directly, one step per run. For counters (backup runs), use `increase(...[$__range])` for windowed totals.
 
 | Panel | PromQL |
 |---|---|
 | Containers active | `buoy_containers_active` |
-| Successful Backups (repo) | `sum(buoy_repo_backups_total{success="true"})` (instant — since daemon start) |
+| Successful Backups (repo) | `sum(buoy_repo_backups_total{success="true"})` (instant, since daemon start) |
 | Failed Backups (repo) | `sum(buoy_repo_backups_total{success="false"})` |
 | Successful Containers | `sum(buoy_container_backups_total{success="true"})` |
 | Failed Containers | `sum(buoy_container_backups_total{success="false"})` |

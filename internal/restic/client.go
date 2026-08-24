@@ -15,6 +15,44 @@ import (
 	"github.com/depado/buoy/internal/types"
 )
 
+// termGrace is how long a restic child gets to clean up after SIGTERM
+// before it is SIGKILLed.
+const termGrace = 10 * time.Second
+
+// termCmd wraps exec.Cmd to terminate the child gracefully on context
+// expiry: SIGTERM first (restic removes its repo lock on SIGTERM), SIGKILL
+// after termGrace. exec.CommandContext only SIGKILLs, which leaves stale
+// locks behind. Start/Run shadow the embedded methods to wire this in.
+type termCmd struct {
+	*exec.Cmd
+	ctx  context.Context
+	stop func() bool
+}
+
+func (c *termCmd) Start() error {
+	if err := c.Cmd.Start(); err != nil {
+		return err
+	}
+	if c.ctx != nil {
+		select {
+		case <-c.ctx.Done():
+			c.Process.Kill() //nolint:errcheck
+		default:
+			c.stop = context.AfterFunc(c.ctx, func() {
+				gracefulKill(c.Process, termGrace)
+			})
+		}
+	}
+	return nil
+}
+
+func (c *termCmd) Run() error {
+	if err := c.Start(); err != nil {
+		return err
+	}
+	return c.Wait()
+}
+
 // Client wraps the restic binary and provides methods for all backup operations.
 type Client struct {
 	binPath     string
@@ -277,6 +315,9 @@ func (c *Client) statsMode(ctx context.Context, repo string, extraArgs ...string
 	cmd.Stdout = &buf
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, fmt.Errorf("restic stats: %v\n%s", ctxErr, stderr.String())
+		}
 		return nil, fmt.Errorf("restic stats: %w\n%s", err, stderr.String())
 	}
 	return parseStats(&buf)
@@ -292,31 +333,38 @@ func (c *Client) runSimple(ctx context.Context, op string, args ...string) error
 	cmd.Stdout = io.Discard
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("restic %s: %v\n%s", op, ctxErr, stderr.String())
+		}
 		return fmt.Errorf("restic %s: %w\n%s", op, err, stderr.String())
 	}
 	return nil
 }
 
-func (c *Client) command(ctx context.Context, args ...string) (*exec.Cmd, func(), error) {
+func (c *Client) command(ctx context.Context, args ...string) (*termCmd, func(), error) {
 	f, err := writeTempFile("buoy-password-*", passwordFromCtx(ctx, c.password))
 	if err != nil {
 		return nil, nil, err
 	}
 
 	args = append([]string{"--password-file", f}, args...)
-	cmd := exec.CommandContext(ctx, c.binPath, args...)
+	cmd := exec.Command(c.binPath, args...)
 	setSysProcAttr(cmd)
 	cmd.Env = append(os.Environ(),
 		"RESTIC_COMPRESSION="+c.compression,
 		"RESTIC_PROGRESS_FPS=1",
 	)
 
+	tc := &termCmd{Cmd: cmd, ctx: ctx}
 	cleanup := func() {
+		if tc.stop != nil {
+			tc.stop()
+		}
 		if err := os.Remove(f); err != nil {
 			slog.Warn("failed to remove password temp file", "error", err)
 		}
 	}
-	return cmd, cleanup, nil
+	return tc, cleanup, nil
 }
 
 // writeTempFile creates a temporary file with the given pattern and content,

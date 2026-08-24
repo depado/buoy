@@ -47,7 +47,11 @@ func (r *Runner) CheckKnownRepos(ctx context.Context) {
 		}
 
 		seen := make(map[string]bool)
+		budgetExhausted := false
 		for _, ctr := range containers {
+			if budgetExhausted {
+				break
+			}
 			cfg := r.parseConfig(ctr.Labels)
 			repos, err := r.repoReg.SyncContainer(&ctr, cfg)
 			if err != nil {
@@ -59,12 +63,19 @@ func (r *Runner) CheckKnownRepos(ctx context.Context) {
 					continue
 				}
 				seen[ref.URL] = true
-				ctx := restic.WithPassword(ctx, r.effectivePassword(cfg, ref.Name))
-				if err := r.recordCheck(ctx, ref.URL, func(ctx context.Context) error {
+				repoCtx, cancel, err := r.maintenanceRepoCtx(ctx, ref.Name)
+				if err != nil {
+					failures = append(failures, fmt.Sprintf("maintenance budget exhausted: %s", err.Error()))
+					budgetExhausted = true
+					break
+				}
+				repoCtx = restic.WithPassword(repoCtx, r.effectivePassword(cfg, ref.Name))
+				if err := r.recordCheck(repoCtx, ref.URL, func(ctx context.Context) error {
 					return r.restic.Check(ctx, ref.URL)
 				}, l); err != nil {
 					failures = append(failures, fmt.Sprintf("%s: %s", ref.URL, err.Error()))
 				}
+				cancel()
 			}
 		}
 	}
@@ -78,17 +89,31 @@ func (r *Runner) CheckKnownRepos(ctx context.Context) {
 func (r *Runner) checkRepoEntries(ctx context.Context, entries []types.RepoEntry, logger *slog.Logger) []string {
 	var failed []string
 	seen := make(map[string]bool)
-	for _, entry := range entries {
+	for i, entry := range entries {
 		if seen[entry.URL] {
 			continue
 		}
 		seen[entry.URL] = true
-		ctx := restic.WithPassword(ctx, r.resticConf.PasswordFor(entry.RepoName))
-		if err := r.recordCheck(ctx, entry.URL, func(ctx context.Context) error {
+
+		repoCtx, cancel, err := r.maintenanceRepoCtx(ctx, entry.RepoName)
+		if err != nil {
+			remaining := 0
+			for _, e := range entries[i:] {
+				if !seen[e.URL] {
+					remaining++
+				}
+			}
+			failed = append(failed, fmt.Sprintf("%s: %s", entry.URL, err.Error()))
+			failed = append(failed, fmt.Sprintf("maintenance budget exhausted, skipped %d remaining repo(s)", remaining))
+			break
+		}
+		repoCtx = restic.WithPassword(repoCtx, r.resticConf.PasswordFor(entry.RepoName))
+		if err := r.recordCheck(repoCtx, entry.URL, func(ctx context.Context) error {
 			return r.restic.Check(ctx, entry.URL)
 		}, logger); err != nil {
 			failed = append(failed, fmt.Sprintf("%s: %s", entry.URL, err.Error()))
 		}
+		cancel()
 	}
 	return failed
 }
@@ -107,6 +132,12 @@ func (r *Runner) recordCheck(ctx context.Context, repo string, check func(contex
 	)
 	if err != nil {
 		logger.Error("check: repository check failed", "repo", repo, "error", err)
+		// A killed/aborted check leaves a stale exclusive lock behind; clear
+		// it so the next backup isn't blocked. Uses WithoutCancel since the
+		// failure often comes from the context being expired.
+		if uerr := r.restic.Unlock(context.WithoutCancel(ctx), repo); uerr != nil {
+			logger.Warn("check: unlock failed after check error", "repo", repo, "error", uerr)
+		}
 		if perr := r.repoReg.MarkCheckComplete(repo, false); perr != nil {
 			logger.Warn("failed to persist check status", "repo", repo, "error", perr)
 		}

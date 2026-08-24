@@ -17,6 +17,7 @@ daemon:
   exec_timeout: "5m"
   health_wait_timeout: "5m"
   backup_timeout: "1h"
+  maintenance_timeout: "6h"
   repo_timeout: "30m"
   check_schedule: "@weekly"
   prune_schedule: "@weekly"
@@ -126,6 +127,8 @@ daemon:
 ```
 
 If `prune_schedule` and `check_schedule` are identical, buoy merges them into a single maintenance job that prunes first and then checks (matching the restic recommendation to run `check` after `prune`). Otherwise they run as independent jobs.
+
+Both jobs are bounded by `daemon.maintenance_timeout` (default `6h`, `0` to disable). Each repo call within a job gets its own budget from `daemon.repo_timeout` (or `restic.repos.<name>.timeout`), inherited from the maintenance window (the shorter wins). When less than 10s of the window remains, no new repo is started: the job stops and reports a single "budget exhausted, skipped N repos" failure instead of a waterfall of timeout errors.
 
 ## State Persistence
 

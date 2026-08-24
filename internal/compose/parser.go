@@ -274,8 +274,8 @@ func classifySource(source, baseDir string, env map[string]string) (volType, res
 // resolveBindSource resolves a bind mount source to a concrete host path.
 // When the source contains a variable that could not be resolved (not in the
 // environment and no usable default), the concrete path is unknowable and
-// the variable path is kept as-is — shortening to a common ancestor is the
-// caller's job.
+// the variable path is kept as-is (shortening to a common ancestor is the
+// caller's job).
 func resolveBindSource(source, baseDir string, env map[string]string) string {
 	resolved := resolveVars(source, env)
 	if strings.Contains(resolved, "${") {

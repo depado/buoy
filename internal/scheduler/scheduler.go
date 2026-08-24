@@ -23,33 +23,35 @@ import (
 var ErrQueued = fmt.Errorf("backup queued")
 
 type Scheduler struct {
-	cron             *cron.Cron
-	docker           *docker.Client
-	backup           *backup.Runner
-	sem              chan struct{}
-	wg               sync.WaitGroup
-	containerReg     *containerRegistry
-	repoReg          *registry.Registry
-	stacks           map[string]*stackQueue
-	stackMu          sync.Mutex
-	active           atomic.Int64
-	logger           *slog.Logger
-	defaultSchedule  string
-	defaultRetention string
-	backupTimeout    time.Duration
-	tracer           trace.Tracer
+	cron               *cron.Cron
+	docker             *docker.Client
+	backup             *backup.Runner
+	sem                chan struct{}
+	wg                 sync.WaitGroup
+	containerReg       *containerRegistry
+	repoReg            *registry.Registry
+	stacks             map[string]*stackQueue
+	stackMu            sync.Mutex
+	active             atomic.Int64
+	logger             *slog.Logger
+	defaultSchedule    string
+	defaultRetention   string
+	backupTimeout      time.Duration
+	maintenanceTimeout time.Duration
+	tracer             trace.Tracer
 }
 
 type Config struct {
-	Docker           *docker.Client
-	Runner           *backup.Runner
-	Registry         *registry.Registry
-	Concurrency      int
-	DefaultSchedule  string
-	DefaultRetention string
-	BackupTimeout    time.Duration
-	Logger           *slog.Logger
-	Tracer           trace.Tracer
+	Docker             *docker.Client
+	Runner             *backup.Runner
+	Registry           *registry.Registry
+	Concurrency        int
+	DefaultSchedule    string
+	DefaultRetention   string
+	BackupTimeout      time.Duration
+	MaintenanceTimeout time.Duration
+	Logger             *slog.Logger
+	Tracer             trace.Tracer
 }
 
 func New(cfg *Config) *Scheduler {
@@ -69,18 +71,19 @@ func New(cfg *Config) *Scheduler {
 		tracer = noop.NewTracerProvider().Tracer("buoy")
 	}
 	return &Scheduler{
-		cron:             c,
-		docker:           cfg.Docker,
-		backup:           cfg.Runner,
-		sem:              make(chan struct{}, cfg.Concurrency),
-		containerReg:     newContainerRegistry(c, cfg.Logger),
-		repoReg:          cfg.Registry,
-		stacks:           make(map[string]*stackQueue),
-		logger:           cfg.Logger,
-		defaultSchedule:  cfg.DefaultSchedule,
-		defaultRetention: cfg.DefaultRetention,
-		backupTimeout:    cfg.BackupTimeout,
-		tracer:           tracer,
+		cron:               c,
+		docker:             cfg.Docker,
+		backup:             cfg.Runner,
+		sem:                make(chan struct{}, cfg.Concurrency),
+		containerReg:       newContainerRegistry(c, cfg.Logger),
+		repoReg:            cfg.Registry,
+		stacks:             make(map[string]*stackQueue),
+		logger:             cfg.Logger,
+		defaultSchedule:    cfg.DefaultSchedule,
+		defaultRetention:   cfg.DefaultRetention,
+		backupTimeout:      cfg.BackupTimeout,
+		maintenanceTimeout: cfg.MaintenanceTimeout,
+		tracer:             tracer,
 	}
 }
 
@@ -225,8 +228,14 @@ func (s *Scheduler) scheduleMaintenance(schedule string, fn func(context.Context
 		defer s.active.Add(-1)
 		defer s.wg.Done()
 
-		ctx, cancel := context.WithTimeout(context.Background(), s.backupTimeout)
-		defer cancel()
+		var ctx context.Context
+		if s.maintenanceTimeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(context.Background(), s.maintenanceTimeout)
+			defer cancel()
+		} else {
+			ctx = context.Background()
+		}
 		start := time.Now()
 		fn(ctx)
 		s.logger.Info("periodic maintenance complete", slog.Duration("duration", time.Since(start)))

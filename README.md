@@ -403,6 +403,7 @@ When a container label refers to a global value (`buoy.schedule` →
 | `daemon.exec_timeout`        | `5m`                                                                     | `BUOY_DAEMON_EXEC_TIMEOUT` / `--daemon.exec_timeout`               |
 | `daemon.health_wait_timeout` | `5m`                                                                     | `BUOY_DAEMON_HEALTH_WAIT_TIMEOUT` / `--daemon.health_wait_timeout` |
 | `daemon.backup_timeout`      | `1h`                                                                     | `BUOY_DAEMON_BACKUP_TIMEOUT` / `--daemon.backup_timeout`           |
+| `daemon.maintenance_timeout` | `6h`                                                                     | `BUOY_DAEMON_MAINTENANCE_TIMEOUT` / `--daemon.maintenance_timeout` |
 | `daemon.repo_timeout`        | `30m`                                                                    | `BUOY_DAEMON_REPO_TIMEOUT` / `--daemon.repo_timeout`               |
 | `daemon.check_schedule`      | `@weekly`                                                                | `BUOY_DAEMON_CHECK_SCHEDULE` / `--daemon.check_schedule`           |
 | `daemon.prune_schedule`      | `@weekly`                                                                | `BUOY_DAEMON_PRUNE_SCHEDULE` / `--daemon.prune_schedule`           |

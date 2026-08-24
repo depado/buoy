@@ -88,6 +88,7 @@ var RunCmd = &cobra.Command{
 		}
 
 		backupTimeout := config.ParseDurationOrDefault(conf.Daemon.BackupTimeout, 1*time.Hour)
+		maintenanceTimeout := config.ParseDurationOrDefault(conf.Daemon.MaintenanceTimeout, 6*time.Hour)
 		repoTimeout := config.ParseDurationOrDefault(conf.Daemon.RepoTimeout, 30*time.Minute)
 		execTimeout := config.ParseDurationOrDefault(conf.Daemon.ExecTimeout, 5*time.Minute)
 		healthWaitTimeout := config.ParseDurationOrDefault(conf.Daemon.HealthWaitTimeout, 5*time.Minute)
@@ -121,15 +122,16 @@ var RunCmd = &cobra.Command{
 		}()
 
 		sched := scheduler.New(&scheduler.Config{
-			Docker:           dockerClient,
-			Runner:           runner,
-			Registry:         reg,
-			Concurrency:      conf.Daemon.Concurrency,
-			DefaultSchedule:  conf.Daemon.DefaultSchedule,
-			DefaultRetention: conf.Daemon.DefaultRetention,
-			BackupTimeout:    backupTimeout,
-			Logger:           logger,
-			Tracer:           tel.Tracer(),
+			Docker:             dockerClient,
+			Runner:             runner,
+			Registry:           reg,
+			Concurrency:        conf.Daemon.Concurrency,
+			DefaultSchedule:    conf.Daemon.DefaultSchedule,
+			DefaultRetention:   conf.Daemon.DefaultRetention,
+			BackupTimeout:      backupTimeout,
+			MaintenanceTimeout: maintenanceTimeout,
+			Logger:             logger,
+			Tracer:             tel.Tracer(),
 		})
 
 		meters.RegisterCallbacks(

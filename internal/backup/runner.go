@@ -183,6 +183,11 @@ func (r *Runner) Run(ctx context.Context, ctr *types.Container) (runErr error) {
 	return nil
 }
 
+// minRemainingBudget is the smallest remaining window before a new unit of
+// work (repo prune/check, hook) is started; anything less is guaranteed to
+// fail instantly, so it is skipped instead.
+const minRemainingBudget = 10 * time.Second
+
 func (r *Runner) effectivePassword(cfg types.BackupConfig, repoName string) string {
 	if cfg.Password != "" {
 		return cfg.Password
@@ -205,6 +210,34 @@ func (r *Runner) effectiveRepoTimeout(cfg types.BackupConfig, repoName string) t
 	return r.repoTimeout
 }
 
+// maintenanceRepoTimeout resolves the per-repo budget for prune/check runs:
+// repo config timeout → daemon repo_timeout (0 = unbounded). Container
+// labels don't apply here, since maintenance is repo-centric, not
+// container-centric.
+func (r *Runner) maintenanceRepoTimeout(repoName string) time.Duration {
+	if repo, ok := r.resticConf.Repos[repoName]; ok && repo.Timeout != "" {
+		if d, err := time.ParseDuration(repo.Timeout); err == nil && d > 0 {
+			return d
+		}
+	}
+	return r.repoTimeout
+}
+
+// maintenanceRepoCtx bounds one prune/check repo call by its per-repo budget,
+// inherited from the maintenance window (the shorter wins). Returns an error
+// when the window is too far gone to start another repo.
+func (r *Runner) maintenanceRepoCtx(ctx context.Context, repoName string) (context.Context, context.CancelFunc, error) {
+	if d, ok := ctx.Deadline(); ok && time.Until(d) < minRemainingBudget {
+		return nil, nil, fmt.Errorf("maintenance window nearly exhausted (%s left)", time.Until(d).Round(time.Second))
+	}
+	budget := r.maintenanceRepoTimeout(repoName)
+	if budget <= 0 {
+		return ctx, func() {}, nil
+	}
+	repoCtx, cancel := context.WithTimeout(ctx, budget)
+	return repoCtx, cancel, nil
+}
+
 func (r *Runner) effectiveHealthWaitTimeout(cfg types.BackupConfig) time.Duration {
 	if cfg.HealthWaitTimeout > 0 {
 		return cfg.HealthWaitTimeout
@@ -213,7 +246,7 @@ func (r *Runner) effectiveHealthWaitTimeout(cfg types.BackupConfig) time.Duratio
 }
 
 // warnUnusedMountFilters logs a warning for include/exclude entries that
-// match none of the container's mounts — they silently do nothing.
+// match none of the container's mounts (they silently do nothing).
 func warnUnusedMountFilters(l *slog.Logger, ctr *types.Container, cfg types.BackupConfig) {
 	for _, ex := range cfg.Exclude {
 		if !mountMatchesAny(ctr, func(m types.Mount) bool {
