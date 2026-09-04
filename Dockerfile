@@ -10,7 +10,7 @@ RUN wget -q "https://github.com/restic/restic/releases/download/v${RESTIC_VERSIO
     mv "restic_${RESTIC_VERSION}_linux_${TARGETARCH}" /usr/local/bin/restic && \
     chmod +x /usr/local/bin/restic
 
-ARG RCLONE_VERSION=1.75.0
+ARG RCLONE_VERSION=1.75.1
 RUN wget -q "https://github.com/rclone/rclone/releases/download/v${RCLONE_VERSION}/rclone-v${RCLONE_VERSION}-linux-${TARGETARCH}.zip" && \
     unzip -q "rclone-v${RCLONE_VERSION}-linux-${TARGETARCH}.zip" && \
     mv "rclone-v${RCLONE_VERSION}-linux-${TARGETARCH}/rclone" /usr/local/bin/rclone && \
