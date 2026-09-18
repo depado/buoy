@@ -24,7 +24,7 @@ RUN go mod verify
 COPY . .
 RUN GOOS=$TARGETOS GOARCH=$TARGETARCH make daemon
 
-FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS alpine
+FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS alpine
 RUN apk add --no-cache openssh-client
 COPY --from=builder /app/buoy /usr/local/bin/buoy
 COPY --from=builder /usr/local/bin/restic /usr/local/bin/restic
