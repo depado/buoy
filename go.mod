@@ -4,7 +4,7 @@ go 1.27
 
 require (
 	github.com/depado/gorich v1.1.2
-	github.com/lmittmann/tint v1.2.0
+	github.com/lmittmann/tint v1.2.1
 	github.com/mattn/go-isatty v0.0.24
 	github.com/moby/moby/api v1.56.1
 	github.com/moby/moby/client v0.6.1
