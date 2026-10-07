@@ -114,6 +114,8 @@ github.com/nicholas-fedor/shoutrrr v0.21.0 h1:as/mEwdaZMijCVu0FkTUEXashhvC3Y7C5g
 github.com/nicholas-fedor/shoutrrr v0.21.0/go.mod h1:dgg4kJv9K0tLXBH/1TXiSibNbM2hcd4SK6xb0sglyU4=
 github.com/nicholas-fedor/shoutrrr v0.21.1 h1:6xp6FCVatK6EJKC9OcQPkFF3wmOpzsXXdn24lSEnn6M=
 github.com/nicholas-fedor/shoutrrr v0.21.1/go.mod h1:q97ykXzJCVEre7+AVW50onUVi+NmoqSw86V6NJ+Ep3c=
+github.com/nicholas-fedor/shoutrrr v0.21.2 h1:9hfmIYQICmFfSFMNBKfdJgScz2GZ9CepyC8sGLqUHdI=
+github.com/nicholas-fedor/shoutrrr v0.21.2/go.mod h1:IvPKcHRxVTt6mqivaomKlTNLTfWDTKYqJfyy1u0cc7s=
 github.com/onsi/ginkgo/v2 v2.32.0 h1:Hw7s2pVrQo/8Yz5N77qdnpHaoc+c6cC9WIV1Jce+J6E=
 github.com/onsi/ginkgo/v2 v2.32.0/go.mod h1:+aXOY+vzZ5mu2iI2HpTZUPmM//oQfsNFX6gU9kNcA44=
 github.com/onsi/gomega v1.42.1 h1:iN1rCUX+44NZ1Dc97MPoeFYbFR0vh8zxoxMFwKdyZ6I=
@@ -401,6 +403,8 @@ golang.org/x/tools v0.48.0 h1:3+hClM1aLL5mjMKm5ovokw9epgRXPuu2tILgismM6RE=
 golang.org/x/tools v0.48.0/go.mod h1:08xX0orndb/F7jJxGDicx061tyd5pcMto75YMAXr6lk=
 golang.org/x/tools v0.50.0 h1:c2ifzfcuY7L90lZ2aKd8S4K2NpASF08SZx9ZuJkHmSU=
 golang.org/x/tools v0.50.0/go.mod h1:7ulVMw3831Mwi5EZD6RomGyffr4VFjuNYXf2BbCEAV0=
+golang.org/x/tools v0.51.0 h1:k4Xc/1Om9jwkBJBo4NVLMSARBoWtK10mx+W5BnXCeAI=
+golang.org/x/tools v0.51.0/go.mod h1:9eEncMayCV6zRMGhR5eZEC2iBx98qWcF1HZ9Z7wJOoA=
 gonum.org/v1/gonum v0.17.0 h1:VbpOemQlsSMrYmn7T2OUvQ4dqxQXU+ouZFQsZOx50z4=
 gonum.org/v1/gonum v0.17.0/go.mod h1:El3tOrEuMpv2UdMrbNlKEh9vd86bmQ6vqIcDwxEOc1E=
 google.golang.org/genproto/googleapis/api v0.0.0-20260729162451-8efbd57d26e0 h1:ybvH/ZpOcpCrjtkb7oW/fdlzbEmRVeumw19SRQmNFKU=
