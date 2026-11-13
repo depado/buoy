@@ -34,7 +34,7 @@ WORKDIR /data
 ENTRYPOINT ["/usr/local/bin/buoy"]
 CMD ["run"]
 
-FROM gcr.io/distroless/static@sha256:448810357cc8e67b7208988abdba0f5ec3d3aebee0a5b13eb624979792cffc0f AS distroless
+FROM gcr.io/distroless/static@sha256:1a64f46364620465ef9e9a8f5413757dfdf22695e050bbfd7303eeaf17a59383 AS distroless
 COPY --from=builder /app/buoy /usr/local/bin/buoy
 COPY --from=builder /usr/local/bin/restic /usr/local/bin/restic
 COPY --from=builder /usr/local/bin/rclone /usr/local/bin/rclone
