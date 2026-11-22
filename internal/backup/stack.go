@@ -22,6 +22,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*typ
 	start := time.Now()
 	var backupErrors map[string]error
 	var allIssues []string
+	var lifecycleIssues []string
 	ctx, span := r.tracer.Start(ctx, "buoy.stack.backup",
 		trace.WithAttributes(
 			attribute.String("project", project),
@@ -33,7 +34,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*typ
 			metric.WithAttributes(
 				attribute.String("project", project),
 				attribute.Int("services", len(batch)),
-				attribute.Bool("success", len(backupErrors) == 0),
+				attribute.Bool("success", len(backupErrors) == 0 && len(lifecycleIssues) == 0),
 			),
 		)
 		span.End()
@@ -57,7 +58,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*typ
 	containerCfg, containerRepos := r.resolveStackConfigs(fresh, l)
 
 	l.Debug("running pre-backup hooks", "services", len(fresh))
-	r.runParallelPreHooks(ctx, fresh, containerCfg, l)
+	preErrs := r.runParallelPreHooks(ctx, fresh, containerCfg, l)
 
 	deps := serviceDeps(all)
 	stopSvc := stopSet(fresh, deps)
@@ -65,23 +66,26 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*typ
 	services := serviceContainers(all)
 
 	l.Debug("stopping stack services", "count", len(stopSvc))
-	wasStopped, stopFailed, ignored := r.stopStackServices(ctx, services, stopSvc, deps, l)
+	wasStopped, stopFailed, ignored := r.stopStackServices(ctx, services, stopSvc, deps, preErrs, l)
 	defer r.releaseBatch(ignored)
 
 	l.Debug("backing up stack services", "count", len(fresh))
-	backupErrors, allIssues = r.backupStackServices(ctx, fresh, containerCfg, containerRepos, stopFailed, l)
+	backupErrors, allIssues = r.backupStackServices(ctx, fresh, containerCfg, containerRepos, stopFailed, preErrs, l)
 
 	l.Debug("starting stack services")
-	r.startStackServices(ctx, services, deps, all, wasStopped, l)
+	lifecycleIssues = r.startStackServices(ctx, services, deps, all, wasStopped, l)
 
 	l.Debug("running post-backup hooks and retention")
-	r.runPostHooksAndRetention(ctx, fresh, containerCfg, containerRepos, backupErrors, &allIssues, l)
+	allIssues = append(allIssues, lifecycleIssues...)
+	allIssues = append(allIssues, r.runPostHooksAndRetention(ctx, fresh, containerCfg, containerRepos, backupErrors, l)...)
 
 	ok := len(fresh) - len(backupErrors)
-	if len(backupErrors) > 0 {
-		l.Warn("stack backup finished with failures", "total", len(fresh), "ok", ok, "failed", len(backupErrors))
-		span.RecordError(fmt.Errorf("stack backup: %d/%d services failed", len(backupErrors), len(fresh)))
-		span.SetStatus(codes.Error, fmt.Sprintf("%d/%d services failed", len(backupErrors), len(fresh)))
+	if len(backupErrors) > 0 || len(lifecycleIssues) > 0 {
+		l.Warn("stack backup finished with failures", "total", len(fresh), "ok", ok,
+			"failed", len(backupErrors), "lifecycle_issues", len(lifecycleIssues))
+		err := fmt.Errorf("%d/%d services failed, %d lifecycle issue(s)", len(backupErrors), len(fresh), len(lifecycleIssues))
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 	} else {
 		l.Info("stack backup finished", "total", len(fresh), "ok", ok)
 	}
@@ -136,16 +140,23 @@ func (r *Runner) resolveStackConfigs(fresh []*types.Container, l *slog.Logger) (
 	return cfgs, repos
 }
 
-func (r *Runner) runParallelPreHooks(ctx context.Context, fresh []*types.Container, cfgs map[string]types.BackupConfig, l *slog.Logger) {
+func (r *Runner) runParallelPreHooks(ctx context.Context, fresh []*types.Container, cfgs map[string]types.BackupConfig, l *slog.Logger) map[string]error {
+	var mu sync.Mutex
+	errs := make(map[string]error, len(fresh))
 	var wg sync.WaitGroup
 	for _, ctr := range fresh {
 		wg.Add(1)
 		go func(c *types.Container) {
 			defer wg.Done()
-			r.runPreHooks(ctx, c, cfgs[c.ID], l.With("service", c.ComposeService))
+			if err := r.runPreHooks(ctx, c, cfgs[c.ID], l.With("service", c.ComposeService)); err != nil {
+				mu.Lock()
+				errs[c.ID] = err
+				mu.Unlock()
+			}
 		}(ctr)
 	}
 	wg.Wait()
+	return errs
 }
 
 func (r *Runner) stopStackServices(
@@ -153,6 +164,7 @@ func (r *Runner) stopStackServices(
 	services map[string][]*types.Container,
 	stopSvc map[string]bool,
 	deps map[string][]depInfo,
+	preErrs map[string]error,
 	l *slog.Logger,
 ) (wasStopped, stopFailed, ignored map[string]bool) {
 	wasStopped = make(map[string]bool)
@@ -181,6 +193,10 @@ func (r *Runner) stopStackServices(
 			if !stopSvc[svc] {
 				continue
 			}
+			// A service whose pre-hook failed must not be stopped.
+			if preErrs[ctr.ID] != nil {
+				continue
+			}
 			sl := l.With("service", ctr.ComposeService)
 			r.ignore(ctr.ID)
 			ignored[ctr.ID] = true
@@ -207,6 +223,7 @@ func (r *Runner) backupStackServices(
 	cfgs map[string]types.BackupConfig,
 	repos map[string][]types.RepoRef,
 	stopFailed map[string]bool,
+	preErrs map[string]error,
 	l *slog.Logger,
 ) (map[string]error, []string) {
 	backupErrors := make(map[string]error)
@@ -214,6 +231,18 @@ func (r *Runner) backupStackServices(
 	for _, ctr := range fresh {
 		cfg := cfgs[ctr.ID]
 		eligibleMounts := countEligibleMounts(ctr, cfg)
+		if err := preErrs[ctr.ID]; err != nil {
+			l.With("service", ctr.ComposeService).Warn("skipping backup, pre-hook failed")
+			backupErrors[ctr.ComposeService] = fmt.Errorf("pre-hook: %w", err)
+			allIssues = append(allIssues, fmt.Sprintf("%s: pre-hook: %s", ctr.ComposeService, err))
+			r.meters.ContainerBackups.Add(ctx, 1,
+				metric.WithAttributes(containerAttrs(ctr,
+					attribute.Int("mounts", eligibleMounts),
+					attribute.Bool("success", false),
+				)...),
+			)
+			continue
+		}
 		if stopFailed[ctr.ID] {
 			l.With("service", ctr.ComposeService).Warn("skipping backup, stop failed")
 			backupErrors[ctr.ComposeService] = fmt.Errorf("stop failed")
@@ -250,7 +279,7 @@ func (r *Runner) startStackServices(
 	all []*types.Container,
 	wasStopped map[string]bool,
 	l *slog.Logger,
-) {
+) []string {
 	startOrder := orderForStartFromDeps(deps, func(svc string) {
 		l.Warn("dependency cycle detected", "service", svc)
 	})
@@ -268,9 +297,13 @@ func (r *Runner) startStackServices(
 		}
 	}
 
+	var issues []string
 	for _, svc := range svcs {
 		if err := r.waitForDeps(ctx, deps, all, svc, l); err != nil {
 			l.Warn("failed waiting for dependencies", "service", svc, "error", err)
+			// Deliberate: dependents still start. Availability beats strict
+			// dependency ordering here; the failure is reported instead.
+			issues = append(issues, fmt.Sprintf("%s: dependency wait: %s", svc, err))
 		}
 		for _, ctr := range services[svc] {
 			if !wasStopped[ctr.ID] {
@@ -278,9 +311,12 @@ func (r *Runner) startStackServices(
 			}
 			cl := l.With("service", ctr.ComposeService)
 			cfg := r.parseConfig(ctr.Labels)
-			r.startContainer(ctx, ctr, cfg, cl)
+			if err := r.startContainer(ctx, ctr, cfg, cl); err != nil {
+				issues = append(issues, fmt.Sprintf("%s: restart: %s", svc, err))
+			}
 		}
 	}
+	return issues
 }
 
 func (r *Runner) runPostHooksAndRetention(
@@ -289,18 +325,21 @@ func (r *Runner) runPostHooksAndRetention(
 	cfgs map[string]types.BackupConfig,
 	repos map[string][]types.RepoRef,
 	backupErrors map[string]error,
-	allIssues *[]string,
 	l *slog.Logger,
-) {
+) []string {
+	var issues []string
 	for _, ctr := range fresh {
 		cfg := cfgs[ctr.ID]
-		r.runPostHooks(ctx, ctr, cfg, l.With("service", ctr.ComposeService))
+		if err := r.runPostHooks(ctx, ctr, cfg, l.With("service", ctr.ComposeService)); err != nil {
+			issues = append(issues, fmt.Sprintf("%s: post-hook: %s", ctr.ComposeService, err))
+		}
 		if _, failed := backupErrors[ctr.ComposeService]; !failed {
 			for _, ri := range r.applyRetention(ctx, ctr, cfg, repos[ctr.ID], l.With("service", ctr.ComposeService)) {
-				*allIssues = append(*allIssues, fmt.Sprintf("%s: %s", ctr.ComposeService, ri))
+				issues = append(issues, fmt.Sprintf("%s: %s", ctr.ComposeService, ri))
 			}
 		}
 	}
+	return issues
 }
 
 func (r *Runner) releaseBatch(ignored map[string]bool) {

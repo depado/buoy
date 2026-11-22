@@ -2,6 +2,8 @@ package backup
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -14,39 +16,43 @@ import (
 	"github.com/depado/buoy/internal/types"
 )
 
-func (r *Runner) runPreHooks(ctx context.Context, ctr *types.Container, cfg types.BackupConfig, l *slog.Logger) {
+func (r *Runner) runPreHooks(ctx context.Context, ctr *types.Container, cfg types.BackupConfig, l *slog.Logger) error {
+	var errs []error
 	if cfg.HookPreCmd != "" {
-		r.runHook(ctx, "buoy.hook.pre.host", ctr, "pre", "host",
+		errs = append(errs, r.runHook(ctx, "buoy.hook.pre.host", ctr, "pre", "host",
 			func(ctx context.Context) error { return hook.ExecOnHost(ctx, cfg.HookPreCmd, l) },
-			l)
+			l))
 	}
 	if cfg.HookPreExec != "" {
-		r.runHook(ctx, "buoy.hook.pre.exec", ctr, "pre", "container",
+		errs = append(errs, r.runHook(ctx, "buoy.hook.pre.exec", ctr, "pre", "container",
 			func(ctx context.Context) error {
 				return hook.ExecInContainer(ctx, r.docker, ctr.ID, cfg.HookPreExec, l)
 			},
-			l)
+			l))
 	}
+	return errors.Join(errs...)
 }
 
-func (r *Runner) runPostHooks(ctx context.Context, ctr *types.Container, cfg types.BackupConfig, l *slog.Logger) {
+func (r *Runner) runPostHooks(ctx context.Context, ctr *types.Container, cfg types.BackupConfig, l *slog.Logger) error {
 	// Detach from the backup deadline: post-hooks must run even when the
 	// budget is gone, since pre-hooks may have left state behind that
 	// needs tearing down. They stay bounded by exec_timeout.
 	ctx = context.WithoutCancel(ctx)
 
+	var errs []error
 	if cfg.HookPostExec != "" {
-		r.runHook(ctx, "buoy.hook.post.exec", ctr, "post", "container",
+		errs = append(errs, r.runHook(ctx, "buoy.hook.post.exec", ctr, "post", "container",
 			func(ctx context.Context) error {
 				return hook.ExecInContainer(ctx, r.docker, ctr.ID, cfg.HookPostExec, l)
 			},
-			l)
+			l))
 	}
 	if cfg.HookPostCmd != "" {
-		r.runHook(ctx, "buoy.hook.post.host", ctr, "post", "host",
+		errs = append(errs, r.runHook(ctx, "buoy.hook.post.host", ctr, "post", "host",
 			func(ctx context.Context) error { return hook.ExecOnHost(ctx, cfg.HookPostCmd, l) },
-			l)
+			l))
 	}
+	return errors.Join(errs...)
 }
 
 func (r *Runner) runHook(
@@ -56,7 +62,7 @@ func (r *Runner) runHook(
 	hookType, hookTarget string,
 	fn func(context.Context) error,
 	l *slog.Logger,
-) {
+) error {
 	ctx, span := r.tracer.Start(ctx, spanName,
 		trace.WithAttributes(
 			attribute.String("hook.type", hookType),
@@ -69,7 +75,7 @@ func (r *Runner) runHook(
 	// guaranteed to die instantly, so skip it instead.
 	if d, ok := ctx.Deadline(); ok && time.Until(d) < minRemainingBudget {
 		l.Warn("skipping hook, backup budget nearly exhausted", "remaining", time.Until(d).Round(time.Second))
-		return
+		return fmt.Errorf("%s skipped: backup budget nearly exhausted", hookType)
 	}
 
 	execCtx, cancel := context.WithTimeout(ctx, r.execTimeout)
@@ -82,10 +88,12 @@ func (r *Runner) runHook(
 	label := hookType + "-backup " + target
 
 	ok := true
+	var hookErr error
 	start := time.Now()
 	if err := fn(execCtx); err != nil {
 		l.Warn(label+" failed", "error", err)
 		ok = false
+		hookErr = fmt.Errorf("%s-backup %s: %w", hookType, target, err)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 	} else {
@@ -99,4 +107,5 @@ func (r *Runner) runHook(
 			attribute.Bool("success", ok),
 		)...),
 	)
+	return hookErr
 }

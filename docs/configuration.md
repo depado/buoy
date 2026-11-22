@@ -81,6 +81,10 @@ services:
 
 This overrides all repo-level and global passwords for that container.
 
+## Hooks
+
+Pre-backup hooks (`buoy.hook.pre.cmd`, `buoy.hook.pre.exec`) abort the backup for that container when they fail or are skipped: the container is not stopped, no snapshot is taken, no retention is applied, and a failure is reported; post-backup hooks (`buoy.hook.post.cmd`, `buoy.hook.post.exec`) run after the container restarts, and a failure there is reported without discarding the snapshot.
+
 ## Notifications
 
 buoy can send failure notifications via [shoutrrr](https://github.com/nicholas-fedor/shoutrrr), supporting 50+ services including Slack, Discord, Telegram, email, and Gotify. Configure one or more shoutrrr URLs and set the notification level:

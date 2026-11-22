@@ -2,6 +2,7 @@ package backup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -117,7 +118,18 @@ func (r *Runner) Run(ctx context.Context, ctr *types.Container) (runErr error) {
 
 	eligibleMounts := countEligibleMounts(fresh, cfg)
 
-	r.runPreHooks(ctx, fresh, cfg, l)
+	if err := r.runPreHooks(ctx, fresh, cfg, l); err != nil {
+		r.meters.ContainerBackups.Add(ctx, 1,
+			metric.WithAttributes(containerAttrs(fresh,
+				attribute.Int("mounts", eligibleMounts),
+				attribute.Bool("success", false),
+			)...),
+		)
+		// Cleanup may still be needed for whatever the pre-hook started.
+		_ = r.runPostHooks(ctx, fresh, cfg, l)
+		r.notifier.SendBackupError(ctr.Name, fmt.Sprintf("Pre-hook: %s", err))
+		return fmt.Errorf("pre-hook: %w", err)
+	}
 
 	l.Info("backup started", "stop", cfg.StopBefore, "mounts", len(fresh.Mounts), "repos", len(repos))
 	if d, ok := ctx.Deadline(); ok {
@@ -151,12 +163,17 @@ func (r *Runner) Run(ctx context.Context, ctr *types.Container) (runErr error) {
 		)...),
 	)
 
+	var lifecycleErrs []error
 	if wasRunning {
-		r.startContainer(ctx, fresh, cfg, l)
+		if err := r.startContainer(ctx, fresh, cfg, l); err != nil {
+			lifecycleErrs = append(lifecycleErrs, fmt.Errorf("restart: %w", err))
+		}
 	}
 
 	l.Debug("running post-backup hooks")
-	r.runPostHooks(ctx, fresh, cfg, l)
+	if err := r.runPostHooks(ctx, fresh, cfg, l); err != nil {
+		lifecycleErrs = append(lifecycleErrs, fmt.Errorf("post-hook: %w", err))
+	}
 
 	var issues []string
 	if backupErr != nil {
@@ -164,15 +181,15 @@ func (r *Runner) Run(ctx context.Context, ctr *types.Container) (runErr error) {
 	} else {
 		issues = append(issues, r.applyRetention(ctx, fresh, cfg, repos, l)...)
 	}
+	for _, err := range lifecycleErrs {
+		issues = append(issues, err.Error())
+	}
 
 	if len(issues) > 0 {
 		l.Warn("backup completed with failures", "issues", len(issues))
 		msg := strings.Join(issues, "\n")
 		r.notifier.SendBackupError(ctr.Name, msg)
-		if backupErr != nil {
-			return backupErr
-		}
-		return nil
+		return errors.Join(backupErr, errors.Join(lifecycleErrs...))
 	}
 
 	l.Info("backup completed")

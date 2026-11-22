@@ -42,6 +42,7 @@ func (r *Runner) stopContainer(ctx context.Context, ctr *types.Container, cfg ty
 		l.Warn("container did not stop in time, aborting backup", "error", err)
 		if startErr := r.docker.StartContainer(ctx, ctr.ID); startErr != nil {
 			l.Error("failed to restart container after failed stop", "error", startErr)
+			return false, fmt.Errorf("wait for stop: %w (restart: %v)", err, startErr)
 		}
 		return false, fmt.Errorf("wait for stop: %w", err)
 	}
@@ -49,7 +50,7 @@ func (r *Runner) stopContainer(ctx context.Context, ctr *types.Container, cfg ty
 	return true, nil
 }
 
-func (r *Runner) startContainer(ctx context.Context, ctr *types.Container, cfg types.BackupConfig, l *slog.Logger) {
+func (r *Runner) startContainer(ctx context.Context, ctr *types.Container, cfg types.BackupConfig, l *slog.Logger) error {
 	startTime := time.Now()
 	startErr := error(nil)
 	// Detach from the backup deadline: the container must be restarted even
@@ -75,13 +76,18 @@ func (r *Runner) startContainer(ctx context.Context, ctr *types.Container, cfg t
 		l.Error("start container failed", "error", startErr)
 		span.RecordError(startErr)
 		span.SetStatus(codes.Error, startErr.Error())
-		return
+		return startErr
 	}
 	l.Info("container started")
-	r.waitRunning(ctx, ctr, cfg, l)
+	if startErr = r.waitRunning(ctx, ctr, cfg, l); startErr != nil {
+		span.RecordError(startErr)
+		span.SetStatus(codes.Error, startErr.Error())
+		return startErr
+	}
+	return nil
 }
 
-func (r *Runner) waitRunning(ctx context.Context, ctr *types.Container, cfg types.BackupConfig, l *slog.Logger) {
+func (r *Runner) waitRunning(ctx context.Context, ctr *types.Container, cfg types.BackupConfig, l *slog.Logger) error {
 	l.Debug("waiting for container to be running", "timeout", r.effectiveHealthWaitTimeout(cfg))
 	ctx, cancel := context.WithTimeout(ctx, r.effectiveHealthWaitTimeout(cfg))
 	defer cancel()
@@ -101,7 +107,8 @@ func (r *Runner) waitRunning(ctx context.Context, ctr *types.Container, cfg type
 			return false, nil
 		}); err != nil {
 		l.Warn("container did not reach running state", "error", err)
-		return
+		return err
 	}
 	l.Info("container running")
+	return nil
 }
