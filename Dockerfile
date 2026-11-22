@@ -4,7 +4,7 @@ RUN apk add --no-cache make git tzdata unzip
 
 ARG TARGETOS
 ARG TARGETARCH
-ARG RESTIC_VERSION=0.19.1
+ARG RESTIC_VERSION=0.20.0
 RUN wget -q "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_${TARGETARCH}.bz2" && \
     bunzip2 "restic_${RESTIC_VERSION}_linux_${TARGETARCH}.bz2" && \
     mv "restic_${RESTIC_VERSION}_linux_${TARGETARCH}" /usr/local/bin/restic && \
