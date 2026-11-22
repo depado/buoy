@@ -1,9 +1,11 @@
 package scheduler
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/robfig/cron/v3"
 
@@ -206,5 +208,41 @@ func TestContainerRegistry_FindByProject_Empty(t *testing.T) {
 	result := cr.findByProject("nonexistent")
 	if len(result) != 0 {
 		t.Errorf("expected empty, got %d", len(result))
+	}
+}
+
+func TestRunMaintenanceIsSerialized(t *testing.T) {
+	s := New(&Config{Concurrency: 2, Logger: newTestLogger()})
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		s.runMaintenance(func(context.Context) {
+			close(started)
+			<-release
+		})
+		close(done)
+	}()
+	<-started
+
+	// Second run must skip immediately instead of blocking on the semaphore.
+	skipped := make(chan struct{})
+	go func() {
+		s.runMaintenance(func(context.Context) { t.Error("second maintenance ran") })
+		close(skipped)
+	}()
+	select {
+	case <-skipped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("second maintenance blocked: deadlock regression")
+	}
+
+	close(release)
+	<-done
+
+	// Capacity must be fully released for a later backup/maintenance.
+	if len(s.sem) != 0 {
+		t.Errorf("semaphore leaked %d token(s)", len(s.sem))
 	}
 }

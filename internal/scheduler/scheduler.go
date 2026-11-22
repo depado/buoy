@@ -27,6 +27,7 @@ type Scheduler struct {
 	docker             *docker.Client
 	backup             *backup.Runner
 	sem                chan struct{}
+	maintMu            sync.Mutex // held for the whole maintenance run; one at a time
 	wg                 sync.WaitGroup
 	containerReg       *containerRegistry
 	repoReg            *registry.Registry
@@ -214,33 +215,44 @@ func (s *Scheduler) scheduleMaintenance(schedule string, fn func(context.Context
 	if schedule == "" {
 		return nil
 	}
-	_, err := s.cron.AddFunc(schedule, func() {
-		s.active.Add(1)
-		s.wg.Add(1)
-		for i := 0; i < cap(s.sem); i++ {
-			s.sem <- struct{}{}
-		}
-		defer func() {
-			for i := 0; i < cap(s.sem); i++ {
-				<-s.sem
-			}
-		}()
-		defer s.active.Add(-1)
-		defer s.wg.Done()
-
-		var ctx context.Context
-		if s.maintenanceTimeout > 0 {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(context.Background(), s.maintenanceTimeout)
-			defer cancel()
-		} else {
-			ctx = context.Background()
-		}
-		start := time.Now()
-		fn(ctx)
-		s.logger.Info("periodic maintenance complete", slog.Duration("duration", time.Since(start)))
-	})
+	_, err := s.cron.AddFunc(schedule, func() { s.runMaintenance(fn) })
 	return err
+}
+
+// runMaintenance runs fn with exclusive access to the backup semaphore.
+// A concurrent maintenance run is skipped rather than queued: waiting would
+// hide the overlap instead of reporting it, and the next cron tick retries.
+func (s *Scheduler) runMaintenance(fn func(context.Context)) {
+	if !s.maintMu.TryLock() {
+		s.logger.Warn("previous maintenance still running, skipping this run")
+		return
+	}
+	defer s.maintMu.Unlock()
+
+	s.active.Add(1)
+	s.wg.Add(1)
+	for i := 0; i < cap(s.sem); i++ {
+		s.sem <- struct{}{}
+	}
+	defer func() {
+		for i := 0; i < cap(s.sem); i++ {
+			<-s.sem
+		}
+	}()
+	defer s.active.Add(-1)
+	defer s.wg.Done()
+
+	var ctx context.Context
+	if s.maintenanceTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), s.maintenanceTimeout)
+		defer cancel()
+	} else {
+		ctx = context.Background()
+	}
+	start := time.Now()
+	fn(ctx)
+	s.logger.Info("periodic maintenance complete", slog.Duration("duration", time.Since(start)))
 }
 
 func (s *Scheduler) Resync(ctx context.Context) {
