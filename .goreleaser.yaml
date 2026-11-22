@@ -45,7 +45,7 @@ builds:
 
 archives:
   - id: buoy
-    builds: [buoy]
+    ids: [buoy]
     formats: ["tar.gz"]
     name_template: >-
       buoy_
@@ -55,7 +55,7 @@ archives:
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
   - id: buoyctl
-    builds: [buoyctl]
+    ids: [buoyctl]
     formats: ["tar.gz"]
     format_overrides:
       - goos: windows
