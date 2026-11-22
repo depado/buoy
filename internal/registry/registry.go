@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,8 +16,9 @@ import (
 )
 
 var (
-	reposBucket          = []byte("repos")
-	containerReposBucket = []byte("container_repos")
+	reposBucket           = []byte("repos")
+	containerReposBucket  = []byte("container_repos")
+	pendingRestartsBucket = []byte("pending_restarts")
 )
 
 type Registry struct {
@@ -35,7 +37,7 @@ func Open(path string, baseRepos []types.RepoRef, logger *slog.Logger) (*Registr
 		return nil, fmt.Errorf("open registry: %w", err)
 	}
 	if err := db.Update(func(tx *bolt.Tx) error {
-		for _, bucket := range [][]byte{reposBucket, containerReposBucket} {
+		for _, bucket := range [][]byte{reposBucket, containerReposBucket, pendingRestartsBucket} {
 			if _, err := tx.CreateBucketIfNotExists(bucket); err != nil {
 				return fmt.Errorf("create bucket %s: %w", bucket, err)
 			}
@@ -51,6 +53,68 @@ func Open(path string, baseRepos []types.RepoRef, logger *slog.Logger) (*Registr
 
 func (r *Registry) Close() error {
 	return r.db.Close()
+}
+
+// PendingRestart records a container buoy stopped and has not restarted.
+type PendingRestart struct {
+	ContainerID   string    `json:"container_id"`
+	ContainerName string    `json:"container_name"`
+	Project       string    `json:"project,omitempty"`
+	Service       string    `json:"service,omitempty"`
+	StoppedAt     time.Time `json:"stopped_at"`
+}
+
+// MarkStopped persists buoy's ownership of a container stop, so a crash before
+// the restart can be recovered on the next daemon start.
+func (r *Registry) MarkStopped(ctr *types.Container) error {
+	data, err := json.Marshal(PendingRestart{
+		ContainerID:   ctr.ID,
+		ContainerName: ctr.Name,
+		Project:       ctr.ComposeProject,
+		Service:       ctr.ComposeService,
+		StoppedAt:     time.Now(),
+	})
+	if err != nil {
+		return fmt.Errorf("marshal pending restart: %w", err)
+	}
+	if err := r.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(pendingRestartsBucket).Put([]byte(ctr.ID), data)
+	}); err != nil {
+		return err
+	}
+	r.logger.Debug("marked container stop ownership", "container", ctr.Name, "container_id", ctr.ID)
+	return nil
+}
+
+// ClearStopped drops the stop ownership record after a successful restart.
+func (r *Registry) ClearStopped(id string) error {
+	return r.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(pendingRestartsBucket).Delete([]byte(id))
+	})
+}
+
+// PendingRestarts returns containers buoy stopped but did not restart, oldest
+// stop first.
+func (r *Registry) PendingRestarts() ([]PendingRestart, error) {
+	entries := []PendingRestart{}
+	err := r.db.View(func(tx *bolt.Tx) error {
+		c := tx.Bucket(pendingRestartsBucket).Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			var p PendingRestart
+			if err := json.Unmarshal(v, &p); err != nil {
+				return fmt.Errorf("unmarshal pending restart %s: %w", string(k), err)
+			}
+			entries = append(entries, p)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	slices.SortFunc(entries, func(a, b PendingRestart) int {
+		return a.StoppedAt.Compare(b.StoppedAt)
+	})
+	return entries, nil
 }
 
 func (r *Registry) SyncContainer(ctr *types.Container, cfg types.BackupConfig) ([]types.RepoRef, error) {

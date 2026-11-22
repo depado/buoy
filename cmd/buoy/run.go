@@ -169,6 +169,8 @@ var RunCmd = &cobra.Command{
 		if err := func() error {
 			ctx, span := tel.Tracer().Start(context.Background(), "buoy.startup_scan")
 			defer span.End()
+			// Recovery first, so the startup scan sees recovered containers running.
+			runner.RecoverStoppedContainers(ctx, logger)
 			containers, scanErr := dockerClient.ListBackupContainers(ctx)
 			if scanErr != nil {
 				return scanErr

@@ -140,6 +140,10 @@ func (r *Runner) Run(ctx context.Context, ctr *types.Container) (runErr error) {
 	if cfg.StopBefore {
 		r.ignore(fresh.ID)
 		defer r.release(fresh.ID)
+		// Record ownership before stopping so a crash mid-stop is recoverable.
+		if err := r.repoReg.MarkStopped(fresh); err != nil {
+			l.Warn("failed to persist stop ownership", "error", err)
+		}
 		var err error
 		wasRunning, err = r.stopContainer(ctx, fresh, cfg, l)
 		if err != nil {
@@ -167,6 +171,9 @@ func (r *Runner) Run(ctx context.Context, ctr *types.Container) (runErr error) {
 	if wasRunning {
 		if err := r.startContainer(ctx, fresh, cfg, l); err != nil {
 			lifecycleErrs = append(lifecycleErrs, fmt.Errorf("restart: %w", err))
+			// Record kept: the next daemon start retries the recovery.
+		} else if err := r.repoReg.ClearStopped(fresh.ID); err != nil {
+			l.Warn("failed to clear stop ownership", "error", err)
 		}
 	}
 
@@ -198,6 +205,43 @@ func (r *Runner) Run(ctx context.Context, ctr *types.Container) (runErr error) {
 		fmt.Sprintf("Backup completed for container %s", ctr.Name),
 	)
 	return nil
+}
+
+// RecoverStoppedContainers restarts containers buoy stopped before a crash.
+// It runs before container discovery, so recovered containers are scheduled
+// normally. Containers already running or gone are dropped from the record.
+func (r *Runner) RecoverStoppedContainers(ctx context.Context, logger *slog.Logger) {
+	pending, err := r.repoReg.PendingRestarts()
+	if err != nil {
+		logger.Warn("failed to read pending restarts", "error", err)
+		return
+	}
+	for _, p := range pending {
+		l := logger.With("container", p.ContainerName, "project", p.Project, "service", p.Service)
+		ctr, err := r.docker.InspectContainer(ctx, p.ContainerID)
+		if err != nil {
+			l.Warn("cannot inspect container recorded as stopped by buoy, dropping record", "error", err)
+			r.clearStopped(p.ContainerID, l)
+			continue
+		}
+		if ctr.State == "running" {
+			l.Debug("container already running, dropping recovery record")
+			r.clearStopped(p.ContainerID, l)
+			continue
+		}
+		l.Warn("restarting container left stopped by an interrupted backup", "stopped_at", p.StoppedAt)
+		if err := r.startContainer(ctx, ctr, r.parseConfig(ctr.Labels), l); err != nil {
+			l.Error("recovery restart failed, record kept for next start", "error", err)
+			continue
+		}
+		r.clearStopped(p.ContainerID, l)
+	}
+}
+
+func (r *Runner) clearStopped(id string, l *slog.Logger) {
+	if err := r.repoReg.ClearStopped(id); err != nil {
+		l.Warn("failed to clear stop ownership", "error", err)
+	}
 }
 
 // minRemainingBudget is the smallest remaining window before a new unit of

@@ -241,6 +241,8 @@ Scheduling works the same as standalone containers - a container is backed up if
 
 **Stop set:** buoy stops containers with `buoy.stop-before=true` plus any container that transitively depends on a stopped container. If the database stops, the API also stops rather than crashing on a lost connection.
 
+**Crash recovery:** buoy records the containers it stops before stopping them. If the daemon dies before restarting them, they are restarted on the next start. Limitation: a container stopped manually between the crash and the restart will be started again, since buoy cannot tell the two stops apart.
+
 **Start order:** buoy restarts containers in dependency order (database before API) and waits for health checks before starting dependents - same behavior as `docker compose up`.
 
 See [Examples](#examples) for a full compose stack setup.

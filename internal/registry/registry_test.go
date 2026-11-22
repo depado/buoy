@@ -1,10 +1,15 @@
 package registry
 
 import (
+	"encoding/json"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
+	"time"
+
+	bolt "go.etcd.io/bbolt"
 
 	"github.com/depado/buoy/internal/types"
 )
@@ -328,5 +333,120 @@ func TestOpen_NonExistentDir(t *testing.T) {
 
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		t.Error("parent directory was not created")
+	}
+}
+
+func TestMarkStopped_AndPendingRestarts(t *testing.T) {
+	r := newTestRegistry(t)
+	ctr := testContainer("myapp", "project", "web")
+
+	if err := r.MarkStopped(ctr); err != nil {
+		t.Fatalf("MarkStopped: %v", err)
+	}
+
+	pending, err := r.PendingRestarts()
+	if err != nil {
+		t.Fatalf("PendingRestarts: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(pending))
+	}
+	p := pending[0]
+	if p.ContainerID != ctr.ID || p.ContainerName != ctr.Name || p.Project != "project" || p.Service != "web" {
+		t.Errorf("unexpected entry: %+v", p)
+	}
+	if p.StoppedAt.IsZero() {
+		t.Error("StoppedAt not set")
+	}
+}
+
+func TestClearStopped(t *testing.T) {
+	r := newTestRegistry(t)
+	ctr := testContainer("myapp", "", "")
+
+	if err := r.MarkStopped(ctr); err != nil {
+		t.Fatalf("MarkStopped: %v", err)
+	}
+	if err := r.ClearStopped(ctr.ID); err != nil {
+		t.Fatalf("ClearStopped: %v", err)
+	}
+
+	pending, err := r.PendingRestarts()
+	if err != nil {
+		t.Fatalf("PendingRestarts: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("expected 0 entries, got %d", len(pending))
+	}
+}
+
+func TestPendingRestarts_SurvivesReopen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	r, err := Open(path, nil, slog.Default())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	ctr := testContainer("myapp", "project", "web")
+	if err := r.MarkStopped(ctr); err != nil {
+		t.Fatalf("MarkStopped: %v", err)
+	}
+	if err := r.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	r2, err := Open(path, nil, slog.Default())
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer r2.Close()
+
+	pending, err := r2.PendingRestarts()
+	if err != nil {
+		t.Fatalf("PendingRestarts: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("expected 1 entry after reopen, got %d", len(pending))
+	}
+	if pending[0].ContainerName != "myapp" {
+		t.Errorf("entry name: got %q, want myapp", pending[0].ContainerName)
+	}
+}
+
+func TestPendingRestarts_OldestFirst(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	r, err := Open(path, nil, slog.Default())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer r.Close()
+
+	// Write directly so StoppedAt values are controlled, not wall-clock order.
+	for _, e := range []PendingRestart{
+		{ContainerID: "c", ContainerName: "third", StoppedAt: time.Unix(300, 0)},
+		{ContainerID: "a", ContainerName: "first", StoppedAt: time.Unix(100, 0)},
+		{ContainerID: "b", ContainerName: "second", StoppedAt: time.Unix(200, 0)},
+	} {
+		data, err := json.Marshal(e)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		if err := r.db.Update(func(tx *bolt.Tx) error {
+			return tx.Bucket(pendingRestartsBucket).Put([]byte(e.ContainerID), data)
+		}); err != nil {
+			t.Fatalf("put: %v", err)
+		}
+	}
+
+	pending, err := r.PendingRestarts()
+	if err != nil {
+		t.Fatalf("PendingRestarts: %v", err)
+	}
+	got := make([]string, len(pending))
+	for i, p := range pending {
+		got[i] = p.ContainerName
+	}
+	want := []string{"first", "second", "third"}
+	if !slices.Equal(got, want) {
+		t.Errorf("order: got %v, want %v", got, want)
 	}
 }
