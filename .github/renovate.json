@@ -8,7 +8,7 @@
       "pinDigests": false
     },
     {
-      "matchManagers": ["docker", "docker-compose", "dockerfile"],
+      "matchManagers": ["docker-compose", "dockerfile"],
       "matchPackageNames": ["ghcr.io/depado/buoy", "depado/buoy"],
       "enabled": false
     }
