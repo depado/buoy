@@ -140,10 +140,6 @@ func (r *Runner) Run(ctx context.Context, ctr *types.Container) (runErr error) {
 	if cfg.StopBefore {
 		r.ignore(fresh.ID)
 		defer r.release(fresh.ID)
-		// Record ownership before stopping so a crash mid-stop is recoverable.
-		if err := r.repoReg.MarkStopped(fresh); err != nil {
-			l.Warn("failed to persist stop ownership", "error", err)
-		}
 		var err error
 		wasRunning, err = r.stopContainer(ctx, fresh, cfg, l)
 		if err != nil {
@@ -171,9 +167,6 @@ func (r *Runner) Run(ctx context.Context, ctr *types.Container) (runErr error) {
 	if wasRunning {
 		if err := r.startContainer(ctx, fresh, cfg, l); err != nil {
 			lifecycleErrs = append(lifecycleErrs, fmt.Errorf("restart: %w", err))
-			// Record kept: the next daemon start retries the recovery.
-		} else if err := r.repoReg.ClearStopped(fresh.ID); err != nil {
-			l.Warn("failed to clear stop ownership", "error", err)
 		}
 	}
 
@@ -231,10 +224,10 @@ func (r *Runner) RecoverStoppedContainers(ctx context.Context, logger *slog.Logg
 		}
 		l.Warn("restarting container left stopped by an interrupted backup", "stopped_at", p.StoppedAt)
 		if err := r.startContainer(ctx, ctr, r.parseConfig(ctr.Labels), l); err != nil {
-			l.Error("recovery restart failed, record kept for next start", "error", err)
-			continue
+			// startContainer clears the record once the container is back; on
+			// failure it stays and the next daemon start retries.
+			l.Error("recovery restart failed", "error", err)
 		}
-		r.clearStopped(p.ContainerID, l)
 	}
 }
 

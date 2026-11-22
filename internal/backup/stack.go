@@ -202,10 +202,6 @@ func (r *Runner) stopStackServices(
 			sl.Debug("stopping container")
 			cfg := r.parseConfig(ctr.Labels)
 
-			// Record ownership before stopping so a crash mid-stop is recoverable.
-			if err := r.repoReg.MarkStopped(ctr); err != nil {
-				sl.Warn("failed to persist stop ownership", "error", err)
-			}
 			_, stopErr := r.stopContainer(ctx, ctr, cfg, sl)
 			if stopErr != nil {
 				sl.Warn("failed to stop container", "error", stopErr)
@@ -320,8 +316,6 @@ func (r *Runner) startStackServices(
 			cfg := r.parseConfig(ctr.Labels)
 			if err := r.startContainer(ctx, ctr, cfg, cl); err != nil {
 				issues = append(issues, fmt.Sprintf("%s: restart: %s", svc, err))
-			} else if err := r.repoReg.ClearStopped(ctr.ID); err != nil {
-				cl.Warn("failed to clear stop ownership", "error", err)
 			}
 		}
 	}

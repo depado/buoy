@@ -17,11 +17,21 @@ import (
 
 func (r *Runner) stopContainer(ctx context.Context, ctr *types.Container, cfg types.BackupConfig, l *slog.Logger) (stopped bool, stopErr error) {
 	stopStart := time.Now()
+	// Record ownership before stopping, so a crash between stop and restart is
+	// recoverable. The record is dropped again as soon as the real state is
+	// known: immediately on a successful start, or right here when the
+	// container turns out not to have stopped.
+	if err := r.repoReg.MarkStopped(ctr); err != nil {
+		l.Warn("failed to persist stop ownership", "error", err)
+	}
 	ctx, span := r.tracer.Start(ctx, "buoy.container.stop",
 		trace.WithAttributes(containerAttrs(ctr)...),
 	)
 	recordCtx := context.WithoutCancel(ctx)
 	defer func() {
+		if stopErr != nil {
+			r.clearStopRecordIfNotStopped(ctx, ctr, l)
+		}
 		d := time.Since(stopStart).Seconds()
 		if stopErr != nil {
 			span.RecordError(stopErr)
@@ -48,6 +58,27 @@ func (r *Runner) stopContainer(ctx context.Context, ctr *types.Container, cfg ty
 	}
 	l.Info("container stopped")
 	return true, nil
+}
+
+// clearStopRecordIfNotStopped drops the stop ownership record when a failed
+// stop attempt left the container running (or being restarted by Docker).
+// buoy does not owe a restart in that case, and a stale record would make a
+// later daemon start act on an outdated fact. A container that is actually
+// down keeps the record for startup recovery.
+func (r *Runner) clearStopRecordIfNotStopped(ctx context.Context, ctr *types.Container, l *slog.Logger) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	fresh, err := r.docker.InspectContainer(ctx, ctr.ID)
+	if err != nil {
+		l.Warn("failed to inspect container after failed stop, keeping stop record", "error", err)
+		return
+	}
+	switch fresh.State {
+	case "running", "restarting":
+		r.clearStopped(ctr.ID, l)
+	default:
+		l.Debug("container did not stop, keeping stop record for recovery", "state", fresh.State)
+	}
 }
 
 func (r *Runner) startContainer(ctx context.Context, ctr *types.Container, cfg types.BackupConfig, l *slog.Logger) error {
@@ -78,6 +109,9 @@ func (r *Runner) startContainer(ctx context.Context, ctr *types.Container, cfg t
 		span.SetStatus(codes.Error, startErr.Error())
 		return startErr
 	}
+	// The container is back: buoy no longer owes a restart, even if the
+	// readiness wait below fails.
+	r.clearStopped(ctr.ID, l)
 	l.Info("container started")
 	if startErr = r.waitRunning(ctx, ctr, cfg, l); startErr != nil {
 		span.RecordError(startErr)
