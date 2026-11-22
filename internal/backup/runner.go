@@ -256,6 +256,11 @@ func (r *Runner) effectivePassword(cfg types.BackupConfig, repoName string) stri
 	return r.resticConf.PasswordFor(repoName)
 }
 
+// requireExisting reports whether the named repo must already exist.
+func (r *Runner) requireExisting(repoName string) bool {
+	return r.resticConf.Repos[repoName].RequireExisting
+}
+
 func (r *Runner) effectiveRepoTimeout(cfg types.BackupConfig, repoName string) time.Duration {
 	if t, ok := cfg.RepoTimeouts[repoName]; ok && t > 0 {
 		return t

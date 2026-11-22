@@ -45,6 +45,11 @@ type RepoConfig struct {
 	URL      string `mapstructure:"url"`
 	Password string `mapstructure:"password"`
 	Timeout  string `mapstructure:"timeout"`
+	// RequireExisting refuses to initialize the repo when it is missing.
+	// Set it for destinations that must be provisioned out of band (e.g. an
+	// NFS path): a missing repo then fails the backup instead of silently
+	// creating a local fallback.
+	RequireExisting bool `mapstructure:"require_existing"`
 }
 
 type ResticConf struct {

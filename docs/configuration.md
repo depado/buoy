@@ -34,6 +34,7 @@ restic:
     local:
       url: /backup
       timeout: 30m
+      require_existing: false  # true = never run restic init on this repo
 
 api:
   enabled: true
@@ -68,6 +69,18 @@ BUOY_RESTIC_REPO_S3_PASSWORD=s3-password
 ```
 
 Repo names must match `[a-zA-Z0-9][a-zA-Z0-9_-]*`.
+
+### Existing repositories only
+
+`require_existing: true` disables automatic `restic init` for that repo. Use
+it for destinations that are provisioned outside buoy (network shares,
+removable media): if the repo is missing — for example because the share is
+not mounted — the backup fails instead of creating a fresh local repository.
+Create the repo once with `restic init` before letting buoy use it.
+
+buoy does not verify that the path is the intended filesystem (there is no
+mountpoint or device-id check), so a writable directory at the same path is
+still accepted if it already contains a valid repo.
 
 ### Per-container override
 

@@ -38,7 +38,7 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *types.Container, cfg typ
 		repoCtx = restic.WithPassword(repoCtx, r.effectivePassword(cfg, ref.Name))
 
 		repoStart := time.Now()
-		if !r.ensureRepo(repoCtx, ref.URL, logger, &failures) {
+		if !r.ensureRepo(repoCtx, ref.URL, !r.requireExisting(ref.Name), logger, &failures) {
 			r.meters.RepoBackups.Add(repoCtx, 1,
 				metric.WithAttributes(containerAttrs(ctr,
 					attribute.String("repo", ref.URL),
@@ -103,7 +103,7 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *types.Container, cfg typ
 	return summarizeOutcome(eligible, attempted, snapshots, failures)
 }
 
-func (r *Runner) ensureRepo(ctx context.Context, repo string, logger *slog.Logger, failures *[]mountError) bool {
+func (r *Runner) ensureRepo(ctx context.Context, repo string, allowInit bool, logger *slog.Logger, failures *[]mountError) bool {
 	l := logger.With("repo", repo)
 
 	l.Debug("checking repo")
@@ -117,6 +117,15 @@ func (r *Runner) ensureRepo(ctx context.Context, repo string, logger *slog.Logge
 		return false
 	}
 	if !exists {
+		if !allowInit {
+			l.Error("repo missing and require_existing is set, refusing to initialize")
+			*failures = append(*failures, mountError{repo: repo,
+				err: fmt.Errorf("repo missing and require_existing is set")})
+			if err := r.repoReg.MarkBackupComplete(repo, false); err != nil {
+				l.Warn("failed to persist backup status", "error", err)
+			}
+			return false
+		}
 		l.Debug("repo not found, initializing")
 		if err := r.restic.Init(ctx, repo); err != nil {
 			l.Warn("failed to init repo, skipping repo", "error", err)

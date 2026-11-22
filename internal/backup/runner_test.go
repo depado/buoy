@@ -113,6 +113,30 @@ func TestEffectivePassword(t *testing.T) {
 	}
 }
 
+func TestRequireExisting(t *testing.T) {
+	r := &Runner{resticConf: &config.ResticConf{Repos: map[string]config.RepoConfig{
+		"nfs": {URL: "/mnt/nfs/buoy", RequireExisting: true},
+		"b2":  {URL: "b2:bucket"},
+	}}}
+
+	tests := []struct {
+		repo string
+		want bool
+	}{
+		{"nfs", true},
+		{"b2", false},
+		{"unknown", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.repo, func(t *testing.T) {
+			if got := r.requireExisting(tt.repo); got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestEffectiveRepoTimeout(t *testing.T) {
 	rc := &config.ResticConf{
 		Repos: map[string]config.RepoConfig{

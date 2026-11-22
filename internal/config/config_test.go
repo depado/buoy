@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/spf13/viper"
 )
 
 func TestParseRepoSuffix(t *testing.T) {
@@ -377,5 +379,21 @@ func TestScanEnvReposCleanEnv(t *testing.T) {
 		if strings.HasPrefix(kv, "BUOY_RESTIC_REPO_") {
 			t.Fatalf("BUOY_RESTIC_REPO_ env vars leaked into test: %q", kv)
 		}
+	}
+}
+
+func TestRepoConfigRequireExistingDecode(t *testing.T) {
+	v := viper.New()
+	v.SetConfigType("yaml")
+	if err := v.ReadConfig(strings.NewReader("repos:\n  nfs:\n    url: /mnt/nfs/buoy\n    require_existing: true\n")); err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+
+	var rc ResticConf
+	if err := v.Unmarshal(&rc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !rc.Repos["nfs"].RequireExisting {
+		t.Error("require_existing did not decode into RequireExisting")
 	}
 }
