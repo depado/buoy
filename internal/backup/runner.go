@@ -184,8 +184,8 @@ func (r *Runner) Run(ctx context.Context, ctr *types.Container) (runErr error) {
 }
 
 // minRemainingBudget is the smallest remaining window before a new unit of
-// work (repo prune/check, hook) is started; anything less is guaranteed to
-// fail instantly, so it is skipped instead.
+// work (repo forget/prune/check, hook) is started; anything less is guaranteed
+// to fail instantly, so it is skipped instead.
 const minRemainingBudget = 10 * time.Second
 
 func (r *Runner) effectivePassword(cfg types.BackupConfig, repoName string) string {
@@ -223,19 +223,24 @@ func (r *Runner) maintenanceRepoTimeout(repoName string) time.Duration {
 	return r.repoTimeout
 }
 
-// maintenanceRepoCtx bounds one prune/check repo call by its per-repo budget,
-// inherited from the maintenance window (the shorter wins). Returns an error
-// when the window is too far gone to start another repo.
-func (r *Runner) maintenanceRepoCtx(ctx context.Context, repoName string) (context.Context, context.CancelFunc, error) {
+// repoCtx bounds one repo call by budget, inherited from ctx (the shorter
+// wins). Returns an error when the parent window is too far gone to start
+// another repo.
+func repoCtx(ctx context.Context, budget time.Duration) (context.Context, context.CancelFunc, error) {
 	if d, ok := ctx.Deadline(); ok && time.Until(d) < minRemainingBudget {
-		return nil, nil, fmt.Errorf("maintenance window nearly exhausted (%s left)", time.Until(d).Round(time.Second))
+		return nil, nil, fmt.Errorf("window nearly exhausted (%s left)", time.Until(d).Round(time.Second))
 	}
-	budget := r.maintenanceRepoTimeout(repoName)
 	if budget <= 0 {
 		return ctx, func() {}, nil
 	}
 	repoCtx, cancel := context.WithTimeout(ctx, budget)
 	return repoCtx, cancel, nil
+}
+
+// maintenanceRepoCtx bounds one prune/check repo call by its per-repo budget,
+// inherited from the maintenance window (the shorter wins).
+func (r *Runner) maintenanceRepoCtx(ctx context.Context, repoName string) (context.Context, context.CancelFunc, error) {
+	return repoCtx(ctx, r.maintenanceRepoTimeout(repoName))
 }
 
 func (r *Runner) effectiveHealthWaitTimeout(cfg types.BackupConfig) time.Duration {

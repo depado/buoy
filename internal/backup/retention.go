@@ -18,25 +18,31 @@ func (r *Runner) applyRetention(ctx context.Context, ctr *types.Container, cfg t
 	policy := cfg.Retention
 
 	var issues []string
-	for _, ref := range repos {
-		ctx := restic.WithPassword(ctx, r.effectivePassword(cfg, ref.Name))
-
+	for i, ref := range repos {
 		l := logger.With("repo", ref.URL)
+
+		repoCtx, cancel, err := repoCtx(ctx, r.effectiveRepoTimeout(cfg, ref.Name))
+		if err != nil {
+			issues = append(issues, fmt.Sprintf("forget on %s: %s, skipped %d remaining repo(s)", ref.URL, err, len(repos)-i-1))
+			break
+		}
+		repoCtx = restic.WithPassword(repoCtx, r.effectivePassword(cfg, ref.Name))
 
 		start := time.Now()
 		repoOK := true
-		if err := r.restic.Forget(ctx, ref.URL, policy, ctr.Name); err != nil {
+		if err := r.restic.Forget(repoCtx, ref.URL, policy, ctr.Name); err != nil {
 			l.Warn("forget failed", "error", err)
 			issues = append(issues, fmt.Sprintf("forget on %s: %s", ref.URL, err.Error()))
 			repoOK = false
 		}
 		l.Info("retention applied", slog.Duration("duration", time.Since(start)))
-		r.meters.RetentionDuration.Record(context.WithoutCancel(ctx), time.Since(start).Seconds(),
+		r.meters.RetentionDuration.Record(context.WithoutCancel(repoCtx), time.Since(start).Seconds(),
 			metric.WithAttributes(containerAttrs(ctr,
 				attribute.String("repo", ref.URL),
 				attribute.Bool("success", repoOK),
 			)...),
 		)
+		cancel()
 	}
 	return issues
 }

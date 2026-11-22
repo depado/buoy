@@ -121,6 +121,8 @@ When the check runs, buoy reads known repositories from its persistent state dat
 
 `restic forget` runs after every backup, but `restic prune` is expensive (it scans the whole repository and repacks data) and locks the repository. Instead of pruning after every backup, buoy runs it on a dedicated schedule via `daemon.prune_schedule` (default: `@weekly`). Set to `""` to disable.
 
+Each `restic forget` call is bounded by `daemon.repo_timeout` (or `restic.repos.<name>.timeout`, or the `buoy.repo-timeout` container label) within the backup cycle, so one unresponsive backend cannot consume the whole `daemon.backup_timeout` and starve the remaining repos. When less than 10s of the cycle remains, the remaining repos are skipped and reported once.
+
 ```yaml
 daemon:
   prune_schedule: "@weekly"

@@ -2,6 +2,8 @@ package backup
 
 import (
 	"context"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -211,6 +213,28 @@ func TestMaintenanceRepoCtx(t *testing.T) {
 			t.Error("expected budget-exhausted error")
 		}
 	})
+}
+
+func TestApplyRetentionSkipsRemainingReposWhenWindowExhausted(t *testing.T) {
+	r := &Runner{
+		resticConf:  &config.ResticConf{},
+		repoTimeout: 30 * time.Minute,
+	}
+	parent, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	repos := []types.RepoRef{
+		{Name: "b2", URL: "b2:bucket"},
+		{Name: "local", URL: "/backup"},
+	}
+	issues := r.applyRetention(parent, &types.Container{Name: "gotify"}, types.BackupConfig{}, repos, slog.New(slog.DiscardHandler))
+
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d: %v", len(issues), issues)
+	}
+	if want := "skipped 1 remaining repo(s)"; !strings.Contains(issues[0], want) {
+		t.Errorf("issue %q does not mention %q", issues[0], want)
+	}
 }
 
 func TestPasswordFor(t *testing.T) {
