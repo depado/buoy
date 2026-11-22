@@ -256,10 +256,14 @@ func (r *Runner) backupStackServices(
 			continue
 		}
 		ok := true
-		if err := r.backupMounts(ctx, ctr, cfg, repos[ctr.ID], l.With("service", ctr.ComposeService)); err != nil {
+		err := error(fmt.Errorf("no repos resolved (check buoy.repos / restic.repos)"))
+		if len(repos[ctr.ID]) > 0 {
+			err = r.backupMounts(ctx, ctr, cfg, repos[ctr.ID], l.With("service", ctr.ComposeService))
+		}
+		if err != nil {
 			l.Error("backup failed for service", "service", ctr.ComposeService, "error", err)
 			backupErrors[ctr.ComposeService] = err
-			allIssues = append(allIssues, fmt.Sprintf("%s: %s", ctr.ComposeService, err.Error()))
+			allIssues = append(allIssues, fmt.Sprintf("%s: %s", ctr.ComposeService, err))
 			ok = false
 		}
 		r.meters.ContainerBackups.Add(ctx, 1,

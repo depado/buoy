@@ -17,7 +17,14 @@ import (
 )
 
 func (r *Runner) backupMounts(ctx context.Context, ctr *types.Container, cfg types.BackupConfig, repos []types.RepoRef, logger *slog.Logger) error {
-	mountCount := 0
+	eligible := countEligibleMounts(ctr, cfg)
+	if eligible == 0 {
+		return fmt.Errorf("%w (%d mounts, %d include, %d exclude)",
+			errNoEligibleMounts, len(ctr.Mounts), len(cfg.Include), len(cfg.Exclude))
+	}
+
+	attempted := 0
+	snapshots := 0
 	var failures []mountError
 
 	for _, ref := range repos {
@@ -50,7 +57,7 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *types.Container, cfg typ
 
 		l := logger.With("repo", ref.URL)
 		repoOK := true
-		repoMounts := 0
+		repoSnapshots := 0
 
 		for _, m := range ctr.Mounts {
 			if m.Type == "tmpfs" {
@@ -62,13 +69,19 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *types.Container, cfg typ
 				continue
 			}
 
-			mountCount++
-			repoMounts++
-			if repoErr := r.backupSingleMount(repoCtx, ref.URL, ctr, m, matchedName, cfg, l); repoErr != nil {
+			attempted++
+			created, repoErr := r.backupSingleMount(repoCtx, ref.URL, ctr, m, matchedName, cfg, l)
+			if created {
+				snapshots++
+				repoSnapshots++
+			}
+			if repoErr != nil {
 				failures = append(failures, *repoErr)
 				repoOK = false
 			}
 		}
+		// No snapshot means this repo was not written: not a successful repo backup.
+		repoOK = repoOK && repoSnapshots > 0
 		r.meters.RepoBackups.Add(repoCtx, 1,
 			metric.WithAttributes(containerAttrs(ctr,
 				attribute.String("repo", ref.URL),
@@ -87,11 +100,7 @@ func (r *Runner) backupMounts(ctx context.Context, ctr *types.Container, cfg typ
 		cancel()
 	}
 
-	if mountCount == 0 {
-		logger.Warn("container has no backup-eligible mounts", "mounts", len(ctr.Mounts), "include", len(cfg.Include), "exclude", len(cfg.Exclude))
-	}
-
-	return summarizeFailures(failures, mountCount, len(repos))
+	return summarizeOutcome(eligible, attempted, snapshots, failures)
 }
 
 func (r *Runner) ensureRepo(ctx context.Context, repo string, logger *slog.Logger, failures *[]mountError) bool {
@@ -134,11 +143,11 @@ func (r *Runner) backupSingleMount(
 	matchedName string,
 	cfg types.BackupConfig,
 	l *slog.Logger,
-) (mountErr *mountError) {
+) (created bool, mountErr *mountError) {
 	source := m.Source
 	if _, err := os.Stat(source); os.IsNotExist(err) {
 		l.Warn("mount source does not exist, skipping", "source", source, "type", m.Type)
-		return &mountError{mount: source, repo: repo, err: fmt.Errorf("mount source not found")}
+		return false, &mountError{mount: source, repo: repo, err: fmt.Errorf("mount source not found")}
 	}
 
 	mountTag := m.Name
@@ -161,11 +170,11 @@ func (r *Runner) backupSingleMount(
 		entries, err := os.ReadDir(source)
 		if err != nil {
 			l.Warn("failed to read source directory, skipping", "source", source, "error", err)
-			return &mountError{mount: source, repo: repo, err: fmt.Errorf("read dir: %w", err)}
+			return false, &mountError{mount: source, repo: repo, err: fmt.Errorf("read dir: %w", err)}
 		}
 		if len(entries) == 0 {
-			l.Debug("source directory is empty, skipping", "source", source)
-			return nil
+			l.Warn("source directory is empty, no snapshot will be created", "source", source)
+			return false, nil
 		}
 		paths = make([]string, 0, len(entries))
 		for _, e := range entries {
@@ -209,16 +218,16 @@ func (r *Runner) backupSingleMount(
 		} else {
 			l.Error("backup failed", "mount", source, "error", err)
 		}
-		return &mountError{mount: source, repo: repo, err: err}
+		return false, &mountError{mount: source, repo: repo, err: err}
 	}
 	if result == nil {
 		l.Error("backup produced no summary", "mount", source)
-		return &mountError{mount: source, repo: repo, err: fmt.Errorf("no summary")}
+		return false, &mountError{mount: source, repo: repo, err: fmt.Errorf("no summary")}
 	}
 	l.Info("backup completed",
 		"mount", source,
 		"snapshot", result.SnapshotID,
 		slog.Duration("duration", time.Duration(result.TotalDuration*float64(time.Second))),
 	)
-	return nil
+	return true, nil
 }

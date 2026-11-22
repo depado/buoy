@@ -316,16 +316,37 @@ func containerAttrs(ctr *types.Container, extra ...attribute.KeyValue) []attribu
 	return append(base, extra...)
 }
 
+var (
+	errNoEligibleMounts = errors.New("no mounts matched include/exclude")
+	errNoSnapshots      = errors.New("no snapshots created")
+)
+
 type mountError struct {
 	mount string
 	repo  string
 	err   error
 }
 
-func summarizeFailures(failures []mountError, mountCount, repoCount int) error {
-	if len(failures) == 0 {
-		return nil
+// summarizeOutcome decides the result of one container's backup loop.
+// attempted is the number of mount/repo pairs tried; snapshots counts real
+// restic snapshots.
+func summarizeOutcome(eligible, attempted, snapshots int, failures []mountError) error {
+	if eligible == 0 {
+		return errNoEligibleMounts
 	}
+	if len(failures) > 0 {
+		if attempted > 0 && len(failures) == attempted {
+			return fmt.Errorf("all %d mounts failed: %s", attempted, joinFailures(failures))
+		}
+		return fmt.Errorf("%d failure(s): %s", len(failures), joinFailures(failures))
+	}
+	if snapshots == 0 {
+		return fmt.Errorf("%w: %d eligible mount(s) had no files", errNoSnapshots, eligible)
+	}
+	return nil
+}
+
+func joinFailures(failures []mountError) string {
 	parts := make([]string, 0, len(failures))
 	for _, f := range failures {
 		msg := strings.TrimPrefix(f.err.Error(), "restic backup: ")
@@ -335,9 +356,5 @@ func summarizeFailures(failures []mountError, mountCount, repoCount int) error {
 			parts = append(parts, fmt.Sprintf("%s: %s", f.repo, msg))
 		}
 	}
-	joined := strings.Join(parts, "; ")
-	if mountCount > 0 && len(failures) == mountCount*repoCount {
-		return fmt.Errorf("all %d mounts failed: %s", mountCount, joined)
-	}
-	return fmt.Errorf("%d failure(s): %s", len(failures), joined)
+	return strings.Join(parts, "; ")
 }

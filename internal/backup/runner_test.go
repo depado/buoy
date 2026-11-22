@@ -2,6 +2,7 @@ package backup
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"testing"
@@ -234,6 +235,54 @@ func TestApplyRetentionSkipsRemainingReposWhenWindowExhausted(t *testing.T) {
 	}
 	if want := "skipped 1 remaining repo(s)"; !strings.Contains(issues[0], want) {
 		t.Errorf("issue %q does not mention %q", issues[0], want)
+	}
+}
+
+func TestSummarizeOutcome(t *testing.T) {
+	tests := []struct {
+		name      string
+		eligible  int
+		attempted int
+		snapshots int
+		failures  []mountError
+		wantIs    error
+		want      string
+	}{
+		{"no eligible mounts", 0, 0, 0, nil, errNoEligibleMounts, ""},
+		{"single empty mount", 1, 1, 0, nil, errNoSnapshots, ""},
+		{"all mounts empty", 2, 2, 0, nil, errNoSnapshots, ""},
+		{"one snapshot is enough", 2, 2, 1, nil, nil, ""},
+		{"all attempts failed", 1, 2, 0, []mountError{
+			{mount: "/data", repo: "local", err: errors.New("restic backup: boom")},
+			{mount: "/data", repo: "b2", err: errors.New("restic backup: boom")},
+		}, nil, "all 2 mounts failed: /data: boom; /data: boom"},
+		{"partial failure", 2, 4, 2, []mountError{
+			{repo: "b2", err: errors.New("restic backup: repo check: unreachable")},
+		}, nil, "1 failure(s): b2: repo check: unreachable"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := summarizeOutcome(tt.eligible, tt.attempted, tt.snapshots, tt.failures)
+			if tt.wantIs != nil {
+				if !errors.Is(got, tt.wantIs) {
+					t.Fatalf("got %v, want errors.Is %v", got, tt.wantIs)
+				}
+				return
+			}
+			if tt.want == "" {
+				if got != nil {
+					t.Fatalf("got %v, want nil", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("got nil, want %q", tt.want)
+			}
+			if got.Error() != tt.want {
+				t.Errorf("got %q, want %q", got.Error(), tt.want)
+			}
+		})
 	}
 }
 
