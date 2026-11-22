@@ -21,7 +21,6 @@ import (
 func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*types.Container) {
 	start := time.Now()
 	var backupErrors map[string]error
-	var allIssues []string
 	var lifecycleIssues []string
 	ctx, span := r.tracer.Start(ctx, "buoy.stack.backup",
 		trace.WithAttributes(
@@ -70,7 +69,7 @@ func (r *Runner) RunStackBatch(ctx context.Context, project string, batch []*typ
 	defer r.releaseBatch(ignored)
 
 	l.Debug("backing up stack services", "count", len(fresh))
-	backupErrors, allIssues = r.backupStackServices(ctx, fresh, containerCfg, containerRepos, stopFailed, preErrs, l)
+	backupErrors, allIssues := r.backupStackServices(ctx, fresh, containerCfg, containerRepos, stopFailed, preErrs, l)
 
 	l.Debug("starting stack services")
 	lifecycleIssues = r.startStackServices(ctx, services, deps, all, wasStopped, l)
@@ -260,7 +259,7 @@ func (r *Runner) backupStackServices(
 			continue
 		}
 		ok := true
-		err := error(fmt.Errorf("no repos resolved (check buoy.repos / restic.repos)"))
+		err := fmt.Errorf("no repos resolved (check buoy.repos / restic.repos)")
 		if len(repos[ctr.ID]) > 0 {
 			err = r.backupMounts(ctx, ctr, cfg, repos[ctr.ID], l.With("service", ctr.ComposeService))
 		}
