@@ -76,6 +76,8 @@ github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
 github.com/nicholas-fedor/shoutrrr v0.24.0 h1:k5yEH3jCRVjIldtQE1LsFlRrnKS+c40UKZ47bHMfZU4=
 github.com/nicholas-fedor/shoutrrr v0.24.0/go.mod h1:VC9VA+l0L8rOZjuiEKSnWC6lHf+reDjUSYmWh4nT1go=
+github.com/nicholas-fedor/shoutrrr v0.25.0 h1:3h6t0GSHi0j+KYXTYf2tXdEhM22R/u0gJKznhcM12k8=
+github.com/nicholas-fedor/shoutrrr v0.25.0/go.mod h1:WzPFvHCXGB/PYwtTHIT/8sBX6gnamGeSiSV5FjWYYgk=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=
