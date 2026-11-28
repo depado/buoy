@@ -3,7 +3,7 @@ module github.com/depado/buoy
 go 1.27
 
 require (
-	github.com/depado/gorich v1.1.2
+	github.com/depado/gorich v1.1.5
 	github.com/lmittmann/tint v1.2.1
 	github.com/mattn/go-isatty v0.0.24
 	github.com/moby/moby/api v1.57.0
@@ -47,7 +47,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.31.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.16 // indirect
-	github.com/mattn/go-runewidth v0.0.27 // indirect
+	github.com/mattn/go-runewidth v0.0.31 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
